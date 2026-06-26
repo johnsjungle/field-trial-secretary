@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+
+# Local trial data and backups
+data/
+backups/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Generated packages and build artifacts
+build/
+dist/
+portable/
+*.zip
+
+# Runtime logs and temporary render output
+*.log
+tmp/
+
+# Local editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

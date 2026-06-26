@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Field Trial Secretary</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <h1>Field Trial Secretary</h1>
+        </div>
+        <nav class="main-tabs" aria-label="Trial areas">
+            <button type="button" class="tab-button active" data-tab-target="setup">Setup</button>
+            <button type="button" class="tab-button" data-tab-target="entries">Trial Entries</button>
+            <button type="button" class="tab-button" data-tab-target="runplan">Running Order</button>
+            <button type="button" class="tab-button" data-tab-target="rollcall">Roll Call</button>
+            <button type="button" class="tab-button" data-tab-target="scoring">Scoring</button>
+            <button type="button" class="tab-button" data-tab-target="wrapup">Trial Wrap Up</button>
+            <button type="button" class="tab-button" data-tab-target="admin">Admin</button>
+        </nav>
+        <div class="active-trial" id="activeTrialBadge">
+            <span class="label">Active Trial</span>
+            <strong>No trial selected</strong>
+        </div>
+    </header>
+
+    <nav class="sub-tabs" id="subTabs" aria-label="Area sections"></nav>
+
+    <section class="workflow-strip" id="workflowStrip" aria-live="polite"></section>
+    <button type="button" class="return-top-button no-print" id="returnTopButton" aria-label="Return to top">Top</button>
+
+    <main class="layout">
+        <section class="workspace">
+            <form id="trialForm" class="trial-form">
+                <input type="hidden" id="trialId">
+
+                <div class="form-message" id="formMessage"></div>
+
+                <section class="form-section trial-selector" data-tab="setup">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Trials</h2>
+                            <p>Create or select the trial you are setting up.</p>
+                        </div>
+                        <button class="secondary small" id="newTrialButton" type="button">New Trial</button>
+                    </div>
+                    <div class="trial-list" id="trialList"></div>
+                </section>
+
+                <section class="form-section" data-tab="setup">
+                    <div class="section-heading">
+                        <h2>Event</h2>
+                        <p>Core details used on schedules, premiums, draw sheets, and result packets.</p>
+                    </div>
+                    <div class="grid two">
+                        <label>
+                            Trial name
+                            <input id="trialName" autocomplete="off" required placeholder="Spring Lure Coursing Trial">
+                        </label>
+                        <label>
+                            Association
+                            <select id="association" required>
+                                <option value="ASFA">ASFA</option>
+                                <option value="AKC">AKC</option>
+                            </select>
+                        </label>
+                        <label>
+                            Club
+                            <input id="clubName" required placeholder="Host club name">
+                        </label>
+                        <label>
+                            Event or sanction number
+                            <input id="eventNumber" placeholder="Pending">
+                        </label>
+                        <label>
+                            Start date
+                            <input id="startsOn" type="date" required>
+                        </label>
+                        <label>
+                            End date
+                            <input id="endsOn" type="date" required>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="setup">
+                    <div class="section-heading">
+                        <h2>Trial Type</h2>
+                        <p>Fields mirror the information normally needed before a trial date is requested or a premium is built.</p>
+                    </div>
+                    <div class="grid three">
+                        <label>
+                            Type
+                            <select id="trialType">
+                                <option value="all_breed">All-Breed</option>
+                                <option value="specialty">Specialty</option>
+                                <option value="invitational">Invitational</option>
+                                <option value="regional">Regional Invitational</option>
+                                <option value="fun_trial">Fun Trial</option>
+                                <option value="national_specialty">National Breed Specialty</option>
+                            </select>
+                        </label>
+                        <label>
+                            Specialty breed
+                            <input id="specialtyBreed" placeholder="Required for specialty trials">
+                        </label>
+                        <label>
+                            Region
+                            <select id="region">
+                                <option value="">Not set</option>
+                                <option>1</option>
+                                <option>2</option>
+                                <option>3</option>
+                                <option>4</option>
+                                <option>5</option>
+                                <option>6</option>
+                                <option>7</option>
+                                <option>8</option>
+                                <option>9</option>
+                                <option>10</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="switch-row">
+                        <label class="switch">
+                            <input id="singlesOffered" type="checkbox">
+                            <span>Singles offered</span>
+                        </label>
+                        <label class="switch">
+                            <input id="lciOffered" type="checkbox">
+                            <span>LCI offered</span>
+                        </label>
+                        <label class="switch">
+                            <input id="priorityDate" type="checkbox">
+                            <span>Priority date</span>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="setup">
+                    <div class="section-heading">
+                        <h2>Location</h2>
+                        <p>Trial site details for premiums, schedules, and day-of-event paperwork.</p>
+                    </div>
+                    <div class="grid two">
+                        <label>
+                            Site name
+                            <input id="locationName" placeholder="Park, farm, or field name">
+                        </label>
+                        <label>
+                            Nearest major city
+                            <input id="nearestCity" placeholder="Used for date requests">
+                        </label>
+                        <label class="wide">
+                            Street address
+                            <input id="locationAddress" placeholder="Optional">
+                        </label>
+                        <label>
+                            City
+                            <input id="locationCity">
+                        </label>
+                        <label>
+                            State
+                            <input id="locationState" maxlength="2" placeholder="PA">
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="setup">
+                    <div class="section-heading">
+                        <h2>Schedule</h2>
+                        <p>These times drive the setup checklist and later premium/schedule exports.</p>
+                    </div>
+                    <div class="grid four">
+                        <label>
+                            Closing date/time
+                            <input id="closingAt" type="datetime-local">
+                        </label>
+                        <label>
+                            Roll call
+                            <input id="rollCallAt" type="time">
+                        </label>
+                        <label>
+                            Inspection
+                            <input id="inspectionAt" type="time">
+                        </label>
+                        <label>
+                            First course
+                            <input id="firstCourseAt" type="time">
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="setup">
+                    <div class="section-heading">
+                        <h2>Officials</h2>
+                        <p>Start with the secretary and trial chair; judges and field committee can be expanded as we build scoring.</p>
+                    </div>
+                    <div class="grid two">
+                        <label>
+                            Field trial secretary
+                            <input id="secretaryName" placeholder="Name">
+                        </label>
+                        <label>
+                            Secretary email
+                            <input id="secretaryEmail" type="email" placeholder="email@example.com">
+                        </label>
+                        <label>
+                            Trial chair
+                            <input id="trialChair" placeholder="Name">
+                        </label>
+                        <label>
+                            Huntmaster
+                            <input id="huntmaster" placeholder="Name">
+                        </label>
+                        <label>
+                            Field clerk
+                            <input id="fieldClerk" placeholder="Name">
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="setup">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Copy Trial Setup</h2>
+                            <p>Create another trial using the current trial's setup details, usually for the next day of a weekend.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="copyTrialButton">Copy Trial</button>
+                    </div>
+                    <div class="grid three">
+                        <label>
+                            New trial name
+                            <input id="copyTrialName" placeholder="Sunday Lure Coursing Trial">
+                        </label>
+                        <label>
+                            New start date
+                            <input id="copyStartsOn" type="date">
+                        </label>
+                        <label>
+                            New end date
+                            <input id="copyEndsOn" type="date">
+                        </label>
+                    </div>
+                    <div class="switch-row">
+                        <label class="switch"><input id="copyJudges" type="checkbox" checked> <span>Copy judges</span></label>
+                        <label class="switch"><input id="copyWorkers" type="checkbox" checked> <span>Copy workers</span></label>
+                        <label class="switch"><input id="copyDocuments" type="checkbox" checked> <span>Copy paperwork checklist</span></label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Hound DB">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Hound Database</h2>
+                            <p>Add or update master hound records, then review the database list below.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="importAsfaHoundsButton">Import ASFA Recent</button>
+                        <button type="button" class="secondary small" id="addMasterHoundButton">Save Hound</button>
+                    </div>
+                    <div class="form-message compact" id="masterHoundMessage"></div>
+                    <div class="inline-entry">
+                        <input id="masterCallName" placeholder="Call name">
+                        <input id="masterRegName" placeholder="Registered name">
+                        <select id="masterBreed"></select>
+                        <input id="masterRegNumber" placeholder="Primary registration number">
+                    </div>
+                    <div class="inline-entry">
+                        <select id="masterRegistry">
+                            <option value="">Primary registry</option>
+                            <option>AKC</option>
+                            <option>ASFA</option>
+                            <option>CKC</option>
+                            <option>FCI</option>
+                            <option>NGA</option>
+                            <option>UKC</option>
+                            <option>Foreign Registry</option>
+                            <option>Other</option>
+                        </select>
+                        <select id="masterRegType">
+                            <option value="">Registration type</option>
+                            <option>Regular</option>
+                            <option>PAL/ILP</option>
+                            <option>FSS</option>
+                            <option>Foreign</option>
+                            <option>Critique</option>
+                            <option>Other</option>
+                        </select>
+                        <select id="masterAltRegistry">
+                            <option value="">Alternate registry</option>
+                            <option>AKC</option>
+                            <option>ASFA</option>
+                            <option>CKC</option>
+                            <option>FCI</option>
+                            <option>NGA</option>
+                            <option>UKC</option>
+                            <option>Foreign Registry</option>
+                            <option>Other</option>
+                        </select>
+                        <input id="masterAltRegNumber" placeholder="Alternate registration number">
+                    </div>
+                    <div class="inline-entry">
+                        <select id="masterSex">
+                            <option value="">Sex</option>
+                            <option>Dog</option>
+                            <option>Bitch</option>
+                        </select>
+                        <input id="masterDob" type="date" title="Date of birth">
+                        <input id="masterOwner" placeholder="Owner">
+                        <input id="masterOwnerEmail" type="email" placeholder="Owner email">
+                    </div>
+                    <div class="inline-entry">
+                        <input id="masterOwnerPhone" placeholder="Owner phone">
+                        <input id="masterOwnerAddress" placeholder="Owner address">
+                        <input id="masterOwnerCity" placeholder="Owner city">
+                        <input id="masterOwnerState" placeholder="Owner state">
+                    </div>
+                    <div class="inline-entry">
+                        <input id="masterOwnerPostalCode" placeholder="Owner postal code">
+                        <input id="masterOwnerCountry" placeholder="Owner country">
+                        <input id="masterBreeder" placeholder="Breeder">
+                        <input id="masterSire" placeholder="Sire">
+                    </div>
+                    <div class="inline-entry">
+                        <input id="masterDam" placeholder="Dam">
+                    </div>
+                    <div class="section-heading table-heading">
+                        <h2>Hounds In Database</h2>
+                        <p>This is the reusable hound list. Trial entries are assigned separately on the Trial Entries tab.</p>
+                    </div>
+                    <div class="search-row">
+                        <label>
+                            Search hound database
+                            <input id="houndDatabaseSearch" placeholder="Type call name, registered name, registration number, or owner">
+                        </label>
+                        <span id="houndDatabaseCount">No hounds loaded</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Call Name</th>
+                                    <th>Registered Name</th>
+                                    <th>Breed</th>
+                                    <th>Registration</th>
+                                    <th>Alternate</th>
+                                    <th>Owner</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="masterHoundsTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="entries">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Trial Entries</h2>
+                            <p>Search the master hound database, then assign the hound to this trial and class.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="addEntryButton">Add Entry</button>
+                    </div>
+                    <div class="form-message compact" id="entryMessage"></div>
+                    <div class="edit-banner" id="entryEditBanner" hidden>
+                        <div>
+                            <strong id="entryEditTitle">Editing entry</strong>
+                            <span id="entryEditDetails"></span>
+                        </div>
+                        <button type="button" class="secondary small" id="cancelEntryEditButton">Cancel Edit</button>
+                    </div>
+                    <datalist id="houndSearchOptions"></datalist>
+                    <div class="inline-entry">
+                        <input id="entryHoundSearch" list="houndSearchOptions" placeholder="Search hound by call name, registered name, or registration">
+                        <select id="entryClass"></select>
+                        <select id="entryRegistrationUsed"></select>
+                        <input id="entryHandler" placeholder="Handler">
+                        <input id="entryNumber" placeholder="Entry number">
+                    </div>
+                    <div class="inline-entry">
+                        <input id="entryCallName" placeholder="New hound call name">
+                        <input id="entryRegName" placeholder="New hound registered name">
+                        <select id="entryBreed"></select>
+                        <input id="entryRegNumber" placeholder="Registration number">
+                    </div>
+                    <div class="switch-row">
+                        <label class="switch"><input id="entryFirstTime" type="checkbox"> <span>First-time entry</span></label>
+                        <label class="switch"><input id="entryCertRequired" type="checkbox"> <span>Certificate required</span></label>
+                        <label class="switch"><input id="entryOwnerSeparation" type="checkbox"> <span>Separate owner hounds</span></label>
+                    </div>
+                    <div class="grid two" id="entryFirstTimeDocs">
+                        <label>
+                            Registration certificate
+                            <input id="entryRegistrationCertFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
+                        </label>
+                        <label>
+                            Coursing certification
+                            <input id="entryCoursingCertFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
+                        </label>
+                        <p class="field-note wide" id="entryFirstTimeDocsNote">Attach first-time entry paperwork here. LCI and Singles need the registration certificate only; regular breed stakes also need the coursing certification.</p>
+                    </div>
+                    <div class="inline-entry three-cols" id="entryOwnerSeparationGroupRow" hidden>
+                        <label>
+                            Separation group
+                            <input id="entryOwnerSeparationGroup" maxlength="3" placeholder="A">
+                        </label>
+                        <p class="field-note">Use the same letter for hounds that should be separated from each other when possible.</p>
+                    </div>
+                    <div class="section-heading table-heading">
+                        <h2>Add To Trials</h2>
+                        <p>Select one or more setup trials. The current trial is selected automatically.</p>
+                    </div>
+                    <div class="quick-grid" id="entryTrialTargets"></div>
+                    <div class="section-heading table-heading">
+                        <h2>Entry Import</h2>
+                        <p>Import Jotform emails, CSV exports, or copied form text. Preview, map fields, choose hound matches, then import.</p>
+                    </div>
+                    <div class="inline-entry">
+                        <label>
+                            Target trial
+                            <select id="jotformTargetTrial"></select>
+                        </label>
+                        <label>
+                            Import template
+                            <select id="entryImportTemplateSelect"></select>
+                        </label>
+                        <label>
+                            Save mapping as
+                            <input id="entryImportTemplateName" placeholder="Club CSV Export">
+                        </label>
+                        <label>
+                            Import files
+                            <input id="jotformImportFiles" type="file" multiple accept=".txt,.eml,.json,.csv,.html,.htm,.pdf,.jpg,.jpeg,.png">
+                        </label>
+                    </div>
+                    <label class="stacked-label">
+                        Paste form text
+                        <textarea id="jotformImportText" rows="8" placeholder="Paste a Jotform notification email, copied submission text, CSV text, or JSON export here. Attachments can be selected above so first-time entry documents are tracked."></textarea>
+                    </label>
+                    <div class="button-row">
+                        <button type="button" class="secondary" id="parseJotformImportButton">Preview Import</button>
+                        <button type="button" class="secondary" id="applyEntryImportMappingButton">Apply Mapping</button>
+                        <button type="button" class="secondary" id="saveEntryImportTemplateButton">Save Mapping Template</button>
+                        <button type="button" class="primary" id="importJotformEntriesButton">Import Previewed Entries</button>
+                    </div>
+                    <div class="form-message compact" id="jotformImportSummary"></div>
+                    <div class="table-wrap" id="entryImportMappingWrap" hidden>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Program Field</th>
+                                    <th>Source Column/Label</th>
+                                </tr>
+                            </thead>
+                            <tbody id="entryImportMappingTable"></tbody>
+                        </table>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>File</th>
+                                    <th>Import</th>
+                                    <th>Hound Decision</th>
+                                    <th>Call Name</th>
+                                    <th>Registered Name</th>
+                                    <th>Breed</th>
+                                    <th>Date(s)</th>
+                                    <th>Registration</th>
+                                    <th>Stake/Class</th>
+                                    <th>Owner</th>
+                                    <th>First Time</th>
+                                    <th>Docs</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jotformImportPreviewTable"></tbody>
+                        </table>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Call Name</th>
+                                    <th>Registered Name</th>
+                                    <th>Breed</th>
+                                    <th>Registration</th>
+                                    <th>Registry</th>
+                                    <th>Class</th>
+                                    <th>Entry Dates</th>
+                                    <th>Trial(s)</th>
+                                    <th>Handler</th>
+                                    <th>Separate</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="entriesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="rollcall">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Roll Call Check In</h2>
+                            <p>Check which hounds are present, lame, absent, or excused before building the course draw.</p>
+                        </div>
+                        <label class="switch compact-switch">
+                            <input id="rollCallAllPresent" type="checkbox">
+                            <span>All present</span>
+                        </label>
+                    </div>
+                    <div class="form-message compact" id="rollCallMessage"></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Entry</th>
+                                    <th>Hound</th>
+                                    <th>Owner</th>
+                                    <th>Breed</th>
+                                    <th>Stake</th>
+                                    <th>Present</th>
+                                    <th>Reason</th>
+                                    <th>Group</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rollCallCheckInTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="rollcall">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Owner Separation</h2>
+                            <p>Mark hounds that should be separated before the preliminary draw. Use the same letter for hounds linked together.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="autoOwnerSeparationButton">Auto Mark Multi-Hound Owners</button>
+                    </div>
+                    <div id="ownerSeparationQuickList" class="owner-separation-list"></div>
+                </section>
+
+                <section class="form-section" data-tab="rollcall">
+                    <div class="section-heading">
+                        <h2>Initial Breed & Stake Groups</h2>
+                        <p>Present hounds are grouped by breed and stake, with Singles and LCI handled as their own running groups.</p>
+                    </div>
+                    <div id="initialCourseGroups" class="course-groups"></div>
+                </section>
+
+                <section class="form-section" data-tab="rollcall">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Preliminary Draw</h2>
+                            <p>Randomize preliminary courses by run group after roll call is complete.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small" id="buildPreliminaryDrawButton">Build Preliminary Draw</button>
+                            <button type="button" class="secondary small report-button" id="printDrawSheetButton">Print Draw Sheet</button>
+                            <button type="button" class="secondary small report-button" id="printJudgeSheetsButton">Print Preliminary Judge Sheets</button>
+                        </div>
+                    </div>
+                    <div id="preliminaryDraw" class="course-groups no-print"></div>
+                    <div class="print-area sheet-preview" id="drawSheetPrint">
+                        <h2 id="drawSheetHeading">Draw Order Sheet</h2>
+                        <p id="drawSheetTitle"></p>
+                        <p id="drawSheetTemplate"></p>
+                        <div id="drawSheetGroups"></div>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="scoring">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Prelim Scoring</h2>
+                            <p>Enter judge sheet totals by run group, course, and blanket color. Record excusals, dismissals, and DQs here too.</p>
+                            <p class="field-note">Marking prelims complete locks preliminary scores so finals draws and posting sheets are not changed by accident. Unlock prelims only when correcting an error.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small" id="markScoringCompleteButton" data-help="Checks that every preliminary result has a score or outcome, then marks prelims complete and locks them before finals are built.">Mark Prelims Complete</button>
+                            <button type="button" class="secondary small" id="togglePrelimLockButton" data-help="Locks or unlocks preliminary score entry only. Use Unlock Prelims to correct a mistake; it does not mark prelims complete by itself.">Lock Prelims</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="scoringMessage"></div>
+                    <div id="preliminaryScorebook" class="scorebook"></div>
+                </section>
+
+                <section class="form-section" data-tab="scoring">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Finals Scoring</h2>
+                            <p>Build finals draws and enter finals scores by run group after preliminary scoring is complete.</p>
+                            <p class="field-note">Lock finals once a stake or breed has been checked and posted. Unlock only when correcting a score.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="toggleFinalsLockButton" data-help="Locks or unlocks finals score entry. Use Unlock Finals only when correcting a finals score or outcome.">Lock Finals</button>
+                    </div>
+                    <div id="finalsScorebook" class="scorebook"></div>
+                </section>
+
+                <section class="form-section" data-tab="scoring">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Run Offs Scoring</h2>
+                            <p>Manage all tie runoffs and Best of Breed runs after finals are scored.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small" id="redrawAllRunoffsButton">Redraw All Runoffs</button>
+                            <button type="button" class="secondary small report-button" id="printRunoffDrawSheetButton">Print Runoff Draw Sheet</button>
+                            <button type="button" class="secondary small report-button" id="printAllRunoffJudgeSheetsButton">Print Runoff Judge Sheets</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="runoffMessage"></div>
+                    <div class="run-order-controls">
+                        <span id="selectedRunoffLabel">No runoff selected</span>
+                    </div>
+                    <div id="runoffBoard" class="runoff-board"></div>
+                </section>
+
+                <section class="form-section" data-tab="scoring">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>BIF/BIE Check</h2>
+                            <p>Bring in BOB winners, check the hounds running in Best in Field, and assign BIF judges.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small draw-needed-button" id="buildBifDrawButton">Draw BIF Draw</button>
+                            <button type="button" class="secondary small report-button" id="printBifJudgeSheetsButton">Print BIF Judge Sheets</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="bifMessage"></div>
+                    <div id="bifBiePanel" class="scorebook"></div>
+                </section>
+
+                <section class="form-section" data-tab="scoring">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Main Results</h2>
+                            <p>Overall trial results from prelims, finals, runoffs, BOB, and BIF/BIE.</p>
+                        </div>
+                        <div class="button-row">
+                            <label class="inline-control">
+                                Ribbon sort
+                                <select id="ribbonReportSort">
+                                    <option value="runningOrder">Running order</option>
+                                    <option value="az">A-Z</option>
+                                    <option value="za">Z-A</option>
+                                </select>
+                            </label>
+                            <label class="inline-control">
+                                Placement order
+                                <select id="ribbonPlacementOrder">
+                                    <option value="nbqFirst">NBQ - 1</option>
+                                    <option value="firstFirst">1 - NBQ</option>
+                                </select>
+                            </label>
+                            <button type="button" class="secondary small report-button" id="printRibbonReportButton">Print Ribbon Report</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="mainResultsMessage"></div>
+                    <div id="mainResultsBook" class="scorebook"></div>
+                    <div class="print-area sheet-preview" id="scoreReportPrint">
+                        <h2 id="scoreReportHeading">Score Report</h2>
+                        <p id="scoreReportTitle"></p>
+                        <div id="scoreReportGroups"></div>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="wrapup">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>ASFA Record Packet</h2>
+                            <p>Create the complete end-of-trial ASFA record packet with all record sheets in order.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small report-button" id="printAsfaRecordPacketButton">Print ASFA Record Packet</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="wrapUpMessage"></div>
+                    <div class="info-panel">
+                        <p>The record packet uses the completed trial results, applies the ASFA record sheet alignment settings, splits large stakes across multiple record sheets, and includes refund/per-capita handling.</p>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="wrapup">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>ASFA Secretary Report</h2>
+                            <p>Build the ASFA Field Trial Secretary report for trial submission.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small report-button" id="printAsfaSecretaryReportButton">Print ASFA Secretary Report</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="wrapUpSecretaryMessage"></div>
+                    <div class="grid two">
+                        <label>
+                            Were any judges changed from the approved premium list?
+                            <select id="secretaryJudgesChanged">
+                                <option value="">Auto/unknown</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Were there any other significant premium-list changes?
+                            <select id="secretaryPremiumChanged">
+                                <option value="">Auto/unknown</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label class="wide">
+                            Judge assignment changes / corrected premium notes
+                            <textarea id="secretaryJudgeChangeNotes" rows="3" placeholder="List changed judge assignments or note corrected premium attached."></textarea>
+                        </label>
+                        <label>
+                            Open or Veteran first-time entrants?
+                            <select id="secretaryOpenVetFirstTimers">
+                                <option value="">Auto from entries</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Singles first-time entrants?
+                            <select id="secretarySinglesFirstTimers">
+                                <option value="">Auto from entries</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Entries marked for working off a dismissal?
+                            <select id="secretaryWorkingOffDismissal">
+                                <option value="">Auto/unknown</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Entries marked for change of information?
+                            <select id="secretaryChangeOfInfo">
+                                <option value="">Auto/unknown</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Special breeder count
+                            <input id="secretarySpecialBreederCount" type="number" min="0" step="1" placeholder="0">
+                        </label>
+                        <label>
+                            Special kennel count
+                            <input id="secretarySpecialKennelCount" type="number" min="0" step="1" placeholder="0">
+                        </label>
+                        <label>
+                            Special bench count
+                            <input id="secretarySpecialBenchCount" type="number" min="0" step="1" placeholder="0">
+                        </label>
+                        <label>
+                            Breed per-capita rate
+                            <select id="secretaryPerCapitaRate">
+                                <option value="4.00">$4.00 standard</option>
+                                <option value="3.50">$3.50 electronic records</option>
+                            </select>
+                        </label>
+                        <label>
+                            Amount paid by check
+                            <input id="secretaryCheckAmount" inputmode="decimal" placeholder="0.00">
+                        </label>
+                        <label>
+                            Amount paid by PayPal
+                            <input id="secretaryPaypalAmount" inputmode="decimal" placeholder="0.00">
+                        </label>
+                        <label>
+                            PayPal transaction ID
+                            <input id="secretaryPaypalTransactionId" placeholder="Optional">
+                        </label>
+                    </div>
+                    <div class="info-panel">
+                        <p>The report also fills club, region, chair, secretary email, trial date, location, entry counts, and calculated ASFA fees from the active trial.</p>
+                    </div>
+                    <div class="stats-grid" id="secretaryFeeSummary"></div>
+                </section>
+
+                <section class="form-section" data-tab="runplan">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Running Order & Assignments</h2>
+                            <p>One row per breed. If there is only one breed, the running order is 1.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="buildRunPlanButton">Build From Entries</button>
+                    </div>
+                    <div class="form-message compact" id="runPlanMessage"></div>
+                    <div class="run-order-controls">
+                        <span id="selectedRunPlanLabel">No breed selected</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Move</th>
+                                    <th>Order</th>
+                                    <th>Breed</th>
+                                    <th>Entries</th>
+                                    <th>Judge 1</th>
+                                    <th>Judge 2</th>
+                                    <th>Lure Operator</th>
+                                    <th>Huntmaster</th>
+                                </tr>
+                            </thead>
+                            <tbody id="runPlanTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="runplan">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Printable Sheets</h2>
+                            <p>Preview and print the worker sheet or roll call sheet. Save the roll call print order the way the secretary wants it.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small report-button" id="printWorkerSheetButton">Print Worker Sheet</button>
+                            <button type="button" class="secondary small report-button" id="printRollCallButton">Print Roll Call</button>
+                        </div>
+                    </div>
+                    <div class="grid three no-print">
+                        <label>
+                            Roll call sort
+                            <select id="rollCallSort">
+                                <option value="breedClass">Breed, class, call name</option>
+                                <option value="callName">Call name</option>
+                                <option value="registeredName">Registered name</option>
+                                <option value="className">Class, breed, call name</option>
+                                <option value="entryNumber">Entry number</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="print-area sheet-preview" id="workerSheetPrint">
+                        <h2>Worker Sheet</h2>
+                        <p id="workerSheetTitle"></p>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Order</th>
+                                        <th>Breed</th>
+                                        <th>Entries</th>
+                                        <th>Open</th>
+                                        <th>Fch/Exc</th>
+                                        <th>Vet</th>
+                                        <th>Judges</th>
+                                        <th>Lure Operator</th>
+                                        <th>Huntmaster</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="workerSheetTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="print-area sheet-preview" id="rollCallPrint">
+                        <h2>Roll Call Sheet</h2>
+                        <p id="rollCallTitle"></p>
+                        <div class="table-wrap roll-call-print-wrap">
+                            <table class="roll-call-print-table">
+                                <thead>
+                                    <tr>
+                                        <th class="check-column">Present</th>
+                                        <th>Call Name</th>
+                                        <th>Breed</th>
+                                        <th>Class</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rollCallTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Judges & Workers">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Judge Database</h2>
+                            <p>Master judge records available for any trial.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="addMasterJudgeButton">Save Judge</button>
+                    </div>
+                    <div class="form-message compact" id="masterJudgeMessage"></div>
+                    <div class="inline-entry">
+                        <input id="masterJudgeName" placeholder="Judge name">
+                        <input id="masterJudgeNumber" placeholder="Judge number">
+                        <input id="masterJudgeEmail" type="email" placeholder="Email">
+                        <input id="masterJudgePhone" placeholder="Phone">
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Number</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                </tr>
+                            </thead>
+                            <tbody id="masterJudgesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Judges & Workers">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Trial Judges</h2>
+                            <p>Search the judge database, then assign judges to this trial.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="addJudgeButton">Add Judge</button>
+                    </div>
+                    <datalist id="judgeSearchOptions"></datalist>
+                    <div class="inline-entry">
+                        <input id="judgeSearch" list="judgeSearchOptions" placeholder="Search existing judge">
+                        <input id="judgeName" placeholder="Judge name">
+                        <input id="judgeNumber" placeholder="Judge number">
+                        <input id="judgeAssignment" placeholder="Assignment">
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Number</th>
+                                    <th>Assignment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="judgesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Judges & Workers">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Worker Database</h2>
+                            <p>Master worker and volunteer records available for any trial.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="addMasterWorkerButton">Save Worker</button>
+                    </div>
+                    <div class="form-message compact" id="masterWorkerMessage"></div>
+                    <div class="inline-entry">
+                        <input id="masterWorkerName" placeholder="Worker name">
+                        <input id="masterWorkerEmail" type="email" placeholder="Email">
+                        <input id="masterWorkerPhone" placeholder="Phone">
+                        <input id="masterWorkerNotes" placeholder="Notes">
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="masterWorkersTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Judges & Workers">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Trial Workers</h2>
+                            <p>Search the worker database, then assign people to jobs for this trial.</p>
+                        </div>
+                        <button type="button" class="secondary small" id="addWorkerButton">Add Worker</button>
+                    </div>
+                    <datalist id="workerSearchOptions"></datalist>
+                    <div class="inline-entry">
+                        <input id="workerSearch" list="workerSearchOptions" placeholder="Search existing worker">
+                        <input id="workerName" placeholder="Worker name">
+                        <select id="workerRole">
+                            <option>Field Trial Secretary</option>
+                            <option>Trial Chair</option>
+                            <option>Huntmaster</option>
+                            <option>Field Clerk</option>
+                            <option>Lure Operator</option>
+                            <option>Inspection Committee</option>
+                            <option>Roll Call</option>
+                            <option>Paddock</option>
+                            <option>Scorekeeper</option>
+                            <option>Equipment</option>
+                        </select>
+                        <input id="workerPhone" placeholder="Phone">
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Role</th>
+                                    <th>Phone</th>
+                                </tr>
+                            </thead>
+                            <tbody id="workersTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Paperwork">
+                    <div class="section-heading">
+                        <h2>Documents & Reports</h2>
+                        <p>Checklist for paperwork before, during, and after the trial.</p>
+                    </div>
+                    <div class="quick-grid" id="documentOptions">
+                        <label class="switch"><input type="checkbox" value="Premium"> <span>Premium</span></label>
+                        <label class="switch"><input type="checkbox" value="Entry forms"> <span>Entry forms</span></label>
+                        <label class="switch"><input type="checkbox" value="Certifications"> <span>Certifications</span></label>
+                        <label class="switch"><input type="checkbox" value="Running order"> <span>Running order</span></label>
+                        <label class="switch"><input type="checkbox" value="Score sheets"> <span>Score sheets</span></label>
+                        <label class="switch"><input type="checkbox" value="Prize report"> <span>Prize report</span></label>
+                        <label class="switch"><input type="checkbox" value="Secretary report"> <span>Secretary report</span></label>
+                        <label class="switch"><input type="checkbox" value="AKC/ASFA export"> <span>AKC/ASFA export</span></label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Paperwork">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Official Forms</h2>
+                            <p>Source catalog for judge sheets, posted score sheets, draw sheets, and secretary reports.</p>
+                        </div>
+                        <label class="compact-control">
+                            Association
+                            <select id="officialFormsAssociation">
+                                <option value="all">All</option>
+                                <option value="ASFA">ASFA</option>
+                                <option value="AKC">AKC</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="form-message compact" id="officialFormsMessage"></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Association</th>
+                                    <th>Form</th>
+                                    <th>Use</th>
+                                    <th>Revision</th>
+                                    <th>Source</th>
+                                    <th>Local Template</th>
+                                </tr>
+                            </thead>
+                            <tbody id="officialFormsTable"></tbody>
+                        </table>
+                    </div>
+                    <div class="tool-panel" id="asfaRecordAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>ASFA Record Sheet Alignment</h3>
+                                <p>Adjust where the filled-in values land on the official record sheet, then preview before printing.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAsfaRecordAlignmentButton">Preview Record Sheet</button>
+                                <button type="button" class="secondary small" id="resetAsfaRecordAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="asfaRecordAlignmentControls"></div>
+                        <div class="record-visual-editor" id="asfaRecordVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="asfaRecordAlignmentPreview" title="ASFA record sheet preview"></iframe>
+                    </div>
+                    <div class="tool-panel" id="asfaJudgeAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>ASFA Judge Sheet Alignment</h3>
+                                <p>Adjust the filled-in values and circles on the official ASFA judging form.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAsfaJudgeAlignmentButton">Preview Judge Sheet</button>
+                                <button type="button" class="secondary small" id="resetAsfaJudgeAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="asfaJudgeAlignmentControls"></div>
+                        <div class="judge-visual-editor" id="asfaJudgeVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="asfaJudgeAlignmentPreview" title="ASFA judge sheet preview"></iframe>
+                    </div>
+                    <div class="tool-panel" id="asfaSecretaryAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>ASFA Secretary Report Alignment</h3>
+                                <p>Adjust the filled-in values on the ASFA Field Trial Secretary Report and preview before printing.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAsfaSecretaryAlignmentButton">Preview Secretary Report</button>
+                                <button type="button" class="secondary small" id="resetAsfaSecretaryAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="asfaSecretaryAlignmentControls"></div>
+                        <div class="secretary-visual-editor" id="asfaSecretaryVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="asfaSecretaryAlignmentPreview" title="ASFA secretary report preview"></iframe>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Admin Test">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Admin Test Data</h2>
+                            <p>Create a realistic test trial with hounds, entries, judges, workers, and a starter run plan.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small" id="createAdminTestTrialButton">Create Test Trial</button>
+                            <button type="button" class="secondary small" id="populateAdminScoresButton">Populate Preliminary Scores</button>
+                            <button type="button" class="secondary small" id="populateAdminFinalsScoresButton">Populate Finals Scores</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="adminTestMessage"></div>
+                    <div class="grid three">
+                        <label>
+                            Number of dogs
+                            <input id="adminTestDogCount" type="number" min="30" max="80" value="50">
+                        </label>
+                        <label>
+                            Random breed/stake groups
+                            <input id="adminTestGroupCount" type="number" min="1" max="14" value="8">
+                        </label>
+                        <label>
+                            Trial date
+                            <input id="adminTestDate" type="date">
+                        </label>
+                    </div>
+                    <div class="grid three">
+                        <label>
+                            Association
+                            <select id="adminTestAssociation">
+                                <option value="ASFA">ASFA</option>
+                                <option value="AKC">AKC</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="switch-row">
+                        <label class="switch"><input id="adminTestUseImportedHounds" type="checkbox" checked> <span>Use imported ASFA hounds when available</span></label>
+                        <label class="switch"><input id="adminTestSetActive" type="checkbox" checked> <span>Set as active trial</span></label>
+                    </div>
+                    <div class="section-heading table-heading">
+                        <h2>Run Group Test Plan</h2>
+                        <p>Add specific breed, Singles, or LCI groups to test draw sizes and owner separation.</p>
+                    </div>
+                    <div class="inline-entry">
+                        <select id="adminPlanBreed"></select>
+                        <select id="adminPlanClass"></select>
+                        <input id="adminPlanCount" type="number" min="1" max="40" value="7" placeholder="Dogs">
+                        <button type="button" class="secondary small" id="addAdminPlanRowButton">Add Test Group</button>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Breed</th>
+                                    <th>Stake/Class</th>
+                                    <th>Dogs</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminPlanTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Admin Test">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Delete Test Trials</h2>
+                            <p>Remove setup or test trials from this browser while you are experimenting.</p>
+                        </div>
+                        <button type="button" class="secondary small danger-button" id="deleteSelectedTrialButton">Delete Trial</button>
+                    </div>
+                    <div class="grid two">
+                        <label>
+                            Trial to delete
+                            <select id="adminDeleteTrial"></select>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="admin" data-admin-page="Admin Test">
+                    <div class="section-heading">
+                        <h2>Backup & Transfer</h2>
+                        <p>Export browser-stored trial data, then import it on another computer after copying the program folder.</p>
+                    </div>
+                    <div class="button-row">
+                        <button type="button" class="secondary small" id="enablePersistentStorageButton">Enable Protected Browser Storage</button>
+                        <button type="button" class="secondary small" id="restoreBrowserBackupButton">Restore Browser Safety Backup</button>
+                        <button type="button" class="secondary small" id="createSQLiteBackupButton">Create SQLite Backup</button>
+                        <button type="button" class="secondary small" id="exportDataBackupButton">Export Data Backup</button>
+                        <button type="button" class="secondary small" id="importDataBackupButton">Import Data Backup</button>
+                    </div>
+                    <div class="form-message compact" id="storageSafetyMessage"></div>
+                    <input id="importDataBackupFile" type="file" accept="application/json,.json" hidden>
+                    <p class="field-note">This exports trials, hounds, judges, workers, template status, and the active trial selection from this browser.</p>
+                </section>
+
+                <section class="status-panel" data-tab="admin" data-admin-page="Paperwork">
+                    <div>
+                        <h2>Trial Readiness Checklist</h2>
+                        <p id="checklistSummary">Create or select a trial to see setup status.</p>
+                    </div>
+                    <ul id="setupChecklist"></ul>
+                </section>
+
+                <footer class="actions" data-tab="setup">
+                    <button type="button" class="secondary" id="setActiveButton">Set Active</button>
+                    <button type="submit">Save Trial</button>
+                </footer>
+            </form>
+        </section>
+    </main>
+
+    <script src="asfa_recent_hounds.js"></script>
+    <script src="script.js?v=20260625-secretary-drag-align"></script>
+</body>
+</html>
