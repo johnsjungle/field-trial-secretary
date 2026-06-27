@@ -98,7 +98,7 @@ const lciDivisions = ['LCI Small', 'LCI Large', 'LCI Sighthound Mix'];
 const lciStakes = ['Open', 'Excellent', 'Veteran'];
 const lciClassOptions = lciDivisions.flatMap((division) => lciStakes.map((stake) => `${division} ${stake}`));
 const defaultClassOptions = ['Open', 'Field Champion', 'Veteran', 'Singles', ...lciClassOptions];
-const adminPageTabs = ['Judges & Workers', 'Paperwork', 'Hound DB', 'Admin Test'];
+const adminPageTabs = ['Judges & Workers', 'Paperwork', 'Hound DB', 'Tools'];
 
 const officialFormTemplates = [
     {
@@ -12304,7 +12304,7 @@ function deleteTrialById(trialId, messageElement) {
         return;
     }
 
-    if (!window.confirm(`Are you sure you want to delete "${trial.trialName || 'Untitled trial'}"? It can be recovered from Admin Test until five newer trial deletions replace it.`)) {
+    if (!window.confirm(`Are you sure you want to delete "${trial.trialName || 'Untitled trial'}"? It can be recovered from Tools until five newer trial deletions replace it.`)) {
         return;
     }
 
@@ -12331,7 +12331,7 @@ function deleteTrialById(trialId, messageElement) {
     }
     saveDeletedTrials();
     saveTrials();
-    showMessage(messageElement, 'Trial deleted. It can be recovered from Admin Test.', 'success');
+    showMessage(messageElement, 'Trial deleted. It can be recovered from Tools.', 'success');
     render();
 }
 
@@ -15007,7 +15007,7 @@ function switchTab(tab) {
         hounds: 'Hound DB',
         people: 'Judges & Workers',
         paperwork: 'Paperwork',
-        admintest: 'Admin Test',
+        admintest: 'Tools',
     };
     if (legacyAdminTabs[tab]) {
         currentAdminPage = legacyAdminTabs[tab];
