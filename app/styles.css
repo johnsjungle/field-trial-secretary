@@ -39,7 +39,7 @@ select {
 .topbar {
     display: grid;
     align-items: center;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(280px, 420px);
     gap: 16px;
     padding: 10px 20px;
     background: var(--panel);
@@ -152,6 +152,152 @@ h2 {
     font-size: 13px;
 }
 
+.trial-guide-card {
+    position: relative;
+    min-width: 280px;
+}
+
+.trial-guide-card summary {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #b7cbc4;
+    color: var(--accent-dark);
+    cursor: pointer;
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    min-height: 40px;
+    padding: 7px 10px;
+}
+
+.trial-guide-card summary span {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.trial-guide-card summary strong {
+    color: var(--ink);
+    font-size: 13px;
+}
+
+.trial-guide-popover {
+    background: var(--panel);
+    border: 1px solid #b7cbc4;
+    box-shadow: var(--shadow);
+    display: none;
+    max-height: calc(100vh - 124px);
+    overflow: auto;
+    padding: 12px;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    width: min(340px, calc(100vw - 40px));
+    z-index: 12;
+}
+
+.trial-guide-card[open] .trial-guide-popover {
+    display: block;
+}
+
+.trial-guide-next {
+    align-items: center;
+    background: #edf4f1;
+    border: 1px solid #b7cbc4;
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 10px;
+}
+
+.trial-guide-next p {
+    margin: 0;
+}
+
+.trial-guide-next strong {
+    color: var(--accent-dark);
+    display: inline-block;
+    margin-right: 4px;
+}
+
+.trial-guide-list {
+    display: grid;
+    gap: 6px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.guide-step button {
+    align-items: center;
+    background: #fbfcfc;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+    min-height: 34px;
+    padding: 6px 8px;
+    text-align: left;
+    width: 100%;
+}
+
+.guide-step button:hover,
+.guide-step button:focus {
+    border-color: var(--accent);
+}
+
+.guide-dot {
+    border-radius: 999px;
+    display: inline-block;
+    height: 10px;
+    width: 10px;
+}
+
+.guide-step.done .guide-dot,
+.tab-button.guide-done::before {
+    background: #1d7b5f;
+}
+
+.guide-step.ready .guide-dot,
+.tab-button.guide-ready::before {
+    background: #d2a02c;
+}
+
+.guide-step.blocked .guide-dot,
+.tab-button.guide-blocked::before {
+    background: #b24a4a;
+}
+
+.guide-step-status {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.tab-button.guide-done,
+.tab-button.guide-ready,
+.tab-button.guide-blocked {
+    position: relative;
+    padding-left: 20px;
+}
+
+.tab-button.guide-done::before,
+.tab-button.guide-ready::before,
+.tab-button.guide-blocked::before {
+    border-radius: 999px;
+    content: "";
+    height: 8px;
+    left: 7px;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+}
+
 .layout {
     display: block;
     min-height: calc(100vh - 112px);
@@ -248,6 +394,12 @@ h2 {
     box-shadow: inset 4px 0 0 var(--accent);
 }
 
+.trial-card.archived {
+    background: #f6f7f7;
+    border-style: dashed;
+    color: #4e5b61;
+}
+
 .trial-card .name {
     display: block;
     margin-bottom: 5px;
@@ -269,8 +421,32 @@ h2 {
     font-weight: 700;
 }
 
+.trial-card .archive-flag {
+    margin-left: 6px;
+    background: #e8ecef;
+    color: #5b6770;
+}
+
+.trial-card .locked-flag {
+    margin-left: 6px;
+    background: #fff1c7;
+    color: #7a5100;
+}
+
+.trial-archived .workspace::before {
+    content: "Archived trial: read-only until unlocked";
+    display: block;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid #c6d3dc;
+    background: #eef5f8;
+    color: #274554;
+    font-weight: 700;
+}
+
 .workspace {
     padding: 18px 20px 24px;
+    transition: padding-right 160ms ease;
 }
 
 .trial-form {
@@ -278,6 +454,15 @@ h2 {
     gap: 18px;
     max-width: 1280px;
     margin: 0 auto;
+}
+
+body:has(.trial-guide-card[open]) .workspace {
+    padding-right: 380px;
+}
+
+body:has(.trial-guide-card[open]) .trial-form {
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .form-section,
@@ -531,6 +716,7 @@ textarea {
 
 .judge-visual-editor,
 .record-visual-editor,
+.entry-visual-editor,
 .secretary-visual-editor {
     background: #f7f8f8;
     border: 1px solid var(--line);
@@ -546,6 +732,15 @@ textarea {
     min-width: 792px;
     position: relative;
     width: 100%;
+}
+
+.entry-sheet-stage {
+    aspect-ratio: 396 / 612;
+    background: #fff;
+    border: 1px solid #d8dfdc;
+    min-width: 396px;
+    position: relative;
+    width: min(100%, 620px);
 }
 
 .secretary-page-stage {
@@ -570,6 +765,14 @@ textarea {
     width: 100%;
 }
 
+.entry-sheet-overlay {
+    display: block;
+    height: 100%;
+    inset: 0;
+    position: absolute;
+    width: 100%;
+}
+
 .judge-sheet-overlay,
 .record-sheet-overlay,
 .secretary-sheet-overlay {
@@ -582,6 +785,7 @@ textarea {
 }
 
 .judge-editor-item,
+.entry-editor-item,
 .record-editor-item,
 .record-row-height-item,
 .secretary-editor-item {
@@ -589,6 +793,8 @@ textarea {
 }
 
 .judge-editor-item:hover ellipse,
+.entry-editor-item:hover ellipse,
+.entry-editor-item:hover rect,
 .record-editor-item:hover rect:first-child,
 .secretary-editor-item:hover ellipse,
 .secretary-editor-item:hover rect:first-child {
@@ -1500,6 +1706,25 @@ button.danger-button {
     .active-trial {
         min-width: 0;
         margin-top: 14px;
+    }
+
+    .trial-guide-card {
+        margin-top: 12px;
+        min-width: 0;
+    }
+
+    .trial-guide-popover {
+        left: 0;
+        right: auto;
+        width: min(340px, 100%);
+    }
+
+    body:has(.trial-guide-card[open]) .workspace {
+        padding-right: 20px;
+    }
+
+    body:has(.trial-guide-card[open]) .trial-form {
+        margin-left: auto;
     }
 
     .sidebar {

@@ -12,8 +12,8 @@
             <h1>Field Trial Secretary</h1>
         </div>
         <nav class="main-tabs" aria-label="Trial areas">
-            <button type="button" class="tab-button active" data-tab-target="setup">Setup</button>
-            <button type="button" class="tab-button" data-tab-target="entries">Trial Entries</button>
+            <button type="button" class="tab-button active" data-tab-target="setup">Trials</button>
+            <button type="button" class="tab-button" data-tab-target="entries">Entries</button>
             <button type="button" class="tab-button" data-tab-target="runplan">Running Order</button>
             <button type="button" class="tab-button" data-tab-target="rollcall">Roll Call</button>
             <button type="button" class="tab-button" data-tab-target="scoring">Scoring</button>
@@ -24,6 +24,16 @@
             <span class="label">Active Trial</span>
             <strong>No trial selected</strong>
         </div>
+        <details class="trial-guide-card" id="trialGuideCard" open>
+            <summary>
+                <span>Trial Guide</span>
+                <strong id="trialGuideSummary">No trial selected</strong>
+            </summary>
+            <div class="trial-guide-popover">
+                <div class="trial-guide-next" id="trialGuideNext"></div>
+                <ol class="trial-guide-list" id="trialGuideList"></ol>
+            </div>
+        </details>
     </header>
 
     <nav class="sub-tabs" id="subTabs" aria-label="Area sections"></nav>
@@ -44,7 +54,12 @@
                             <h2>Trials</h2>
                             <p>Create or select the trial you are setting up.</p>
                         </div>
-                        <button class="secondary small" id="newTrialButton" type="button">New Trial</button>
+                        <div class="button-row">
+                            <label class="switch compact-switch"><input id="showArchivedTrials" type="checkbox"> <span>Show archived</span></label>
+                            <button class="secondary small" id="setSelectedActiveButton" type="button">Lock Active Trial</button>
+                            <button class="secondary small danger-button" id="deleteSelectedSetupTrialButton" type="button">Delete Selected</button>
+                            <button class="secondary small" id="newTrialButton" type="button">New Trial</button>
+                        </div>
                     </div>
                     <div class="trial-list" id="trialList"></div>
                 </section>
@@ -385,10 +400,72 @@
                         <select id="entryBreed"></select>
                         <input id="entryRegNumber" placeholder="Registration number">
                     </div>
+                    <div class="inline-entry">
+                        <select id="entryRegistry">
+                            <option value="">Primary registry</option>
+                            <option>AKC</option>
+                            <option>ASFA</option>
+                            <option>CKC</option>
+                            <option>FCI</option>
+                            <option>NGA</option>
+                            <option>UKC</option>
+                            <option>Foreign Registry</option>
+                            <option>Other</option>
+                        </select>
+                        <select id="entryRegType">
+                            <option value="">Registration type</option>
+                            <option>Regular</option>
+                            <option>PAL/ILP</option>
+                            <option>FSS</option>
+                            <option>Foreign</option>
+                            <option>Critique</option>
+                            <option>Other</option>
+                        </select>
+                        <select id="entryAltRegistry">
+                            <option value="">Alternate registry</option>
+                            <option>AKC</option>
+                            <option>ASFA</option>
+                            <option>CKC</option>
+                            <option>FCI</option>
+                            <option>NGA</option>
+                            <option>UKC</option>
+                            <option>Foreign Registry</option>
+                            <option>Other</option>
+                        </select>
+                        <input id="entryAltRegNumber" placeholder="Alternate registration number">
+                    </div>
+                    <div class="inline-entry">
+                        <input id="entryOwner" placeholder="Owner">
+                        <input id="entryOwnerEmail" type="email" placeholder="Owner email">
+                        <input id="entryOwnerPhone" placeholder="Owner phone">
+                        <input id="entryDob" type="date" title="Date of birth">
+                    </div>
+                    <div class="inline-entry">
+                        <select id="entrySex">
+                            <option value="">Sex</option>
+                            <option>Dog</option>
+                            <option>Bitch</option>
+                        </select>
+                        <input id="entryOwnerAddress" placeholder="Owner address">
+                        <input id="entryOwnerCity" placeholder="City">
+                        <input id="entryOwnerState" maxlength="2" placeholder="State">
+                        <input id="entryOwnerPostalCode" placeholder="ZIP/postal">
+                    </div>
+                    <div class="inline-entry">
+                        <input id="entryOwnerCountry" placeholder="Country">
+                        <input id="entryBreeder" placeholder="Breeder">
+                        <input id="entrySire" placeholder="Sire">
+                        <input id="entryDam" placeholder="Dam">
+                    </div>
                     <div class="switch-row">
                         <label class="switch"><input id="entryFirstTime" type="checkbox"> <span>First-time entry</span></label>
                         <label class="switch"><input id="entryCertRequired" type="checkbox"> <span>Certificate required</span></label>
                         <label class="switch"><input id="entryOwnerSeparation" type="checkbox"> <span>Separate owner hounds</span></label>
+                        <label class="switch"><input id="entryAdditionalKennel" type="checkbox"> <span>Kennel</span></label>
+                        <label class="switch"><input id="entryAdditionalBreeder" type="checkbox"> <span>Breeder</span></label>
+                        <label class="switch"><input id="entryAdditionalBench" type="checkbox"> <span>Bench</span></label>
+                        <label class="switch"><input id="entryInfoChanged" type="checkbox"> <span>Info changed</span></label>
+                        <label class="switch"><input id="entryDismissedLastSix" type="checkbox"> <span>Dismissed last 6</span></label>
                     </div>
                     <div class="grid two" id="entryFirstTimeDocs">
                         <label>
@@ -493,6 +570,7 @@
                                     <th>Trial(s)</th>
                                     <th>Handler</th>
                                     <th>Separate</th>
+                                    <th>Docs</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -539,8 +617,12 @@
                             <h2>Owner Separation</h2>
                             <p>Mark hounds that should be separated before the preliminary draw. Use the same letter for hounds linked together.</p>
                         </div>
-                        <button type="button" class="secondary small" id="autoOwnerSeparationButton">Auto Mark Multi-Hound Owners</button>
+                        <div class="button-row">
+                            <button type="button" class="secondary small" id="autoOwnerSeparationButton">Auto Mark Multi-Hound Owners</button>
+                            <button type="button" class="secondary small" id="markSeparationReviewedButton">Separation Reviewed</button>
+                        </div>
                     </div>
+                    <p class="field-note" id="ownerSeparationReviewedStatus">Owner separation has not been reviewed yet.</p>
                     <div id="ownerSeparationQuickList" class="owner-separation-list"></div>
                 </section>
 
@@ -676,12 +758,13 @@
                             <p>Create the complete end-of-trial ASFA record packet with all record sheets in order.</p>
                         </div>
                         <div class="button-row">
+                            <button type="button" class="secondary small report-button" id="printAsfaEntryFormsButton">Print First-Time Entry Forms</button>
                             <button type="button" class="secondary small report-button" id="printAsfaRecordPacketButton">Print ASFA Record Packet</button>
                         </div>
                     </div>
                     <div class="form-message compact" id="wrapUpMessage"></div>
                     <div class="info-panel">
-                        <p>The record packet uses the completed trial results, applies the ASFA record sheet alignment settings, splits large stakes across multiple record sheets, and includes refund/per-capita handling.</p>
+                        <p>The record packet uses completed results, ASFA record and entry-form alignment settings, splits large stakes across multiple record sheets, includes refund/per-capita handling, and inserts first-time entry forms before uploaded certificates.</p>
                     </div>
                 </section>
 
@@ -785,6 +868,23 @@
                         <p>The report also fills club, region, chair, secretary email, trial date, location, entry counts, and calculated ASFA fees from the active trial.</p>
                     </div>
                     <div class="stats-grid" id="secretaryFeeSummary"></div>
+                </section>
+
+                <section class="form-section" data-tab="wrapup">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Archive Trial</h2>
+                            <p>Create the final archive package, then lock the trial against accidental edits.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small report-button" id="createFinalArchiveButton" data-archive-allowed="true">Create Final Archive & Lock Trial</button>
+                            <button type="button" class="secondary small" id="unlockArchivedTrialButton" data-archive-allowed="true">Unlock Archived Trial</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="archiveTrialMessage"></div>
+                    <div class="info-panel" id="archiveTrialStatus">
+                        <p>Select a trial to see archive status.</p>
+                    </div>
                 </section>
 
                 <section class="form-section" data-tab="runplan">
@@ -1075,6 +1175,36 @@
                         <div class="record-visual-editor" id="asfaRecordVisualEditor"></div>
                         <iframe class="pdf-preview-frame" id="asfaRecordAlignmentPreview" title="ASFA record sheet preview"></iframe>
                     </div>
+                    <div class="tool-panel" id="asfaEntryAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>ASFA Entry Form Alignment</h3>
+                                <p>Adjust the filled-in values on the half-page first-time entry form.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAsfaEntryAlignmentButton">Preview Entry Form</button>
+                                <button type="button" class="secondary small" id="resetAsfaEntryAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="asfaEntryAlignmentControls"></div>
+                        <div class="entry-visual-editor" id="asfaEntryVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="asfaEntryAlignmentPreview" title="ASFA entry form preview"></iframe>
+                    </div>
+                    <div class="tool-panel" id="asfaLciEntryAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>ASFA LCI Entry Form Alignment</h3>
+                                <p>Adjust the filled-in values on the half-page ASFA LCI entry form.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAsfaLciEntryAlignmentButton">Preview LCI Entry Form</button>
+                                <button type="button" class="secondary small" id="resetAsfaLciEntryAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="asfaLciEntryAlignmentControls"></div>
+                        <div class="entry-visual-editor" id="asfaLciEntryVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="asfaLciEntryAlignmentPreview" title="ASFA LCI entry form preview"></iframe>
+                    </div>
                     <div class="tool-panel" id="asfaJudgeAlignmentTool">
                         <div class="section-heading with-action compact-heading">
                             <div>
@@ -1186,6 +1316,23 @@
                             <select id="adminDeleteTrial"></select>
                         </label>
                     </div>
+                    <div class="section-heading table-heading">
+                        <h2>Recover Deleted Trials</h2>
+                        <p>The last five deleted trials can be restored here.</p>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Deleted</th>
+                                    <th>Trial</th>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deletedTrialsTable"></tbody>
+                        </table>
+                    </div>
                 </section>
 
                 <section class="form-section" data-tab="admin" data-admin-page="Admin Test">
@@ -1197,12 +1344,14 @@
                         <button type="button" class="secondary small" id="enablePersistentStorageButton">Enable Protected Browser Storage</button>
                         <button type="button" class="secondary small" id="restoreBrowserBackupButton">Restore Browser Safety Backup</button>
                         <button type="button" class="secondary small" id="createSQLiteBackupButton">Create SQLite Backup</button>
+                        <button type="button" class="secondary small" id="createTransferPackageButton">Create Transfer Package</button>
+                        <button type="button" class="secondary small" id="restartServerButton">Restart App Server</button>
                         <button type="button" class="secondary small" id="exportDataBackupButton">Export Data Backup</button>
                         <button type="button" class="secondary small" id="importDataBackupButton">Import Data Backup</button>
                     </div>
                     <div class="form-message compact" id="storageSafetyMessage"></div>
                     <input id="importDataBackupFile" type="file" accept="application/json,.json" hidden>
-                    <p class="field-note">This exports trials, hounds, judges, workers, template status, and the active trial selection from this browser.</p>
+                    <p class="field-note">Create Transfer Package builds a zip with the portable program, current SQLite data, templates, and restore notes for moving to another computer.</p>
                 </section>
 
                 <section class="status-panel" data-tab="admin" data-admin-page="Paperwork">
@@ -1222,6 +1371,6 @@
     </main>
 
     <script src="asfa_recent_hounds.js"></script>
-    <script src="script.js?v=20260625-secretary-drag-align"></script>
+    <script src="script.js?v=20260627-server-restart"></script>
 </body>
 </html>

@@ -5,16 +5,19 @@ import base64
 import copy
 import io
 import json
+import subprocess
 import shutil
 import sqlite3
 import sys
 import threading
+import time
 import webbrowser
+import zipfile
 from datetime import datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import pypdfium2 as pdfium
 from pypdf import PdfReader, PdfWriter
@@ -28,6 +31,8 @@ APP_DIR = ROOT / "app"
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "field_trial_secretary.sqlite"
 DB_BACKUP_DIR = ROOT / "backups" / "database"
+TRIAL_ARCHIVE_DIR = ROOT / "backups" / "trial_archives"
+TRANSFER_PACKAGE_DIR = ROOT / "backups" / "transfer_packages"
 STATE_KEY = "current"
 MAX_DB_BACKUPS = 75
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
@@ -43,6 +48,10 @@ JUDGE_TEMPLATES = {
 }
 RECORD_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "SEC-01-Record-Sheet-Rev-03-02.pdf",
+}
+ENTRY_FORM_TEMPLATES = {
+    "ASFA": APP_DIR / "templates" / "asfa" / "EF-A-Entry-Form-Rev-06-26.pdf",
+    "ASFA_LCI": APP_DIR / "templates" / "asfa" / "EF-A-LCI-Entry-Form-Rev-08-24.pdf",
 }
 SECRETARY_REPORT_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "REC-25-Field-Trial-Secretary-Report-New-03-26.pdf",
@@ -241,6 +250,118 @@ DEFAULT_ASFA_SECRETARY_LAYOUT = {
     "paypalIdX": 348,
     "paypalIdY": 720,
 }
+DEFAULT_ASFA_ENTRY_LAYOUT = {
+    "fontSize": 8,
+    "smallFontSize": 6.5,
+    "circleWeight": 1.4,
+    "globalYAdjust": 0,
+    "copyOffsetX": 396,
+    "breedX": 54,
+    "breedY": 82,
+    "callNameX": 78,
+    "callNameY": 112,
+    "registeredNameX": 126,
+    "registeredNameY": 141,
+    "registrationX": 74,
+    "registrationY": 202,
+    "dobX": 276,
+    "dobY": 202,
+    "ownerX": 118,
+    "ownerY": 252,
+    "addressX": 74,
+    "addressY": 281,
+    "phoneX": 58,
+    "phoneY": 311,
+    "cityX": 48,
+    "cityY": 340,
+    "stateX": 232,
+    "stateY": 340,
+    "zipX": 302,
+    "zipY": 340,
+    "emailX": 58,
+    "emailY": 369,
+    "regionX": 288,
+    "regionY": 369,
+    "stakeCheckY": 169,
+    "openX": 70,
+    "fchX": 112,
+    "veteranX": 163,
+    "singlesX": 228,
+    "provisionalX": 296,
+    "kennelX": 70,
+    "kennelY": 184,
+    "breederX": 117,
+    "breederY": 184,
+    "benchX": 165,
+    "benchY": 184,
+    "dogX": 252,
+    "bitchX": 317,
+    "sexCheckY": 226,
+    "ownerSeparationX": 245,
+    "ownerSeparationY": 188,
+    "firstAsfaTrialX": 30,
+    "firstAsfaTrialY": 402,
+    "firstTimeEntryX": 30,
+    "firstTimeEntryY": 435,
+    "changeInfoX": 30,
+    "changeInfoY": 468,
+    "dismissedX": 30,
+    "dismissedY": 501,
+    "checkSize": 7,
+    "signatureX": 230,
+    "signatureY": 581,
+}
+DEFAULT_ASFA_LCI_ENTRY_LAYOUT = {
+    "fontSize": 8,
+    "smallFontSize": 6.5,
+    "circleWeight": 1.4,
+    "globalYAdjust": 0,
+    "copyOffsetX": 396,
+    "breedX": 54,
+    "breedY": 88,
+    "callNameX": 78,
+    "callNameY": 118,
+    "registeredNameX": 126,
+    "registeredNameY": 147,
+    "registrationX": 74,
+    "registrationY": 223,
+    "dobX": 276,
+    "dobY": 223,
+    "ownerX": 118,
+    "ownerY": 273,
+    "addressX": 74,
+    "addressY": 302,
+    "phoneX": 58,
+    "phoneY": 332,
+    "cityX": 48,
+    "cityY": 361,
+    "stateX": 232,
+    "stateY": 361,
+    "zipX": 302,
+    "zipY": 361,
+    "emailX": 58,
+    "emailY": 390,
+    "regionX": 288,
+    "regionY": 390,
+    "lciDivisionY": 171,
+    "lciSmallX": 82,
+    "lciLargeX": 174,
+    "lciMixX": 295,
+    "stakeCheckY": 196,
+    "openX": 83,
+    "excellentX": 176,
+    "veteranX": 272,
+    "dogX": 252,
+    "bitchX": 317,
+    "sexCheckY": 247,
+    "firstTimeEntryX": 30,
+    "firstTimeEntryY": 425,
+    "changeInfoX": 30,
+    "changeInfoY": 467,
+    "checkSize": 7,
+    "signatureX": 230,
+    "signatureY": 581,
+}
 
 
 def utc_now() -> str:
@@ -250,6 +371,7 @@ def utc_now() -> str:
 def ensure_database() -> None:
     DATA_DIR.mkdir(exist_ok=True)
     DB_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    TRIAL_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
@@ -319,6 +441,180 @@ def create_database_backup(reason: str) -> str:
     return str(backup_path)
 
 
+def safe_filename_part(value: object, fallback: str = "trial") -> str:
+    text = str(value or fallback).strip().lower()
+    cleaned = "".join(char if char.isalnum() else "-" for char in text)
+    cleaned = "-".join(part for part in cleaned.split("-") if part)
+    return cleaned or fallback
+
+
+def create_trial_archive_package(payload: dict) -> tuple[bytes, str, str]:
+    ensure_database()
+    trial = payload.get("trial")
+    state = payload.get("state")
+    if not isinstance(trial, dict):
+        raise ValueError("trial must be an object")
+    if not isinstance(state, dict):
+        raise ValueError("state must be an object")
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    trial_slug = safe_filename_part(
+        "_".join(str(trial.get(key) or "") for key in ("startsOn", "clubName", "trialName")).strip("_"),
+        "field-trial",
+    )
+    filename = f"{trial_slug}-final-archive-{timestamp}.zip"
+    archive_path = TRIAL_ARCHIVE_DIR / filename
+    sqlite_backup_path = Path(create_database_backup("final_trial_archive"))
+    notes: list[str] = [
+        f"Archive created: {utc_now()}",
+        f"Trial: {trial.get('trialName') or 'Untitled trial'}",
+        f"Club: {trial.get('clubName') or ''}",
+        f"Date: {trial.get('startsOn') or ''}",
+        "",
+        "The SQLite backup contains the uploaded first-time-entry documents stored in the entry_documents table.",
+    ]
+
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(sqlite_backup_path, f"database/{sqlite_backup_path.name}")
+        archive.writestr("trial-data/trial.json", json.dumps(trial, ensure_ascii=False, indent=2))
+        archive.writestr("trial-data/full-state.json", json.dumps(state, ensure_ascii=False, indent=2))
+
+        if clean_text(trial.get("association") or "ASFA") == "ASFA":
+            record_layout = payload.get("recordLayout") if isinstance(payload.get("recordLayout"), dict) else None
+            secretary_layout = payload.get("secretaryLayout") if isinstance(payload.get("secretaryLayout"), dict) else None
+            try:
+                entry_layout = payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None
+                lci_entry_layout = payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None
+                archive.writestr("reports/asfa-record-packet.pdf", generate_asfa_record_sheet_pdf(trial, "", "", record_layout, "alpha", entry_layout, lci_entry_layout))
+            except Exception as exc:
+                notes.append(f"ASFA record packet was not generated: {exc}")
+            try:
+                archive.writestr("reports/asfa-secretary-report.pdf", generate_asfa_secretary_report_pdf(trial, secretary_layout))
+            except Exception as exc:
+                notes.append(f"ASFA secretary report was not generated: {exc}")
+
+        archive.writestr("README.txt", "\n".join(notes) + "\n")
+
+    return archive_path.read_bytes(), filename, str(archive_path)
+
+
+def should_skip_transfer_file(path: Path) -> bool:
+    parts = set(path.relative_to(ROOT).parts)
+    return bool(parts & {".git", ".agents", ".codex", "__pycache__", "build", "tmp", "output", "transfer_packages"})
+
+
+def add_directory_to_archive(archive: zipfile.ZipFile, source: Path, prefix: str) -> None:
+    if not source.exists():
+        return
+    for path in source.rglob("*"):
+        if not path.is_file() or should_skip_transfer_file(path):
+            continue
+        archive.write(path, f"{prefix}/{path.relative_to(source).as_posix()}")
+
+
+def latest_portable_zip() -> Path | None:
+    portable_dir = ROOT / "portable"
+    if not portable_dir.exists():
+        return None
+    zips = sorted(portable_dir.glob("*.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return zips[0] if zips else None
+
+
+def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
+    ensure_database()
+    state = payload.get("state")
+    if state is not None and not isinstance(state, dict):
+        raise ValueError("state must be an object")
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"field-trial-secretary-transfer-{timestamp}.zip"
+    TRANSFER_PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
+    package_path = TRANSFER_PACKAGE_DIR / filename
+    sqlite_backup_path = Path(create_database_backup("transfer_package"))
+    portable_zip = latest_portable_zip()
+    include_runnable = portable_zip is not None
+
+    notes = [
+        "Field Trial Secretary Transfer Package",
+        f"Created: {utc_now()}",
+        "",
+        "What is included:",
+        "- current SQLite database and a fresh SQLite backup",
+        "- browser/state JSON backup",
+        "- app files, templates, server code, scripts, and documentation",
+        "- latest portable program zip when it exists",
+        "",
+        "Move to another computer:",
+        "1. Copy this zip to the other computer.",
+        "2. Extract the zip into a normal folder, not directly inside Downloads if Windows blocks it.",
+        "3. If the package contains portable/, extract the portable zip on the new computer and run the app from that extracted folder.",
+        "4. If using source mode instead, install Python dependencies or use the existing portable build process.",
+        "5. Keep the database folder with the program folder. It contains trial data and uploaded first-time-entry documents.",
+        "",
+        "Important: create a fresh transfer package after making program changes or entering new trial data.",
+    ]
+    if not include_runnable:
+        notes.append("")
+        notes.append("No portable zip was found, so this package includes source files and data but not a no-Python runnable build.")
+
+    root_files = [
+        "server.py",
+        "start_field_trial_secretary.ps1",
+        "build_portable_package.ps1",
+        "backup_field_trial_secretary.ps1",
+        "FieldTrialSecretary.spec",
+        "README.md",
+        "BACKUP_AND_TRANSFER.md",
+        "PHASE_1_SQLITE_MODE.md",
+        "TRIAL_DAY_DATA_SAFETY.md",
+    ]
+
+    with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("README-TRANSFER.txt", "\n".join(notes) + "\n")
+        if state is not None:
+            archive.writestr("data/state-export.json", json.dumps(state, ensure_ascii=False, indent=2))
+        if DB_PATH.exists():
+            archive.write(DB_PATH, "data/field_trial_secretary.sqlite")
+        archive.write(sqlite_backup_path, f"backups/database/{sqlite_backup_path.name}")
+
+        for file_name in root_files:
+            path = ROOT / file_name
+            if path.exists() and path.is_file():
+                archive.write(path, file_name)
+
+        add_directory_to_archive(archive, APP_DIR, "app")
+        add_directory_to_archive(archive, ROOT / "database", "database")
+        if portable_zip:
+            archive.write(portable_zip, f"portable/{portable_zip.name}")
+
+    return package_path.read_bytes(), filename, str(package_path)
+
+
+def restart_command(host: str, port: int) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--host", host, "--port", str(port)]
+    return [sys.executable, str(ROOT / "server.py"), "--host", host, "--port", str(port)]
+
+
+def restart_server(server: ThreadingHTTPServer) -> None:
+    host, port = server.server_address[:2]
+    host = str(host or "127.0.0.1")
+    command = restart_command(host, int(port))
+    time.sleep(0.4)
+    server.shutdown()
+    server.server_close()
+    time.sleep(1.0)
+    kwargs = {
+        "cwd": str(ROOT),
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if sys.platform.startswith("win"):
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    subprocess.Popen(command, **kwargs)
+
+
 def write_state(state: dict) -> dict:
     ensure_database()
     if DB_PATH.exists():
@@ -355,6 +651,30 @@ def render_template_page_png(template_path: Path, cache_key: str, page_index: in
             image = bitmap.to_pil()
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
+            body = buffer.getvalue()
+            TEMPLATE_IMAGE_CACHE[cache_key] = body
+            return body
+        finally:
+            document.close()
+
+
+def render_template_half_page_png(template_path: Path, cache_key: str, split_x: float, page_index: int = 0) -> bytes:
+    with TEMPLATE_IMAGE_LOCK:
+        cached = TEMPLATE_IMAGE_CACHE.get(cache_key)
+        if cached:
+            return cached
+        if not template_path.exists():
+            raise FileNotFoundError(f"Template not found: {template_path}")
+        document = pdfium.PdfDocument(str(template_path))
+        try:
+            page = document[page_index]
+            bitmap = page.render(scale=2)
+            image = bitmap.to_pil()
+            page_width = float(page.get_width())
+            split_pixels = int((split_x / page_width) * image.width)
+            cropped = image.crop((0, 0, split_pixels, image.height))
+            buffer = io.BytesIO()
+            cropped.save(buffer, format="PNG")
             body = buffer.getvalue()
             TEMPLATE_IMAGE_CACHE[cache_key] = body
             return body
@@ -739,7 +1059,15 @@ def generate_bif_judge_sheets_pdf(trial: dict, layout: dict | None = None) -> by
     return output.getvalue()
 
 
-def generate_asfa_record_sheet_pdf(trial: dict, group_id: str = "", breed: str = "", layout: dict | None = None, sort_mode: str = "") -> bytes:
+def generate_asfa_record_sheet_pdf(
+    trial: dict,
+    group_id: str = "",
+    breed: str = "",
+    layout: dict | None = None,
+    sort_mode: str = "",
+    entry_layout: dict | None = None,
+    lci_entry_layout: dict | None = None,
+) -> bytes:
     template_path = RECORD_TEMPLATES["ASFA"]
     if not template_path.exists():
         raise FileNotFoundError(f"ASFA record sheet template not found: {template_path}")
@@ -771,7 +1099,7 @@ def generate_asfa_record_sheet_pdf(trial: dict, group_id: str = "", breed: str =
             ))).pages[0]
             page.merge_page(overlay)
             writer.add_page(page)
-        append_first_time_documents_for_group(writer, trial, group)
+        append_first_time_documents_for_group(writer, trial, group, entry_layout, lci_entry_layout)
 
     if not writer.pages:
         raise ValueError("No ASFA record sheet pages could be created.")
@@ -795,6 +1123,30 @@ def generate_asfa_secretary_report_pdf(trial: dict, layout: dict | None = None) 
         if index in {0, 1}:
             overlay = PdfReader(io.BytesIO(build_asfa_secretary_report_overlay(trial, page, index, layout_settings))).pages[0]
             page.merge_page(overlay)
+        writer.add_page(page)
+
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def generate_asfa_entry_forms_pdf(trial: dict, entry_id: str = "", layout: dict | None = None, lci_layout: dict | None = None) -> bytes:
+    entries = first_time_entries_for_print(trial, entry_id)
+    if not entries:
+        raise ValueError("No first-time ASFA entries were found for entry forms.")
+
+    writer = PdfWriter()
+    regular_layout = asfa_entry_layout(layout)
+    lci_layout_settings = asfa_lci_entry_layout(lci_layout)
+    for entry in entries:
+        template_path = ENTRY_FORM_TEMPLATES["ASFA_LCI"] if is_lci_entry(entry) else ENTRY_FORM_TEMPLATES["ASFA"]
+        if not template_path.exists():
+            raise FileNotFoundError(f"ASFA entry form template not found: {template_path}")
+        layout_settings = lci_layout_settings if is_lci_entry(entry) else regular_layout
+        page = fresh_half_page_template(template_path, layout_settings["copyOffsetX"])
+        overlay_bytes = build_asfa_lci_entry_form_overlay(trial, entry, page, layout_settings) if is_lci_entry(entry) else build_asfa_entry_form_overlay(trial, entry, page, layout_settings)
+        overlay = PdfReader(io.BytesIO(overlay_bytes)).pages[0]
+        page.merge_page(overlay)
         writer.add_page(page)
 
     output = io.BytesIO()
@@ -853,6 +1205,42 @@ def asfa_judge_layout(layout: dict | None) -> dict:
     return merged
 
 
+def asfa_entry_layout(layout: dict | None) -> dict:
+    merged = dict(DEFAULT_ASFA_ENTRY_LAYOUT)
+    if isinstance(layout, dict):
+        if not layout.get("stakeCheckY") and layout.get("stakeCircleY"):
+            layout = {**layout, "stakeCheckY": layout.get("stakeCircleY")}
+        if not layout.get("sexCheckY") and layout.get("sexY"):
+            layout = {**layout, "sexCheckY": layout.get("sexY")}
+        for key in merged:
+            try:
+                value = float(layout.get(key))
+            except (TypeError, ValueError):
+                continue
+            if key in {"globalYAdjust", "rightFormXAdjust", "rightFormYAdjust"}:
+                merged[key] = value
+            elif value > 0:
+                merged[key] = value
+    return merged
+
+
+def asfa_lci_entry_layout(layout: dict | None) -> dict:
+    merged = dict(DEFAULT_ASFA_LCI_ENTRY_LAYOUT)
+    if isinstance(layout, dict):
+        if not layout.get("sexCheckY") and layout.get("sexY"):
+            layout = {**layout, "sexCheckY": layout.get("sexY")}
+        for key in merged:
+            try:
+                value = float(layout.get(key))
+            except (TypeError, ValueError):
+                continue
+            if key == "globalYAdjust":
+                merged[key] = value
+            elif value > 0:
+                merged[key] = value
+    return merged
+
+
 def asfa_secretary_layout(layout: dict | None) -> dict:
     merged = dict(DEFAULT_ASFA_SECRETARY_LAYOUT)
     if isinstance(layout, dict):
@@ -866,6 +1254,255 @@ def asfa_secretary_layout(layout: dict | None) -> dict:
             elif value > 0:
                 merged[key] = value
     return merged
+
+
+def first_time_entries_for_print(trial: dict, entry_id: str = "") -> list[dict]:
+    entries = [entry for entry in trial.get("entries") or [] if bool(entry.get("firstTime"))]
+    if entry_id:
+        entries = [entry for entry in entries if str(entry.get("id") or "") == str(entry_id)]
+    return sorted(entries, key=lambda entry: (
+        str(run_group_breed_for_entry(entry)).upper(),
+        str(run_group_stake_for_entry(entry)).upper(),
+        str(entry.get("callName") or entry.get("registeredName") or "").upper(),
+    ))
+
+
+def build_asfa_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) -> bytes:
+    buffer = io.BytesIO()
+    width = float(page.mediabox.width)
+    height = float(page.mediabox.height)
+    pdf = canvas.Canvas(buffer, pagesize=(width, height))
+    pdf.setTitle("ASFA First-Time Entry Form")
+    pdf.setFillColorRGB(0.75, 0, 0)
+    pdf.setStrokeColorRGB(0.75, 0, 0)
+    pdf.setFont("Helvetica", layout["fontSize"])
+
+    draw_asfa_entry_text(pdf, layout, "breed", run_group_breed_for_entry(entry), 20)
+    draw_asfa_entry_text(pdf, layout, "callName", entry.get("callName") or entry.get("registeredName"), 24)
+    draw_asfa_entry_text(pdf, layout, "registeredName", entry.get("registeredName") or entry.get("callName"), 34)
+    draw_asfa_entry_text(pdf, layout, "registration", entry_registration_text(entry), 28)
+    draw_asfa_entry_text(pdf, layout, "dob", entry.get("dob"), 12)
+    draw_asfa_entry_text(pdf, layout, "owner", entry.get("owner"), 34)
+    draw_asfa_entry_text(pdf, layout, "address", entry_address_line(entry), 38)
+    draw_asfa_entry_text(pdf, layout, "phone", entry.get("ownerPhone"), 18)
+    draw_asfa_entry_text(pdf, layout, "city", entry.get("ownerCity"), 20)
+    draw_asfa_entry_text(pdf, layout, "state", entry.get("ownerState"), 4)
+    draw_asfa_entry_text(pdf, layout, "zip", entry.get("ownerPostalCode"), 10)
+    draw_asfa_entry_text(pdf, layout, "email", entry.get("ownerEmail"), 30)
+    draw_asfa_entry_text(pdf, layout, "region", trial.get("region"), 8)
+
+    draw_asfa_entry_stake_mark(pdf, layout, run_group_stake_for_entry(entry))
+    if entry_flag(entry, "additionalKennel"):
+        draw_asfa_entry_check(pdf, layout, "kennel")
+    if entry_flag(entry, "additionalBreeder"):
+        draw_asfa_entry_check(pdf, layout, "breeder")
+    if entry_flag(entry, "additionalBench"):
+        draw_asfa_entry_check(pdf, layout, "bench")
+    draw_asfa_entry_sex_mark(pdf, layout, entry.get("sex"))
+    if entry.get("ownerSeparationRequested"):
+        draw_asfa_entry_check(pdf, layout, "ownerSeparation")
+    if not is_quasi_breed_entry(entry):
+        draw_asfa_entry_check(pdf, layout, "firstAsfaTrial")
+    draw_asfa_entry_check(pdf, layout, "firstTimeEntry")
+    if entry_flag(entry, "infoChanged"):
+        draw_asfa_entry_check(pdf, layout, "changeInfo")
+    if entry_flag(entry, "dismissedLastSix"):
+        draw_asfa_entry_check(pdf, layout, "dismissed")
+    draw_asfa_entry_signature(pdf, layout, entry)
+    pdf.save()
+    return buffer.getvalue()
+
+
+def build_asfa_lci_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) -> bytes:
+    buffer = io.BytesIO()
+    width = float(page.mediabox.width)
+    height = float(page.mediabox.height)
+    pdf = canvas.Canvas(buffer, pagesize=(width, height))
+    pdf.setTitle("ASFA LCI First-Time Entry Form")
+    pdf.setFillColorRGB(0.75, 0, 0)
+    pdf.setStrokeColorRGB(0.75, 0, 0)
+    pdf.setFont("Helvetica", layout["fontSize"])
+
+    draw_asfa_lci_entry_text(pdf, layout, "breed", run_group_breed_for_entry(entry), 20)
+    draw_asfa_lci_entry_text(pdf, layout, "callName", entry.get("callName") or entry.get("registeredName"), 24)
+    draw_asfa_lci_entry_text(pdf, layout, "registeredName", entry.get("registeredName") or entry.get("callName"), 34)
+    draw_asfa_lci_entry_text(pdf, layout, "registration", entry_registration_text(entry), 28)
+    draw_asfa_lci_entry_text(pdf, layout, "dob", entry.get("dob"), 12)
+    draw_asfa_lci_entry_text(pdf, layout, "owner", entry.get("owner"), 34)
+    draw_asfa_lci_entry_text(pdf, layout, "address", entry_address_line(entry), 38)
+    draw_asfa_lci_entry_text(pdf, layout, "phone", entry.get("ownerPhone"), 18)
+    draw_asfa_lci_entry_text(pdf, layout, "city", entry.get("ownerCity"), 20)
+    draw_asfa_lci_entry_text(pdf, layout, "state", entry.get("ownerState"), 4)
+    draw_asfa_lci_entry_text(pdf, layout, "zip", entry.get("ownerPostalCode"), 10)
+    draw_asfa_lci_entry_text(pdf, layout, "email", entry.get("ownerEmail"), 30)
+    draw_asfa_lci_entry_text(pdf, layout, "region", trial.get("region"), 8)
+
+    draw_asfa_lci_division_mark(pdf, layout, entry)
+    draw_asfa_lci_stake_mark(pdf, layout, run_group_stake_for_entry(entry))
+    draw_asfa_lci_sex_mark(pdf, layout, entry.get("sex"))
+    draw_asfa_entry_check(pdf, layout, "firstTimeEntry")
+    if entry_flag(entry, "infoChanged"):
+        draw_asfa_entry_check(pdf, layout, "changeInfo")
+    draw_asfa_entry_signature(pdf, layout, entry)
+    pdf.save()
+    return buffer.getvalue()
+
+
+def draw_asfa_entry_text(pdf: canvas.Canvas, layout: dict, key: str, value: object, limit: int) -> None:
+    if not value:
+        return
+    font_size = layout["smallFontSize"] if key in {"registration", "email", "address"} else layout["fontSize"]
+    pdf.setFont("Helvetica", font_size)
+    pdf.drawString(layout[f"{key}X"], y_from_top(asfa_entry_y(layout, f"{key}Y")), safe_text(value, limit))
+
+
+def draw_asfa_lci_entry_text(pdf: canvas.Canvas, layout: dict, key: str, value: object, limit: int) -> None:
+    draw_asfa_entry_text(pdf, layout, key, value, limit)
+
+
+def draw_asfa_entry_stake_mark(pdf: canvas.Canvas, layout: dict, stake: object) -> None:
+    normalized = clean_text(stake)
+    if "VETERAN" in normalized:
+        x_key = "veteranX"
+    elif normalized in {"FCH", "FIELDCHAMPION", "EXCELLENT"}:
+        x_key = "fchX"
+    elif normalized == "SINGLES":
+        x_key = "singlesX"
+    elif normalized == "PROVISIONAL":
+        x_key = "provisionalX"
+    else:
+        x_key = "openX"
+    draw_asfa_entry_check_at(pdf, layout, layout[x_key], y_from_top(asfa_entry_y(layout, "stakeCheckY")))
+
+
+def draw_asfa_entry_sex_mark(pdf: canvas.Canvas, layout: dict, sex: object) -> None:
+    normalized = clean_text(sex)
+    if normalized not in {"DOG", "MALE", "BITCH", "FEMALE"}:
+        return
+    x_key = "bitchX" if normalized in {"BITCH", "FEMALE"} else "dogX"
+    draw_asfa_entry_check_at(pdf, layout, layout[x_key], y_from_top(asfa_entry_y(layout, "sexCheckY")))
+
+
+def draw_asfa_lci_division_mark(pdf: canvas.Canvas, layout: dict, entry: dict) -> None:
+    breed = clean_text(run_group_breed_for_entry(entry))
+    if breed == "LCISMALL":
+        x_key = "lciSmallX"
+    elif breed == "LCILARGE":
+        x_key = "lciLargeX"
+    else:
+        x_key = "lciMixX"
+    draw_asfa_entry_check_at(pdf, layout, layout[x_key], y_from_top(asfa_entry_y(layout, "lciDivisionY")))
+
+
+def draw_asfa_lci_stake_mark(pdf: canvas.Canvas, layout: dict, stake: object) -> None:
+    normalized = clean_text(stake)
+    if "VETERAN" in normalized:
+        x_key = "veteranX"
+    elif "EXCELLENT" in normalized:
+        x_key = "excellentX"
+    else:
+        x_key = "openX"
+    draw_asfa_entry_check_at(pdf, layout, layout[x_key], y_from_top(asfa_entry_y(layout, "stakeCheckY")))
+
+
+def draw_asfa_lci_sex_mark(pdf: canvas.Canvas, layout: dict, sex: object) -> None:
+    draw_asfa_entry_sex_mark(pdf, layout, sex)
+
+
+def draw_asfa_entry_check(pdf: canvas.Canvas, layout: dict, key: str) -> None:
+    x = layout[f"{key}X"]
+    y = y_from_top(asfa_entry_y(layout, f"{key}Y"))
+    draw_asfa_entry_check_at(pdf, layout, x, y)
+
+
+def draw_asfa_entry_check_at(pdf: canvas.Canvas, layout: dict, x: float, y: float) -> None:
+    size = layout["checkSize"]
+    pdf.setLineWidth(layout["circleWeight"])
+    pdf.rect(x, y - size + 2, size, size, stroke=1, fill=0)
+    pdf.setFont("Helvetica-Bold", max(6, size))
+    pdf.drawString(x + 1.2, y - size + 2.2, "X")
+
+
+def draw_asfa_entry_signature(pdf: canvas.Canvas, layout: dict, entry: dict) -> None:
+    signature = str(entry.get("signatureName") or entry.get("owner") or "").strip()
+    if not signature:
+        return
+    pdf.setFont("Helvetica", layout["fontSize"])
+    pdf.drawString(layout["signatureX"], y_from_top(asfa_entry_y(layout, "signatureY")), safe_text(signature, 30))
+
+
+def asfa_entry_y(layout: dict, key: str) -> float:
+    return Number_or_zero(layout.get(key)) + Number_or_zero(layout.get("globalYAdjust"))
+
+
+def Number_or_zero(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def entry_registration_text(entry: dict) -> str:
+    registry = str(entry.get("registry") or "").strip()
+    number = str(entry.get("registrationNumber") or "").strip()
+    reg_type = str(entry.get("registrationType") or "").strip()
+    pieces = [piece for piece in (registry, number) if piece]
+    text = " ".join(pieces)
+    return f"{text} ({reg_type})" if text and reg_type else text
+
+
+def entry_address_line(entry: dict) -> str:
+    return " ".join(str(entry.get(key) or "").strip() for key in ("ownerAddress", "ownerCountry") if str(entry.get(key) or "").strip())
+
+
+def entry_flag(entry: dict, key: str) -> bool:
+    value = entry.get(key)
+    if isinstance(value, bool):
+        return value
+    return clean_text(value) in {"YES", "Y", "TRUE", "1", "CHECKED"}
+
+
+def run_group_breed_for_entry(entry: dict) -> str:
+    lci = parse_lci_class(entry.get("className"))
+    if lci:
+        return lci["division"]
+    if clean_text(entry.get("className")) == "SINGLES":
+        return "Singles"
+    return str(entry.get("breed") or "Unknown")
+
+
+def run_group_stake_for_entry(entry: dict) -> str:
+    lci = parse_lci_class(entry.get("className"))
+    if lci:
+        return lci["stake"]
+    if clean_text(entry.get("className")) == "SINGLES":
+        return "Singles"
+    return str(entry.get("className") or "Open")
+
+
+def parse_lci_class(value: object) -> dict | None:
+    label = str(value or "").strip()
+    normalized = clean_text(label)
+    divisions = {
+        "LCISMALL": "LCI Small",
+        "LCILARGE": "LCI Large",
+        "LCISIGHTHOUNDMIX": "LCI Sighthound Mix",
+        "LCISHMIX": "LCI Sighthound Mix",
+    }
+    for key, division in divisions.items():
+        if normalized.startswith(key):
+            remainder = normalized.removeprefix(key)
+            stake = "Veteran" if "VETERAN" in remainder else "Excellent" if "EXCELLENT" in remainder else "Open"
+            return {"division": division, "stake": stake}
+    return None
+
+
+def is_quasi_breed_entry(entry: dict) -> bool:
+    return clean_text(run_group_breed_for_entry(entry)) == "SINGLES" or clean_text(run_group_breed_for_entry(entry)).startswith("LCI")
+
+
+def is_lci_entry(entry: dict) -> bool:
+    return clean_text(run_group_breed_for_entry(entry)).startswith("LCI") or clean_text(entry.get("className")).startswith("LCI")
 
 
 def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "") -> list[dict]:
@@ -969,13 +1606,16 @@ def final_codes_by_entry(group: dict) -> dict[str, str]:
     return codes
 
 
-def append_first_time_documents_for_group(writer: PdfWriter, trial: dict, group: dict) -> None:
+def append_first_time_documents_for_group(writer: PdfWriter, trial: dict, group: dict, entry_layout: dict | None = None, lci_entry_layout: dict | None = None) -> None:
     entries_by_id = {str(entry.get("id") or ""): entry for entry in trial.get("entries") or []}
     seen_documents: set[str] = set()
+    layout_settings = asfa_entry_layout(entry_layout)
+    lci_layout_settings = asfa_lci_entry_layout(lci_entry_layout)
     for entry_id in group_entry_ids(group):
         entry = entries_by_id.get(entry_id)
         if not entry or not bool(entry.get("firstTime")):
             continue
+        append_asfa_entry_form_for_entry(writer, trial, entry, lci_layout_settings if is_lci_entry(entry) else layout_settings)
         for document_id in first_time_document_ids_for_entry(entry, group):
             if not document_id or document_id in seen_documents:
                 continue
@@ -984,6 +1624,20 @@ def append_first_time_documents_for_group(writer: PdfWriter, trial: dict, group:
             if not document:
                 continue
             append_document_to_writer(writer, document)
+
+
+def append_asfa_entry_form_for_entry(writer: PdfWriter, trial: dict, entry: dict, layout: dict) -> None:
+    template_path = ENTRY_FORM_TEMPLATES["ASFA_LCI"] if is_lci_entry(entry) else ENTRY_FORM_TEMPLATES["ASFA"]
+    if not template_path.exists():
+        return
+    try:
+        page = fresh_half_page_template(template_path, layout["copyOffsetX"])
+        overlay_bytes = build_asfa_lci_entry_form_overlay(trial, entry, page, layout) if is_lci_entry(entry) else build_asfa_entry_form_overlay(trial, entry, page, layout)
+        overlay = PdfReader(io.BytesIO(overlay_bytes)).pages[0]
+        page.merge_page(overlay)
+        writer.add_page(page)
+    except Exception:
+        return
 
 
 def group_entry_ids(group: dict) -> list[str]:
@@ -1499,6 +2153,15 @@ def fresh_template_page(template_path: Path):
     return page
 
 
+def fresh_half_page_template(template_path: Path, split_x: float):
+    page = fresh_template_page(template_path)
+    page.mediabox.lower_left = (0, 0)
+    page.mediabox.upper_right = (split_x, float(page.mediabox.height))
+    page.cropbox.lower_left = (0, 0)
+    page.cropbox.upper_right = (split_x, float(page.mediabox.height))
+    return page
+
+
 def flatten_judge_courses(trial: dict) -> list[dict]:
     judges_by_breed = {
         clean_text(row.get("breed")): [value for value in [row.get("judge1"), row.get("judge2")] if value]
@@ -1913,10 +2576,32 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_zip(self, body: bytes, filename: str, archive_path: str = "") -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        if archive_path:
+            self.send_header("X-Archive-Path", archive_path)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def send_png(self, body: bytes, filename: str) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "image/png")
         self.send_header("Content-Disposition", f'inline; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_stored_document(self, document: dict) -> None:
+        body = document.get("content") or b""
+        filename = str(document.get("fileName") or "entry-document")
+        mime_type = str(document.get("mimeType") or "application/octet-stream")
+        safe_filename = filename.replace('"', "")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Disposition", f'inline; filename="{safe_filename}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1944,6 +2629,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/template-image/asfa-entry":
+            try:
+                body = render_template_half_page_png(ENTRY_FORM_TEMPLATES["ASFA"], "asfa-entry-half", DEFAULT_ASFA_ENTRY_LAYOUT["copyOffsetX"])
+                self.send_png(body, "asfa-entry-form-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/template-image/asfa-secretary-1":
             try:
                 body = render_template_page_png(SECRETARY_REPORT_TEMPLATES["ASFA"], "asfa-secretary-1", 0)
@@ -1957,6 +2649,14 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 self.send_png(body, "asfa-secretary-report-page-2.png")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path.startswith("/api/document/"):
+            document_id = unquote(parsed.path.removeprefix("/api/document/"))
+            document = read_entry_document(document_id)
+            if not document:
+                self.send_json({"ok": False, "error": "Document not found."}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_stored_document(document)
             return
         super().do_GET()
 
@@ -1981,6 +2681,37 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": True, "backupPath": backup_path})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/restart":
+            try:
+                threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
+                self.send_json({"ok": True, "message": "Restarting app server."})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/trial-archive":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("archive payload must be an object")
+                body, filename, archive_path = create_trial_archive_package(payload)
+                self.send_zip(body, filename, archive_path)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/transfer-package":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("transfer payload must be an object")
+                body, filename, archive_path = create_transfer_package(payload)
+                self.send_zip(body, filename, archive_path)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if parsed.path == "/api/document":
             length = int(self.headers.get("Content-Length", "0"))
@@ -2093,6 +2824,8 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     str(payload.get("breed") or ""),
                     payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
                     str(payload.get("sortMode") or ""),
+                    payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None,
+                    payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None,
                 )
                 self.send_pdf(pdf, "asfa-record-sheet.pdf")
             except Exception as exc:
@@ -2112,8 +2845,28 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     "",
                     payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
                     "alpha",
+                    payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None,
+                    payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None,
                 )
                 self.send_pdf(pdf, "asfa-record-sheet-packet.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/asfa-entry-forms":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+                trial = payload.get("trial")
+                if not isinstance(trial, dict):
+                    raise ValueError("trial must be an object")
+                pdf = generate_asfa_entry_forms_pdf(
+                    trial,
+                    str(payload.get("entryId") or ""),
+                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
+                    payload.get("lciLayout") if isinstance(payload.get("lciLayout"), dict) else None,
+                )
+                self.send_pdf(pdf, "asfa-first-time-entry-forms.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return

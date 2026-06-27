@@ -5,13 +5,16 @@ const workerStorageKey = 'fieldTrialSecretary.masterWorkers.v1';
 const formTemplateStatusKey = 'fieldTrialSecretary.formTemplateStatus.v1';
 const formAlignmentKey = 'fieldTrialSecretary.formAlignment.v1';
 const entryImportTemplateKey = 'fieldTrialSecretary.entryImportTemplates.v1';
+const deletedTrialsKey = 'fieldTrialSecretary.deletedTrials.v1';
 const activeKey = 'fieldTrialSecretary.activeTrialId.v1';
+const activeLockKey = 'fieldTrialSecretary.activeTrialLocked.v1';
 const buttonHelpText = {
     markScoringCompleteButton: 'Checks that every preliminary result has a score or outcome, then marks prelims complete and locks them. Use this before building finals so posted prelim results are protected.',
     togglePrelimLockButton: 'Locks or unlocks preliminary score entry only. Use Unlock Prelims when correcting a mistake; it does not by itself mark prelims complete.',
     toggleFinalsLockButton: 'Locks or unlocks finals score entry. Use Unlock Finals only when correcting a finals score or outcome.',
     buildPreliminaryDrawButton: 'Creates the randomized preliminary draw from present roll-call hounds, with Singles and LCI handled as their own run groups.',
     autoOwnerSeparationButton: 'Finds owners with more than one hound in the same breed/stake group and assigns owner separation letters before the preliminary draw.',
+    markSeparationReviewedButton: 'Marks owner separation as reviewed for this trial. Use this after auto-marking or manually checking same-owner hounds before the preliminary draw.',
     printDrawSheetButton: 'Creates the official posted draw order sheet for the current preliminary draw.',
     printJudgeSheetsButton: 'Creates preliminary judge sheets for the courses and judges assigned in the run plan.',
     createAdminTestTrialButton: 'Creates a realistic test trial with hounds, judges, workers, and a starter run plan.',
@@ -22,6 +25,7 @@ const buttonHelpText = {
     printAllRunoffJudgeSheetsButton: 'Prints judge sheets for the current runoff order after colors have been drawn.',
     printBifJudgeSheetsButton: 'Prints judge sheets for the current BIF draw using the BIF judges assigned on this page.',
     setActiveButton: 'Makes this the active trial shown at the top of the app.',
+    setSelectedActiveButton: 'Locks the selected trial as the working trial. Unlock it before switching to a different trial.',
     newTrialButton: 'Starts a new trial setup record.',
     saveTrialButton: 'Saves the current trial details.',
 };
@@ -30,9 +34,15 @@ const form = document.getElementById('trialForm');
 const trialList = document.getElementById('trialList');
 const activeTrialBadge = document.getElementById('activeTrialBadge');
 const workflowStrip = document.getElementById('workflowStrip');
+const trialGuideCard = document.getElementById('trialGuideCard');
+const trialGuideSummary = document.getElementById('trialGuideSummary');
+const trialGuideNext = document.getElementById('trialGuideNext');
+const trialGuideList = document.getElementById('trialGuideList');
 const subTabs = document.getElementById('subTabs');
 const newTrialButton = document.getElementById('newTrialButton');
 const setActiveButton = document.getElementById('setActiveButton');
+const setSelectedActiveButton = document.getElementById('setSelectedActiveButton');
+const deleteSelectedSetupTrialButton = document.getElementById('deleteSelectedSetupTrialButton');
 const setupChecklist = document.getElementById('setupChecklist');
 const checklistSummary = document.getElementById('checklistSummary');
 const formMessage = document.getElementById('formMessage');
@@ -47,9 +57,12 @@ const bifMessage = document.getElementById('bifMessage');
 const mainResultsMessage = document.getElementById('mainResultsMessage');
 const wrapUpMessage = document.getElementById('wrapUpMessage');
 const wrapUpSecretaryMessage = document.getElementById('wrapUpSecretaryMessage');
+const archiveTrialMessage = document.getElementById('archiveTrialMessage');
+const archiveTrialStatus = document.getElementById('archiveTrialStatus');
 const adminTestMessage = document.getElementById('adminTestMessage');
 const officialFormsMessage = document.getElementById('officialFormsMessage');
 const storageSafetyMessage = document.getElementById('storageSafetyMessage');
+const showArchivedTrials = document.getElementById('showArchivedTrials');
 
 const breedOptions = [
     ['', 'Breed'],
@@ -85,7 +98,7 @@ const lciDivisions = ['LCI Small', 'LCI Large', 'LCI Sighthound Mix'];
 const lciStakes = ['Open', 'Excellent', 'Veteran'];
 const lciClassOptions = lciDivisions.flatMap((division) => lciStakes.map((stake) => `${division} ${stake}`));
 const defaultClassOptions = ['Open', 'Field Champion', 'Veteran', 'Singles', ...lciClassOptions];
-const adminPageTabs = ['Judges & Workers', 'Admin Test', 'Paperwork', 'Hound DB'];
+const adminPageTabs = ['Judges & Workers', 'Paperwork', 'Hound DB', 'Admin Test'];
 
 const officialFormTemplates = [
     {
@@ -142,6 +155,50 @@ const officialFormTemplates = [
         sourceUrl: 'https://www.asfa.org/forms/SEC-06--Hound%20Certification%20%281%29.pdf',
         localTemplatePath: 'templates/asfa/SEC-06-Hound-Certification-Rev-01-21.pdf',
         notes: 'Tracks first-time certification paperwork.'
+    },
+    {
+        id: 'asfa-ef-a-entry-form',
+        association: 'ASFA',
+        name: 'Entry Form',
+        code: 'ID-EF-A',
+        use: 'Premium entry form',
+        revision: 'Rev 6/26',
+        sourceUrl: 'https://www.asfa.org/forms/EF-A--Entry%20Form.pdf',
+        localTemplatePath: 'templates/asfa/EF-A-Entry-Form-Rev-06-26.pdf',
+        notes: 'Official ASFA regular trial entry form.'
+    },
+    {
+        id: 'asfa-ef-a-lci-entry-form',
+        association: 'ASFA',
+        name: 'LCI Entry Form',
+        code: 'EF-A-LCI',
+        use: 'Premium entry form',
+        revision: 'Rev 8-24',
+        sourceUrl: 'https://www.asfa.org/forms/EF-A-LCI-Entry%20Form--08-2024.pdf',
+        localTemplatePath: 'templates/asfa/EF-A-LCI-Entry-Form-Rev-08-24.pdf',
+        notes: 'Official ASFA LCI entry form.'
+    },
+    {
+        id: 'asfa-ef-a-lci-registration-form',
+        association: 'ASFA',
+        name: 'LCI Registration Form',
+        code: 'EF-A_LCI',
+        use: 'LCI registration',
+        revision: 'Rev 08-24',
+        sourceUrl: 'https://www.asfa.org/forms/EF-A-LCI-Registration%20Form--08-2024.pdf',
+        localTemplatePath: 'templates/asfa/EF-A-LCI-Registration-Form-Rev-08-24.pdf',
+        notes: 'Official ASFA LCI registration form for LCI paperwork.'
+    },
+    {
+        id: 'akc-lure-coursing-entry-form',
+        association: 'AKC',
+        name: 'Lure Coursing/CAT/FCAT Entry Form',
+        code: 'ALR999',
+        use: 'Premium entry form',
+        revision: '03/25 v1.1',
+        sourceUrl: 'https://images.akc.org/pdf/LureCoursing_Entry.pdf',
+        localTemplatePath: 'templates/akc/LureCoursing-Entry-Form-ALR999-03-25.pdf',
+        notes: 'Official AKC lure coursing performance entry form.'
     },
     {
         id: 'akc-jersc1-judges-sheet',
@@ -405,10 +462,124 @@ const defaultFormAlignment = {
         paypalIdX: 348,
         paypalIdY: 720,
     },
+    asfaEntryForm: {
+        fontSize: 8,
+        smallFontSize: 6.5,
+        circleWeight: 1.4,
+        globalYAdjust: 0,
+        copyOffsetX: 396,
+        breedX: 54,
+        breedY: 82,
+        callNameX: 78,
+        callNameY: 112,
+        registeredNameX: 126,
+        registeredNameY: 141,
+        registrationX: 74,
+        registrationY: 202,
+        dobX: 276,
+        dobY: 202,
+        ownerX: 118,
+        ownerY: 252,
+        addressX: 74,
+        addressY: 281,
+        phoneX: 58,
+        phoneY: 311,
+        cityX: 48,
+        cityY: 340,
+        stateX: 232,
+        stateY: 340,
+        zipX: 302,
+        zipY: 340,
+        emailX: 58,
+        emailY: 369,
+        regionX: 288,
+        regionY: 369,
+        stakeCheckY: 169,
+        openX: 70,
+        fchX: 112,
+        veteranX: 163,
+        singlesX: 228,
+        provisionalX: 296,
+        kennelX: 70,
+        kennelY: 184,
+        breederX: 117,
+        breederY: 184,
+        benchX: 165,
+        benchY: 184,
+        dogX: 252,
+        bitchX: 317,
+        sexCheckY: 226,
+        ownerSeparationX: 245,
+        ownerSeparationY: 188,
+        firstAsfaTrialX: 30,
+        firstAsfaTrialY: 402,
+        firstTimeEntryX: 30,
+        firstTimeEntryY: 435,
+        changeInfoX: 30,
+        changeInfoY: 468,
+        dismissedX: 30,
+        dismissedY: 501,
+        checkSize: 7,
+        signatureX: 230,
+        signatureY: 581,
+    },
+    asfaLciEntryForm: {
+        fontSize: 8,
+        smallFontSize: 6.5,
+        circleWeight: 1.4,
+        globalYAdjust: 0,
+        copyOffsetX: 396,
+        breedX: 54,
+        breedY: 88,
+        callNameX: 78,
+        callNameY: 118,
+        registeredNameX: 126,
+        registeredNameY: 147,
+        registrationX: 74,
+        registrationY: 223,
+        dobX: 276,
+        dobY: 223,
+        ownerX: 118,
+        ownerY: 273,
+        addressX: 74,
+        addressY: 302,
+        phoneX: 58,
+        phoneY: 332,
+        cityX: 48,
+        cityY: 361,
+        stateX: 232,
+        stateY: 361,
+        zipX: 302,
+        zipY: 361,
+        emailX: 58,
+        emailY: 390,
+        regionX: 288,
+        regionY: 390,
+        lciDivisionY: 171,
+        lciSmallX: 82,
+        lciLargeX: 174,
+        lciMixX: 295,
+        stakeCheckY: 196,
+        openX: 83,
+        excellentX: 176,
+        veteranX: 272,
+        dogX: 252,
+        bitchX: 317,
+        sexCheckY: 247,
+        firstTimeEntryX: 30,
+        firstTimeEntryY: 425,
+        changeInfoX: 30,
+        changeInfoY: 467,
+        checkSize: 7,
+        signatureX: 230,
+        signatureY: 581,
+    },
     alignmentLocks: {
         asfaRecordSheet: false,
         asfaJudgeSheet: false,
         asfaSecretaryReport: false,
+        asfaEntryForm: false,
+        asfaLciEntryForm: false,
     },
 };
 
@@ -457,12 +628,14 @@ const fields = [
 ];
 
 let trials = loadJson(storageKey);
+trials = normalizeLoadedTrials(trials);
 let masterHounds = loadJson(houndStorageKey);
 let masterJudges = loadJson(judgeStorageKey);
 let masterWorkers = loadJson(workerStorageKey);
 let formTemplateStatus = loadJson(formTemplateStatusKey);
 let formAlignment = normalizeFormAlignment(loadJson(formAlignmentKey));
 let entryImportTemplates = loadJson(entryImportTemplateKey);
+let deletedTrials = loadJson(deletedTrialsKey);
 let selectedTrialId = localStorage.getItem(activeKey) || (trials[0] && trials[0].id) || '';
 let currentTab = 'setup';
 let currentScoringPage = 'Prelim Scoring';
@@ -533,6 +706,17 @@ function normalizeFormAlignment(value) {
         footerClubY: recordSource.footerClubY ?? recordSource.footerTop,
         footerDateY: recordSource.footerDateY ?? recordSource.footerTop,
     };
+    const entrySource = source.asfaEntryForm || {};
+    const migratedEntry = {
+        ...entrySource,
+        stakeCheckY: entrySource.stakeCheckY ?? entrySource.stakeCircleY ?? defaultFormAlignment.asfaEntryForm.stakeCheckY,
+        sexCheckY: entrySource.sexCheckY ?? entrySource.sexY ?? defaultFormAlignment.asfaEntryForm.sexCheckY,
+    };
+    const lciEntrySource = source.asfaLciEntryForm || {};
+    const migratedLciEntry = {
+        ...lciEntrySource,
+        sexCheckY: lciEntrySource.sexCheckY ?? lciEntrySource.sexY ?? defaultFormAlignment.asfaLciEntryForm.sexCheckY,
+    };
     return {
         asfaRecordSheet: {
             ...defaultFormAlignment.asfaRecordSheet,
@@ -545,6 +729,14 @@ function normalizeFormAlignment(value) {
         asfaSecretaryReport: {
             ...defaultFormAlignment.asfaSecretaryReport,
             ...(source.asfaSecretaryReport || {}),
+        },
+        asfaEntryForm: {
+            ...defaultFormAlignment.asfaEntryForm,
+            ...migratedEntry,
+        },
+        asfaLciEntryForm: {
+            ...defaultFormAlignment.asfaLciEntryForm,
+            ...migratedLciEntry,
         },
         alignmentLocks: {
             ...defaultFormAlignment.alignmentLocks,
@@ -559,6 +751,64 @@ function loadJson(key) {
     } catch {
         return [];
     }
+}
+
+function normalizeLoadedTrials(rows) {
+    let changed = false;
+    const normalized = (Array.isArray(rows) ? rows : []).reduce((list, trial) => {
+        if (!trial || typeof trial !== 'object') {
+            changed = true;
+            return list;
+        }
+        if (isBlankPlaceholderTrial(trial)) {
+            changed = true;
+            return list;
+        }
+        const id = cleanTrialId(trial.id || trial.trialId);
+        if (!id) {
+            changed = true;
+            const repairedId = crypto.randomUUID();
+            list.push({
+                ...trial,
+                id: repairedId,
+                trialId: repairedId,
+                updatedAt: trial.updatedAt || new Date().toISOString(),
+            });
+            return list;
+        }
+        if (trial.id !== id || trial.trialId !== id) {
+            changed = true;
+        }
+        list.push({
+            ...trial,
+            id,
+            trialId: id,
+        });
+        return list;
+    }, []);
+    if (changed) {
+        localStorage.setItem(storageKey, JSON.stringify(normalized));
+    }
+    return normalized;
+}
+
+function cleanTrialId(value) {
+    const text = String(value || '').trim();
+    if (!text || text === 'undefined' || text === 'null') {
+        return '';
+    }
+    return text;
+}
+
+function isBlankPlaceholderTrial(trial) {
+    return !cleanTrialId(trial.id || trial.trialId)
+        && !String(trial.trialName || '').trim()
+        && !String(trial.clubName || '').trim()
+        && !String(trial.startsOn || '').trim()
+        && !String(trial.endsOn || '').trim()
+        && (!Array.isArray(trial.entries) || trial.entries.length === 0)
+        && (!Array.isArray(trial.judges) || trial.judges.length === 0)
+        && (!Array.isArray(trial.workers) || trial.workers.length === 0);
 }
 
 function saveTrials() {
@@ -609,6 +859,13 @@ function saveEntryImportTemplates() {
     queueSQLiteSave();
 }
 
+function saveDeletedTrials() {
+    deletedTrials = Array.isArray(deletedTrials) ? deletedTrials.slice(0, 5) : [];
+    localStorage.setItem(deletedTrialsKey, JSON.stringify(deletedTrials));
+    queueBrowserSafetyBackup();
+    queueSQLiteSave();
+}
+
 function makeBackupSnapshot() {
     return {
         app: 'Field Trial Secretary',
@@ -622,6 +879,7 @@ function makeBackupSnapshot() {
             formTemplateStatus,
             formAlignment,
             entryImportTemplates,
+            deletedTrials,
             activeTrialId: localStorage.getItem(activeKey) || selectedTrialId || '',
         },
     };
@@ -745,7 +1003,7 @@ function applyBackupSnapshot(backup) {
         throw new Error('Invalid backup');
     }
 
-    trials = Array.isArray(backup.data.trials) ? backup.data.trials : [];
+    trials = normalizeLoadedTrials(Array.isArray(backup.data.trials) ? backup.data.trials : []);
     masterHounds = Array.isArray(backup.data.masterHounds) ? backup.data.masterHounds : [];
     masterJudges = Array.isArray(backup.data.masterJudges) ? backup.data.masterJudges : [];
     masterWorkers = Array.isArray(backup.data.masterWorkers) ? backup.data.masterWorkers : [];
@@ -754,6 +1012,7 @@ function applyBackupSnapshot(backup) {
         : {};
     formAlignment = normalizeFormAlignment(backup.data.formAlignment);
     entryImportTemplates = Array.isArray(backup.data.entryImportTemplates) ? backup.data.entryImportTemplates : [];
+    deletedTrials = Array.isArray(backup.data.deletedTrials) ? backup.data.deletedTrials.slice(0, 5) : [];
     selectedTrialId = backup.data.activeTrialId || (trials[0] && trials[0].id) || '';
 
     localStorage.setItem(storageKey, JSON.stringify(trials));
@@ -763,6 +1022,7 @@ function applyBackupSnapshot(backup) {
     localStorage.setItem(formTemplateStatusKey, JSON.stringify(formTemplateStatus));
     localStorage.setItem(formAlignmentKey, JSON.stringify(formAlignment));
     localStorage.setItem(entryImportTemplateKey, JSON.stringify(entryImportTemplates));
+    localStorage.setItem(deletedTrialsKey, JSON.stringify(deletedTrials));
     if (selectedTrialId) {
         localStorage.setItem(activeKey, selectedTrialId);
     } else {
@@ -819,6 +1079,72 @@ async function createSQLiteBackup() {
     }
 }
 
+async function createTransferPackage() {
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'Transfer packages require SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
+        return;
+    }
+    showMessage(storageSafetyMessage, 'Creating transfer package. This may take a moment if the portable program is included.', 'warning');
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/transfer-package', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: makeBackupSnapshot() }),
+        });
+        if (!response.ok) {
+            let message = 'Transfer package could not be created.';
+            if (response.status === 404) {
+                message = 'Transfer package support is not loaded yet. Restart the app server, refresh the page, then try again.';
+                throw new Error(message);
+            }
+            try {
+                const payload = await response.json();
+                message = payload.error || message;
+            } catch {
+                // Keep generic message.
+            }
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : `field-trial-secretary-transfer-${new Date().toISOString().slice(0, 10)}.zip`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const archivePath = response.headers.get('X-Archive-Path');
+        showMessage(storageSafetyMessage, archivePath ? `Transfer package created: ${archivePath}` : 'Transfer package created and downloaded.', 'success');
+    } catch (error) {
+        showMessage(storageSafetyMessage, error.message || 'Transfer package could not be created.', 'warning');
+    }
+}
+
+async function restartAppServer() {
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'Server restart requires SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
+        return;
+    }
+    if (!window.confirm('Restart the app server now? Save any active edits first. The page may be unavailable for a few seconds.')) {
+        return;
+    }
+    try {
+        await saveToSQLite();
+        const payload = await apiRequest('/api/restart', { method: 'POST', body: '{}' });
+        showMessage(storageSafetyMessage, `${payload.message || 'Restarting app server.'} Wait 5 seconds, then refresh this page.`, 'success');
+        setTimeout(() => {
+            showMessage(storageSafetyMessage, 'The app server should be back. Refresh the page if it has not reconnected.', 'success');
+        }, 5500);
+    } catch (error) {
+        showMessage(storageSafetyMessage, `Restart failed: ${error.message}`, 'warning');
+    }
+}
+
 function exportDataBackup() {
     const backup = makeBackupSnapshot();
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -871,7 +1197,8 @@ function readForm() {
     });
 
     const existing = getSelectedTrial();
-    data.id = data.trialId || (existing && existing.id) || crypto.randomUUID();
+    data.id = cleanTrialId(data.trialId) || (existing && cleanTrialId(existing.id)) || crypto.randomUUID();
+    data.trialId = data.id;
     data.updatedAt = new Date().toISOString();
     data.documentsReady = readCheckedValues('documentOptions');
     data.entries = getSelectedArray('entries');
@@ -889,7 +1216,13 @@ function readForm() {
     data.bobRunoffs = existing && Array.isArray(existing.bobRunoffs) ? existing.bobRunoffs : [];
     data.bobRunoffOutcomes = existing && existing.bobRunoffOutcomes ? existing.bobRunoffOutcomes : {};
     data.resultState = existing && existing.resultState ? existing.resultState : {};
+    data.printStatus = existing && existing.printStatus ? existing.printStatus : {};
+    data.ownerSeparationReviewedAt = existing && existing.ownerSeparationReviewedAt ? existing.ownerSeparationReviewedAt : '';
     data.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
+    data.archivedAt = existing && existing.archivedAt ? existing.archivedAt : '';
+    data.archivePackageName = existing && existing.archivePackageName ? existing.archivePackageName : '';
+    data.archivePackagePath = existing && existing.archivePackagePath ? existing.archivePackagePath : '';
+    data.archiveUnlockedAt = existing && existing.archiveUnlockedAt ? existing.archiveUnlockedAt : '';
 
     return data;
 }
@@ -1016,6 +1349,7 @@ function renderAdminTools() {
     populateAdminPlanClassSelect();
     renderAdminBreedPlan();
     renderAdminDeleteTrials();
+    renderDeletedTrials();
 }
 
 function populateAdminPlanBreedSelect() {
@@ -1121,6 +1455,39 @@ function renderAdminDeleteTrials() {
     select.value = trials.some((trial) => trial.id === current) ? current : (trials[0] && trials[0].id) || '';
 }
 
+function renderDeletedTrials() {
+    const body = document.getElementById('deletedTrialsTable');
+    if (!body) {
+        return;
+    }
+    body.innerHTML = '';
+    if (!Array.isArray(deletedTrials) || deletedTrials.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 4;
+        td.textContent = 'No deleted trials are available to recover.';
+        tr.appendChild(td);
+        body.appendChild(tr);
+        return;
+    }
+    deletedTrials.forEach((record) => {
+        const trial = record.trial || {};
+        const tr = document.createElement('tr');
+        tr.appendChild(textCell(formatTimestamp(record.deletedAt)));
+        tr.appendChild(textCell(trial.trialName || 'Untitled trial'));
+        tr.appendChild(textCell(formatDateRange(trial.startsOn, trial.endsOn) || 'No date'));
+        const action = document.createElement('td');
+        const restore = document.createElement('button');
+        restore.type = 'button';
+        restore.className = 'text-button';
+        restore.textContent = 'Restore';
+        restore.addEventListener('click', () => restoreDeletedTrial(record.id));
+        action.appendChild(restore);
+        tr.appendChild(action);
+        body.appendChild(tr);
+    });
+}
+
 function breedLabel(code) {
     const match = breedOptions.find(([value]) => value === code);
     return match ? `${match[0]} - ${match[1]}` : code;
@@ -1190,6 +1557,11 @@ function setActiveTrial(id) {
     if (!id) {
         return;
     }
+    const trial = trials.find((item) => item.id === id);
+    if (trial && trial.archivedAt) {
+        showMessage(formMessage, 'Archived trials cannot be set active. Unlock the trial first if you need to work on it again.', 'warning');
+        return;
+    }
 
     localStorage.setItem(activeKey, id);
     selectedTrialId = id;
@@ -1198,8 +1570,52 @@ function setActiveTrial(id) {
 }
 
 function selectTrial(id) {
+    if (isActiveTrialLocked() && id !== getActiveTrialId()) {
+        const lockedTrial = trials.find((trial) => trial.id === getActiveTrialId());
+        showMessage(formMessage, `${lockedTrial ? lockedTrial.trialName || 'The active trial' : 'The active trial'} is locked active. Unlock it before switching trials.`, 'warning');
+        return;
+    }
     selectedTrialId = id;
     clearMessages();
+    render();
+}
+
+function getActiveTrialId() {
+    return localStorage.getItem(activeKey) || '';
+}
+
+function isActiveTrialLocked() {
+    return localStorage.getItem(activeLockKey) === 'true' && Boolean(getActiveTrialId());
+}
+
+function setActiveTrialLocked(locked) {
+    if (locked) {
+        localStorage.setItem(activeLockKey, 'true');
+    } else {
+        localStorage.removeItem(activeLockKey);
+    }
+}
+
+function toggleSelectedActiveTrialLock() {
+    if (isActiveTrialLocked()) {
+        setActiveTrialLocked(false);
+        showMessage(formMessage, 'Active trial unlocked. You can switch trials again.', 'success');
+        render();
+        return;
+    }
+
+    const trial = getSelectedTrial();
+    if (!trial) {
+        showMessage(formMessage, 'Select a trial first.', 'warning');
+        return;
+    }
+    if (trial.archivedAt) {
+        showMessage(formMessage, 'Archived trials cannot be locked active. Unlock the archived trial first if you need to work on it.', 'warning');
+        return;
+    }
+    setActiveTrial(trial.id);
+    setActiveTrialLocked(true);
+    showMessage(formMessage, `${trial.trialName || 'Selected trial'} is locked active. Unlock it before switching trials.`, 'success');
     render();
 }
 
@@ -1215,21 +1631,25 @@ function startNewTrial() {
 }
 
 function renderTrialList() {
-    const activeId = localStorage.getItem(activeKey);
+    const activeId = getActiveTrialId();
+    const locked = isActiveTrialLocked();
     trialList.innerHTML = '';
 
-    if (trials.length === 0) {
+    const showArchived = Boolean(showArchivedTrials && showArchivedTrials.checked);
+    const visibleTrials = trials.filter((trial) => showArchived || !trial.archivedAt);
+
+    if (visibleTrials.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'empty';
-        empty.textContent = 'No trials yet.';
+        empty.textContent = trials.length === 0 ? 'No trials yet.' : 'No active trials. Turn on Show archived to view archived trials.';
         trialList.appendChild(empty);
         return;
     }
 
-    trials.forEach((trial) => {
+    visibleTrials.forEach((trial) => {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = `trial-card ${trial.id === selectedTrialId ? 'active' : ''}`;
+        button.className = `trial-card ${trial.id === selectedTrialId ? 'active' : ''} ${trial.archivedAt ? 'archived' : ''}`;
         button.addEventListener('click', () => selectTrial(trial.id));
 
         const name = document.createElement('span');
@@ -1250,19 +1670,41 @@ function renderTrialList() {
             flag.textContent = 'Active';
             button.appendChild(flag);
         }
+        if (locked && trial.id === activeId) {
+            const flag = document.createElement('span');
+            flag.className = 'active-flag locked-flag';
+            flag.textContent = 'Locked';
+            button.appendChild(flag);
+        }
+        if (trial.archivedAt) {
+            const flag = document.createElement('span');
+            flag.className = 'active-flag archive-flag';
+            flag.textContent = 'Archived';
+            button.appendChild(flag);
+        }
 
         trialList.appendChild(button);
     });
 }
 
 function renderActiveBadge() {
-    const activeId = localStorage.getItem(activeKey);
+    const activeId = getActiveTrialId();
     const activeTrial = trials.find((trial) => trial.id === activeId);
-    const label = activeTrial
-        ? `${activeTrial.trialName || 'Untitled trial'} | ${formatDateRange(activeTrial.startsOn, activeTrial.endsOn) || 'Dates not set'}`
+    const selectedTrial = trials.find((trial) => trial.id === selectedTrialId);
+    const displayTrial = selectedTrial && selectedTrial.archivedAt ? selectedTrial : activeTrial;
+    const locked = isActiveTrialLocked();
+    const label = displayTrial
+        ? `${displayTrial.archivedAt ? 'Read-only archived trial: ' : ''}${locked && !displayTrial.archivedAt ? 'Locked active trial: ' : ''}${displayTrial.trialName || 'Untitled trial'} | ${formatDateRange(displayTrial.startsOn, displayTrial.endsOn) || 'Dates not set'}`
         : 'No trial selected';
+    const statusLabel = displayTrial && displayTrial.archivedAt
+        ? 'Archived Trial'
+        : locked ? 'Locked Active Trial' : 'Active Trial';
 
+    activeTrialBadge.querySelector('.label').textContent = statusLabel;
     activeTrialBadge.querySelector('strong').textContent = label;
+    if (setSelectedActiveButton) {
+        setSelectedActiveButton.textContent = locked ? 'Unlock Active Trial' : 'Lock Active Trial';
+    }
 }
 
 function renderWorkflowStrip(trial) {
@@ -1283,7 +1725,7 @@ function renderWorkflowStrip(trial) {
     button.className = 'secondary small';
     button.textContent = step.action;
     button.dataset.help = `Jump to ${step.tab} to work on the next recommended step.`;
-    button.addEventListener('click', () => switchTab(step.tab));
+    button.addEventListener('click', () => goToWorkflowStep(step));
     workflowStrip.append(text, button);
 }
 
@@ -1338,25 +1780,331 @@ function helpForButton(button) {
 }
 
 function nextWorkflowStep(trial) {
-    if (!trial || !trial.trialName || !trial.startsOn || !trial.association) {
-        return { label: 'Next:', detail: 'finish the trial setup details.', action: 'Go To Setup', tab: 'setup' };
+    const step = nextTrialGuideStep(trialGuideSteps(trial));
+    if (!step) {
+        return {
+            label: 'Next:',
+            detail: 'all guide items are complete for this trial.',
+            action: 'Go To Wrap Up',
+            tab: 'wrapup',
+        };
     }
-    if (!trial.entries || trial.entries.length === 0) {
-        return { label: 'Next:', detail: 'enter hounds for this trial.', action: 'Go To Entries', tab: 'entries' };
+    return {
+        ...step,
+        label: 'Next:',
+        detail: step.detail,
+        action: step.action,
+        tab: step.tab,
+    };
+}
+
+function goToWorkflowStep(step) {
+    if (!step) {
+        return;
     }
-    if (!trial.entries.every((entry) => entry.rollCallStatus && entry.rollCallStatus !== 'not_checked')) {
-        return { label: 'Next:', detail: 'complete roll call before drawing courses.', action: 'Go To Roll Call', tab: 'rollcall' };
+    if (step.scoringPage) {
+        currentScoringPage = step.scoringPage;
     }
-    if (!trial.runPlan || trial.runPlan.length === 0) {
-        return { label: 'Next:', detail: 'assign running order, judges, and field workers.', action: 'Go To Running Order', tab: 'runplan' };
+    if (step.wrapUpPage) {
+        currentWrapUpPage = step.wrapUpPage;
     }
-    if (!trial.preliminaryDraw || !Array.isArray(trial.preliminaryDraw.groups) || trial.preliminaryDraw.groups.length === 0) {
-        return { label: 'Next:', detail: 'build the preliminary draw.', action: 'Go To Draw', tab: 'rollcall' };
+    if (step.adminPage) {
+        currentAdminPage = step.adminPage;
     }
-    if (!trial.scorebook || !trial.scorebook.prelimComplete) {
-        return { label: 'Next:', detail: 'post the draw, print judge sheets, then enter preliminary scores.', action: 'Go To Scoring', tab: 'scoring' };
+    switchTab(step.tab || 'setup');
+    if (step.sectionTitle) {
+        requestAnimationFrame(() => scrollToWorkflowSection(step));
     }
-    return { label: 'Next:', detail: 'preliminary scores are complete. Finals setup comes next.', action: 'Go To Scoring', tab: 'scoring' };
+}
+
+function scrollToWorkflowSection(step) {
+    const section = [...document.querySelectorAll(`.form-section[data-tab="${step.tab}"]`)]
+        .find((candidate) => {
+            const heading = candidate.querySelector('h2, h3');
+            return heading && heading.textContent.trim() === step.sectionTitle;
+        });
+    if (!section) {
+        return;
+    }
+    if (!['scoring', 'wrapup'].includes(step.tab)) {
+        [...document.querySelectorAll('.sub-tab-button')].forEach((button) => {
+            const active = button.textContent.trim() === step.sectionTitle;
+            button.classList.toggle('active', active);
+            if (active) {
+                button.setAttribute('aria-current', 'page');
+            } else {
+                button.removeAttribute('aria-current');
+            }
+        });
+    }
+    scrollToElement(section, { offset: scrollOffset() + 10 });
+}
+
+function stepStatus(done, ready) {
+    if (done) {
+        return 'done';
+    }
+    return ready ? 'ready' : 'blocked';
+}
+
+function printStatus(trial, key) {
+    return Boolean(trial && trial.printStatus && trial.printStatus[key]);
+}
+
+function trialBasicsComplete(trial) {
+    return Boolean(trial && trial.trialName && trial.clubName && trial.association && trial.startsOn && trial.endsOn);
+}
+
+function rollCallComplete(trial) {
+    const entries = (trial || {}).entries || [];
+    return entries.length > 0 && entries.every((entry) => entry.rollCallStatus && entry.rollCallStatus !== 'not_checked');
+}
+
+function runPlanComplete(trial) {
+    return Boolean(trial && Array.isArray(trial.runPlan) && trial.runPlan.length > 0);
+}
+
+function preliminaryDrawComplete(trial) {
+    return Boolean(trial && trial.preliminaryDraw && Array.isArray(trial.preliminaryDraw.groups) && trial.preliminaryDraw.groups.length > 0);
+}
+
+function prelimScoringComplete(trial) {
+    if (!preliminaryDrawComplete(trial)) {
+        return false;
+    }
+    const rows = preliminaryScoreRows(trial.preliminaryDraw);
+    return rows.length > 0 && rows.every((row) => hasScoreValue(row.score) || row.outcome);
+}
+
+function finalsDrawComplete(trial) {
+    const groups = (((trial || {}).preliminaryDraw || {}).groups || []);
+    return groups.length > 0 && groups.every((group) => group.finalDraw && Array.isArray(group.finalDraw.courses) && group.finalDraw.courses.length > 0);
+}
+
+function finalsScoringComplete(trial) {
+    if (!finalsDrawComplete(trial)) {
+        return false;
+    }
+    const rows = finalsScoreRows(trial.preliminaryDraw);
+    return rows.length > 0 && rows.every((row) => hasScoreValue(row.score) || row.outcome);
+}
+
+function runoffNeedsExist(trial) {
+    return collectRunoffItems(trial || {}).length > 0;
+}
+
+function runoffDrawComplete(trial) {
+    const items = collectRunoffItems(trial || {});
+    return items.length > 0 && undrawnRunoffItems(trial || {}).length === 0;
+}
+
+function runoffScoringComplete(trial) {
+    const items = collectRunoffItems(trial || {});
+    if (items.length === 0) {
+        return false;
+    }
+    return items.every((item) => runoffDisplayRows(trial, item)
+        .filter((row) => !row.archived && !row.placeholder)
+        .every((row) => hasScoreValue(row.score) || row.outcome || row.result));
+}
+
+function bifRunnersSet(trial) {
+    const bif = bifState(trial || {});
+    const selected = selectedBifEntryIds(bif);
+    return [...selected].some((entryId) => (bif.statusByEntryId || {})[entryId] !== 'not_running');
+}
+
+function bifDrawComplete(trial) {
+    const bif = bifState(trial || {});
+    return Boolean(bif.draw && Array.isArray(bif.draw.courses) && bif.draw.courses.length > 0);
+}
+
+function bifScoringComplete(trial) {
+    const bif = bifState(trial || {});
+    if (!bifDrawComplete(trial)) {
+        return false;
+    }
+    const rows = ((bif.draw || {}).courses || []).flatMap((course) => course.hounds || []);
+    return rows.length > 0 && rows.every((hound) => {
+        const outcome = normalizedBobOutcome((bif.outcomes || {})[hound.entryId]);
+        return hasScoreValue(outcome.value) || hasScoreValue(outcome.score);
+    });
+}
+
+function ownerSeparationStatus(trial) {
+    const entries = ((trial || {}).entries || []).filter((entry) => entry.rollCallStatus === 'present' || !entry.rollCallStatus || entry.rollCallStatus === 'not_checked');
+    if (trial && trial.ownerSeparationReviewedAt) {
+        return { done: true, detail: `Owner separation reviewed ${formatTimestamp(trial.ownerSeparationReviewedAt)}.` };
+    }
+    const groups = new Map();
+    entries.forEach((entry) => {
+        const key = `${clean(entry.breed)}|${clean(entry.stake)}`;
+        const owner = ownerKey(entry);
+        if (!owner) {
+            return;
+        }
+        if (!groups.has(key)) {
+            groups.set(key, new Map());
+        }
+        const owners = groups.get(key);
+        owners.set(owner, (owners.get(owner) || 0) + 1);
+    });
+    const needsReview = [...groups.values()].some((owners) => [...owners.values()].some((count) => count > 1));
+    const hasLetters = entries.some((entry) => (entry.ownerSeparationRequested || entry.separateOwnerHounds) && entry.ownerSeparationGroup);
+    if (!needsReview) {
+        return { done: true, detail: 'No same-owner conflicts detected in the current entries.' };
+    }
+    if (hasLetters) {
+        return { done: true, detail: 'Owner separation letters are assigned for at least one same-owner group.' };
+    }
+    return { done: false, detail: 'Same-owner hounds may need separation letters before the preliminary draw.' };
+}
+
+function trialGuideSteps(trial) {
+    const hasTrial = Boolean(trial);
+    const entriesDone = Boolean(hasTrial && (trial.entries || []).length > 0);
+    const rollDone = rollCallComplete(trial);
+    const runDone = runPlanComplete(trial);
+    const ownerStatus = ownerSeparationStatus(trial);
+    const prelimDrawDone = preliminaryDrawComplete(trial);
+    const prelimDone = prelimScoringComplete(trial);
+    const finalsDrawDone = finalsDrawComplete(trial);
+    const finalsDone = finalsScoringComplete(trial);
+    const runoffsExist = runoffNeedsExist(trial);
+    const runoffDrawDone = runoffDrawComplete(trial);
+    const runoffDone = runoffScoringComplete(trial);
+    const bifSet = bifRunnersSet(trial);
+    const bifDrawn = bifDrawComplete(trial);
+    const bifDone = bifScoringComplete(trial);
+
+    const steps = [
+        { id: 'trial-set', label: 'Trial Set', tab: 'setup', sectionTitle: 'Event', status: stepStatus(trialBasicsComplete(trial), hasTrial), detail: 'Enter the trial name, club, association, and dates.', action: 'Go To Setup' },
+        { id: 'entries-set', label: 'Entries Set', tab: 'entries', sectionTitle: 'Trial Entries', status: stepStatus(entriesDone, trialBasicsComplete(trial)), detail: entriesDone ? `${(trial.entries || []).length} entries are in this trial.` : 'Add or import the hounds running in this trial.', action: 'Go To Entries' },
+        { id: 'worker-sheet', label: 'Worker Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', status: stepStatus(printStatus(trial, 'workerSheet'), entriesDone), detail: printStatus(trial, 'workerSheet') ? 'Worker sheet has been printed or marked printed.' : 'Set breed running order, judges, lure operators, and huntmasters, then print the worker sheet.', action: 'Go To Worker Sheet' },
+        { id: 'roll-call', label: 'Roll Call', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: stepStatus(rollDone, entriesDone), detail: rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.', action: 'Go To Roll Call' },
+        { id: 'separate-hounds', label: 'Separate Hounds', tab: 'rollcall', sectionTitle: 'Owner Separation', status: stepStatus(ownerStatus.done, entriesDone), detail: ownerStatus.detail, action: 'Go To Separation' },
+        { id: 'prelim-draw', label: 'Preliminary Draw', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: stepStatus(prelimDrawDone, rollDone && runDone), detail: prelimDrawDone ? 'Preliminary courses and blanket colors are built.' : 'Build the randomized preliminary draw after roll call and running order are ready.', action: 'Go To Draw' },
+        { id: 'print-draw', label: 'Print Draw Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: stepStatus(printStatus(trial, 'prelimDrawSheet'), prelimDrawDone), detail: printStatus(trial, 'prelimDrawSheet') ? 'Preliminary draw sheets have been printed or marked printed.' : 'Print the posted draw order sheet for the fancy.', action: 'Go To Draw Sheets' },
+        { id: 'print-judge-prelim', label: 'Print Judges Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: stepStatus(printStatus(trial, 'prelimJudgeSheets'), prelimDrawDone), detail: printStatus(trial, 'prelimJudgeSheets') ? 'Preliminary judge sheets have been printed or marked printed.' : 'Print only the preliminary judge sheets needed for the draw.', action: 'Go To Judge Sheets' },
+        { id: 'prelim-scoring', label: 'Prelim Scoring', tab: 'scoring', scoringPage: 'Prelim Scoring', sectionTitle: 'Prelim Scoring', status: stepStatus(prelimDone, prelimDrawDone), detail: prelimDone ? 'All preliminary rows have a score or outcome.' : 'Enter preliminary judge scores and outcomes.', action: 'Go To Prelims' },
+        { id: 'finals-draw', label: 'Draw Finals Stake/Breed', tab: 'scoring', scoringPage: 'Prelim Scoring', sectionTitle: 'Prelim Scoring', status: stepStatus(finalsDrawDone, prelimDone), detail: finalsDrawDone ? 'Finals draws are built for all preliminary groups.' : 'Draw finals stake by stake or breed by breed after prelims are complete.', action: 'Go To Prelims' },
+        { id: 'print-stake-breed', label: 'Print Stake/Breed', tab: 'scoring', scoringPage: 'Finals Scoring', sectionTitle: 'Finals Scoring', status: stepStatus(printStatus(trial, 'stakeBreedSheets'), finalsDrawDone), detail: printStatus(trial, 'stakeBreedSheets') ? 'At least one stake or breed sheet has been printed.' : 'Print the ASFA stake or breed score sheets for posting.', action: 'Go To Finals' },
+        { id: 'print-final-judges', label: 'Print Final Judges Sheets', tab: 'scoring', scoringPage: 'Finals Scoring', sectionTitle: 'Finals Scoring', status: stepStatus(printStatus(trial, 'finalJudgeSheets'), finalsDrawDone), detail: printStatus(trial, 'finalJudgeSheets') ? 'Finals judge sheets have been printed or marked printed.' : 'Print finals judge sheets from the finals draw.', action: 'Go To Finals' },
+        { id: 'final-scoring', label: 'Enter Final Scoring', tab: 'scoring', scoringPage: 'Finals Scoring', sectionTitle: 'Finals Scoring', status: stepStatus(finalsDone, finalsDrawDone), detail: finalsDone ? 'All finals rows have a score or outcome.' : 'Enter finals scores and outcomes, then resolve placements.', action: 'Go To Finals' },
+        { id: 'runoff-draw', label: 'Draw Runoffs', tab: 'scoring', scoringPage: 'Run Offs Scoring', sectionTitle: 'Run Offs Scoring', status: !runoffsExist && finalsDone ? 'done' : stepStatus(runoffDrawDone, finalsDone && runoffsExist), detail: runoffsExist ? 'Build or redraw tie and BOB runoff colors from the Run Offs page.' : 'No runoff or BOB draw is currently needed.', action: 'Go To Run Offs' },
+        { id: 'print-runoff-draw', label: 'Print Runoff Draw Sheets', tab: 'scoring', scoringPage: 'Run Offs Scoring', sectionTitle: 'Run Offs Scoring', status: !runoffsExist && finalsDone ? 'done' : stepStatus(printStatus(trial, 'runoffDrawSheet'), runoffDrawDone), detail: printStatus(trial, 'runoffDrawSheet') ? 'Runoff draw sheet has been printed or marked printed.' : 'Print the runoff running order once colors are drawn.', action: 'Go To Run Offs' },
+        { id: 'print-runoff-judges', label: 'Print Runoff Judge Sheet', tab: 'scoring', scoringPage: 'Run Offs Scoring', sectionTitle: 'Run Offs Scoring', status: !runoffsExist && finalsDone ? 'done' : stepStatus(printStatus(trial, 'runoffJudgeSheets'), runoffDrawDone), detail: printStatus(trial, 'runoffJudgeSheets') ? 'Runoff judge sheets have been printed or marked printed.' : 'Print judges sheets for the current runoff order.', action: 'Go To Run Offs' },
+        { id: 'bif-runners', label: 'Set BIF/BIE Runners Status', tab: 'scoring', scoringPage: 'BIF/BIE', sectionTitle: 'BIF/BIE Check', status: stepStatus(bifSet, finalsDone || runoffDone), detail: bifSet ? 'At least one BOB winner is checked to run BIF.' : 'Check which BOB winners are running in BIF/BIE.', action: 'Go To BIF/BIE' },
+        { id: 'bif-draw', label: 'Draw BIF/BIE', tab: 'scoring', scoringPage: 'BIF/BIE', sectionTitle: 'BIF/BIE Check', status: stepStatus(bifDrawn, bifSet), detail: bifDrawn ? 'BIF draw and blanket colors are built.' : 'Draw BIF/BIE after runners and judges are set.', action: 'Go To BIF/BIE' },
+        { id: 'print-bif-judges', label: 'Print BIF Judge Sheets', tab: 'scoring', scoringPage: 'BIF/BIE', sectionTitle: 'BIF/BIE Check', status: stepStatus(printStatus(trial, 'bifJudgeSheets'), bifDrawn), detail: printStatus(trial, 'bifJudgeSheets') ? 'BIF judge sheets have been printed or marked printed.' : 'Print judge sheets for the BIF draw.', action: 'Go To BIF/BIE' },
+        { id: 'bif-scores', label: 'Enter BIF Scores', tab: 'scoring', scoringPage: 'BIF/BIE', sectionTitle: 'BIF/BIE Check', status: stepStatus(bifDone, bifDrawn), detail: bifDone ? 'BIF scores are complete.' : 'Enter BIF scores and resolve any BIF ties.', action: 'Go To BIF/BIE' },
+        { id: 'ribbon-report', label: 'Print Ribbon Report', tab: 'scoring', scoringPage: 'Main Results', sectionTitle: 'Main Results', status: stepStatus(printStatus(trial, 'ribbonReport'), finalsDone || bifDone), detail: printStatus(trial, 'ribbonReport') ? 'Ribbon report has been printed or marked printed.' : 'Print the final placements and BIF section for ribbons/prizes.', action: 'Go To Main Results' },
+    ];
+    return steps.map((step) => ({
+        ...step,
+        status: hasTrial ? step.status : (step.id === 'trial-set' ? 'ready' : 'blocked'),
+    }));
+}
+
+function nextTrialGuideStep(steps) {
+    return (steps || []).find((step) => step.status === 'ready' || step.status === 'attention')
+        || (steps || []).find((step) => step.status === 'blocked')
+        || null;
+}
+
+function renderTrialGuide(trial) {
+    if (!trialGuideSummary || !trialGuideNext || !trialGuideList) {
+        applyTabGuideStatuses([]);
+        return;
+    }
+    const steps = trialGuideSteps(trial);
+    const doneCount = steps.filter((step) => step.status === 'done').length;
+    const next = nextTrialGuideStep(steps);
+    trialGuideSummary.textContent = trial ? `${doneCount} of ${steps.length} complete` : 'No trial selected';
+    trialGuideNext.innerHTML = '';
+    trialGuideList.innerHTML = '';
+
+    if (!trial) {
+        const empty = document.createElement('p');
+        empty.textContent = 'Create or select a trial to start the guided workflow.';
+        trialGuideNext.appendChild(empty);
+        applyTabGuideStatuses(steps);
+        return;
+    }
+
+    const nextText = document.createElement('span');
+    nextText.innerHTML = `<strong>${next ? next.label : 'Trial Complete'}</strong> ${next ? next.detail : 'All guide items are complete.'}`;
+    trialGuideNext.appendChild(nextText);
+    if (next) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'secondary small';
+        button.textContent = next.action;
+        button.addEventListener('click', () => goToWorkflowStep(next));
+        trialGuideNext.appendChild(button);
+    }
+
+    steps.forEach((step) => {
+        const item = document.createElement('li');
+        item.className = `guide-step ${step.status}`;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.help = step.detail;
+        button.addEventListener('click', () => goToWorkflowStep(step));
+        const dot = document.createElement('span');
+        dot.className = 'guide-dot';
+        const text = document.createElement('span');
+        text.textContent = step.label;
+        const status = document.createElement('span');
+        status.className = 'guide-step-status';
+        status.textContent = step.status === 'done' ? 'Done' : (step.status === 'blocked' ? 'Blocked' : 'Next');
+        button.append(dot, text, status);
+        item.appendChild(button);
+        trialGuideList.appendChild(item);
+    });
+    applyTabGuideStatuses(steps);
+}
+
+function applyTabGuideStatuses(steps) {
+    const byTab = new Map();
+    (steps || []).forEach((step) => {
+        if (!step.tab) {
+            return;
+        }
+        if (!byTab.has(step.tab)) {
+            byTab.set(step.tab, []);
+        }
+        byTab.get(step.tab).push(step.status);
+    });
+    document.querySelectorAll('.tab-button').forEach((button) => {
+        button.classList.remove('guide-done', 'guide-ready', 'guide-blocked');
+        const statuses = byTab.get(button.dataset.tabTarget) || [];
+        if (statuses.length === 0) {
+            return;
+        }
+        if (statuses.some((status) => status === 'ready' || status === 'attention')) {
+            button.classList.add('guide-ready');
+        } else if (statuses.every((status) => status === 'done')) {
+            button.classList.add('guide-done');
+        } else {
+            button.classList.add('guide-blocked');
+        }
+    });
+}
+
+function markTrialGuidePrinted(key) {
+    const trial = readForm();
+    if (!trial || !trial.id || !key) {
+        return;
+    }
+    const existing = getSelectedTrial();
+    trial.printStatus = {
+        ...((existing && existing.printStatus) || {}),
+        ...(trial.printStatus || {}),
+        [key]: new Date().toISOString(),
+    };
+    upsertTrial(trial);
+    render();
 }
 
 function renderChecklist(trial) {
@@ -1547,12 +2295,389 @@ function renderAsfaRecordAlignmentTool(trial) {
     if (tool) {
         tool.hidden = Boolean(trial && clean(trial.association || 'ASFA') !== 'ASFA');
     }
+    renderAsfaEntryAlignmentTool(trial);
     renderAsfaJudgeAlignmentTool(trial);
 }
 
 function getAsfaRecordLayout() {
     formAlignment = normalizeFormAlignment(formAlignment);
     return formAlignment.asfaRecordSheet;
+}
+
+function getAsfaEntryLayout() {
+    formAlignment = normalizeFormAlignment(formAlignment);
+    return formAlignment.asfaEntryForm;
+}
+
+function getAsfaLciEntryLayout() {
+    formAlignment = normalizeFormAlignment(formAlignment);
+    return formAlignment.asfaLciEntryForm;
+}
+
+function renderAsfaEntryAlignmentTool(trial) {
+    const container = document.getElementById('asfaEntryAlignmentControls');
+    if (!container) {
+        return;
+    }
+    const layout = getAsfaEntryLayout();
+    const controls = [
+        ['fontSize', 'Filled text font size', 5, 14, 0.5],
+        ['smallFontSize', 'Small text font size', 4, 12, 0.5],
+        ['circleWeight', 'Mark weight', 0.5, 4, 0.1],
+        ['globalYAdjust', 'All entry text Y offset', -20, 20, 0.5],
+        ['breedX', 'Breed X', 20, 150, 1],
+        ['breedY', 'Breed Y', 55, 105, 1],
+        ['callNameX', 'Call name X', 35, 160, 1],
+        ['callNameY', 'Call name Y', 90, 130, 1],
+        ['registeredNameX', 'Registered name X', 75, 230, 1],
+        ['registeredNameY', 'Registered name Y', 120, 155, 1],
+        ['registrationX', 'Registration X', 35, 160, 1],
+        ['registrationY', 'Registration Y', 180, 220, 1],
+        ['dobX', 'DOB X', 240, 330, 1],
+        ['dobY', 'DOB Y', 180, 220, 1],
+        ['stakeCheckY', 'Stake check row Y', 150, 185, 1],
+        ['openX', 'Open check X', 45, 90, 1],
+        ['fchX', 'FCH check X', 90, 130, 1],
+        ['veteranX', 'Veteran check X', 140, 190, 1],
+        ['singlesX', 'Singles check X', 200, 250, 1],
+        ['provisionalX', 'Provisional check X', 265, 340, 1],
+        ['kennelX', 'Kennel check X', 45, 100, 1],
+        ['kennelY', 'Kennel check Y', 170, 205, 1],
+        ['breederX', 'Breeder check X', 90, 145, 1],
+        ['breederY', 'Breeder check Y', 170, 205, 1],
+        ['benchX', 'Bench check X', 140, 200, 1],
+        ['benchY', 'Bench check Y', 170, 205, 1],
+        ['dogX', 'Dog check X', 225, 280, 1],
+        ['bitchX', 'Bitch check X', 290, 350, 1],
+        ['sexCheckY', 'Sex check row Y', 205, 240, 1],
+        ['ownerX', 'Owner X', 70, 190, 1],
+        ['ownerY', 'Owner Y', 230, 270, 1],
+        ['addressX', 'Address X', 35, 170, 1],
+        ['addressY', 'Address Y', 260, 300, 1],
+        ['phoneX', 'Phone X', 35, 120, 1],
+        ['phoneY', 'Phone Y', 290, 330, 1],
+        ['cityX', 'City X', 30, 120, 1],
+        ['cityY', 'City Y', 320, 360, 1],
+        ['stateX', 'State X', 200, 270, 1],
+        ['stateY', 'State Y', 320, 360, 1],
+        ['zipX', 'ZIP X', 275, 350, 1],
+        ['zipY', 'ZIP Y', 320, 360, 1],
+        ['emailX', 'Email X', 35, 140, 1],
+        ['emailY', 'Email Y', 350, 390, 1],
+        ['regionX', 'Region X', 250, 340, 1],
+        ['regionY', 'Region Y', 350, 390, 1],
+        ['ownerSeparationX', 'Separate hounds check X', 220, 290, 1],
+        ['ownerSeparationY', 'Separate hounds check Y', 170, 205, 1],
+        ['firstAsfaTrialX', 'First ASFA trial check X', 15, 60, 1],
+        ['firstAsfaTrialY', 'First ASFA trial check Y', 380, 420, 1],
+        ['firstTimeEntryX', 'First-time entry check X', 15, 60, 1],
+        ['firstTimeEntryY', 'First-time entry check Y', 415, 455, 1],
+        ['changeInfoX', 'Info changed check X', 15, 60, 1],
+        ['changeInfoY', 'Info changed check Y', 450, 485, 1],
+        ['dismissedX', 'Dismissed check X', 15, 60, 1],
+        ['dismissedY', 'Dismissed check Y', 485, 525, 1],
+        ['checkSize', 'Check box size', 4, 14, 0.5],
+        ['signatureX', 'Signature text X', 180, 310, 1],
+        ['signatureY', 'Signature text Y', 555, 595, 1],
+    ];
+    renderAlignmentControls(container, 'asfaEntryForm', layout, controls);
+    renderAsfaEntryVisualEditor(layout);
+
+    const tool = document.getElementById('asfaEntryAlignmentTool');
+    if (tool) {
+        tool.hidden = Boolean(trial && clean(trial.association || 'ASFA') !== 'ASFA');
+    }
+    renderAsfaLciEntryAlignmentTool(trial);
+}
+
+function renderAsfaLciEntryAlignmentTool(trial) {
+    const container = document.getElementById('asfaLciEntryAlignmentControls');
+    if (!container) {
+        return;
+    }
+    const layout = getAsfaLciEntryLayout();
+    const controls = [
+        ['fontSize', 'Filled text font size', 5, 14, 0.5],
+        ['smallFontSize', 'Small text font size', 4, 12, 0.5],
+        ['circleWeight', 'Mark weight', 0.5, 4, 0.1],
+        ['globalYAdjust', 'All LCI entry text Y offset', -20, 20, 0.5],
+        ['breedX', 'Breed X', 20, 150, 1],
+        ['breedY', 'Breed Y', 55, 110, 1],
+        ['callNameX', 'Call name X', 35, 160, 1],
+        ['callNameY', 'Call name Y', 95, 135, 1],
+        ['registeredNameX', 'Registered name X', 75, 230, 1],
+        ['registeredNameY', 'Registered name Y', 125, 165, 1],
+        ['lciDivisionY', 'LCI division check row Y', 150, 190, 1],
+        ['lciSmallX', 'LCI Small check X', 55, 115, 1],
+        ['lciLargeX', 'LCI Large check X', 145, 215, 1],
+        ['lciMixX', 'LCI SH Mix check X', 250, 345, 1],
+        ['stakeCheckY', 'Stake check row Y', 180, 215, 1],
+        ['openX', 'Open check X', 55, 115, 1],
+        ['excellentX', 'Excellent check X', 145, 215, 1],
+        ['veteranX', 'Veteran check X', 240, 315, 1],
+        ['registrationX', 'Registration X', 35, 160, 1],
+        ['registrationY', 'Registration Y', 200, 240, 1],
+        ['dobX', 'DOB X', 240, 330, 1],
+        ['dobY', 'DOB Y', 200, 240, 1],
+        ['dogX', 'Dog check X', 225, 280, 1],
+        ['bitchX', 'Bitch check X', 290, 350, 1],
+        ['sexCheckY', 'Sex check row Y', 225, 265, 1],
+        ['ownerX', 'Owner X', 70, 190, 1],
+        ['ownerY', 'Owner Y', 250, 290, 1],
+        ['addressX', 'Address X', 35, 170, 1],
+        ['addressY', 'Address Y', 280, 320, 1],
+        ['phoneX', 'Phone X', 35, 120, 1],
+        ['phoneY', 'Phone Y', 310, 350, 1],
+        ['cityX', 'City X', 30, 120, 1],
+        ['cityY', 'City Y', 340, 380, 1],
+        ['stateX', 'State X', 200, 270, 1],
+        ['stateY', 'State Y', 340, 380, 1],
+        ['zipX', 'ZIP X', 275, 350, 1],
+        ['zipY', 'ZIP Y', 340, 380, 1],
+        ['emailX', 'Email X', 35, 140, 1],
+        ['emailY', 'Email Y', 370, 410, 1],
+        ['regionX', 'Region X', 250, 340, 1],
+        ['regionY', 'Region Y', 370, 410, 1],
+        ['firstTimeEntryX', 'First-time entry check X', 15, 60, 1],
+        ['firstTimeEntryY', 'First-time entry check Y', 405, 445, 1],
+        ['changeInfoX', 'Info changed check X', 15, 60, 1],
+        ['changeInfoY', 'Info changed check Y', 445, 485, 1],
+        ['checkSize', 'Check box size', 4, 14, 0.5],
+        ['signatureX', 'Signature text X', 180, 310, 1],
+        ['signatureY', 'Signature text Y', 555, 595, 1],
+    ];
+    renderAlignmentControls(container, 'asfaLciEntryForm', layout, controls);
+    renderAsfaLciEntryVisualEditor(layout);
+
+    const tool = document.getElementById('asfaLciEntryAlignmentTool');
+    if (tool) {
+        tool.hidden = Boolean(trial && clean(trial.association || 'ASFA') !== 'ASFA');
+    }
+}
+
+function renderAsfaLciEntryVisualEditor(layout) {
+    const container = document.getElementById('asfaLciEntryVisualEditor');
+    if (!container) {
+        return;
+    }
+    const width = Number(layout.copyOffsetX || 396);
+    const height = 612;
+    const textItems = [
+        { label: 'Breed', xKey: 'breedX', yKey: 'breedY' },
+        { label: 'Call Name', xKey: 'callNameX', yKey: 'callNameY' },
+        { label: 'Registered Name', xKey: 'registeredNameX', yKey: 'registeredNameY' },
+        { label: 'Registration', xKey: 'registrationX', yKey: 'registrationY', small: true },
+        { label: 'DOB', xKey: 'dobX', yKey: 'dobY' },
+        { label: 'Owner', xKey: 'ownerX', yKey: 'ownerY' },
+        { label: 'Address', xKey: 'addressX', yKey: 'addressY', small: true },
+        { label: 'Phone', xKey: 'phoneX', yKey: 'phoneY' },
+        { label: 'City', xKey: 'cityX', yKey: 'cityY' },
+        { label: 'State', xKey: 'stateX', yKey: 'stateY' },
+        { label: 'ZIP', xKey: 'zipX', yKey: 'zipY' },
+        { label: 'Email', xKey: 'emailX', yKey: 'emailY', small: true },
+        { label: 'Region', xKey: 'regionX', yKey: 'regionY' },
+        { label: 'Signature', xKey: 'signatureX', yKey: 'signatureY' },
+    ];
+    const checks = [
+        { label: 'LCI Small', xKey: 'lciSmallX', yKey: 'lciDivisionY' },
+        { label: 'LCI Large', xKey: 'lciLargeX', yKey: 'lciDivisionY' },
+        { label: 'LCI SH Mix', xKey: 'lciMixX', yKey: 'lciDivisionY' },
+        { label: 'Open', xKey: 'openX', yKey: 'stakeCheckY' },
+        { label: 'Excellent', xKey: 'excellentX', yKey: 'stakeCheckY' },
+        { label: 'Veteran', xKey: 'veteranX', yKey: 'stakeCheckY' },
+        { label: 'Sex Dog', xKey: 'dogX', yKey: 'sexCheckY' },
+        { label: 'Sex Bitch', xKey: 'bitchX', yKey: 'sexCheckY' },
+        { label: 'First-time', xKey: 'firstTimeEntryX', yKey: 'firstTimeEntryY' },
+        { label: 'Info changed', xKey: 'changeInfoX', yKey: 'changeInfoY' },
+    ];
+    container.innerHTML = `
+        <p class="field-note">This is the left half of the official ASFA LCI entry form. LCI division, stake, sex, and first-time fields print as check boxes.</p>
+        <div class="entry-sheet-stage">
+            <svg class="entry-sheet-overlay" viewBox="0 0 ${width} ${height}" aria-label="ASFA LCI entry form overlay alignment editor">
+                <image href="templates/asfa/EF-A-LCI-Entry-Form-Rev-08-24-half.png" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>
+            </svg>
+        </div>
+    `;
+    const svg = container.querySelector('svg');
+    textItems.forEach((item) => appendAsfaEntryTextItem(svg, layout, item));
+    checks.forEach((item) => appendAsfaEntryCheckItem(svg, layout, item));
+    enableAsfaLciEntryVisualDrag(svg);
+}
+
+function enableAsfaLciEntryVisualDrag(svg) {
+    enableAsfaEntryVisualDragFor(svg, 'asfaLciEntryForm', getAsfaLciEntryLayout, renderAsfaLciEntryAlignmentTool);
+}
+
+function renderAsfaEntryVisualEditor(layout) {
+    const container = document.getElementById('asfaEntryVisualEditor');
+    if (!container) {
+        return;
+    }
+    const width = Number(layout.copyOffsetX || 396);
+    const height = 612;
+    const textItems = [
+        { label: 'Breed', xKey: 'breedX', yKey: 'breedY' },
+        { label: 'Call Name', xKey: 'callNameX', yKey: 'callNameY' },
+        { label: 'Registered Name', xKey: 'registeredNameX', yKey: 'registeredNameY' },
+        { label: 'Registration', xKey: 'registrationX', yKey: 'registrationY', small: true },
+        { label: 'DOB', xKey: 'dobX', yKey: 'dobY' },
+        { label: 'Owner', xKey: 'ownerX', yKey: 'ownerY' },
+        { label: 'Address', xKey: 'addressX', yKey: 'addressY', small: true },
+        { label: 'Phone', xKey: 'phoneX', yKey: 'phoneY' },
+        { label: 'City', xKey: 'cityX', yKey: 'cityY' },
+        { label: 'State', xKey: 'stateX', yKey: 'stateY' },
+        { label: 'ZIP', xKey: 'zipX', yKey: 'zipY' },
+        { label: 'Email', xKey: 'emailX', yKey: 'emailY', small: true },
+        { label: 'Region', xKey: 'regionX', yKey: 'regionY' },
+        { label: 'Signature', xKey: 'signatureX', yKey: 'signatureY' },
+    ];
+    const circles = [];
+    const checks = [
+        { label: 'Open', xKey: 'openX', yKey: 'stakeCheckY' },
+        { label: 'FCH', xKey: 'fchX', yKey: 'stakeCheckY' },
+        { label: 'Veteran', xKey: 'veteranX', yKey: 'stakeCheckY' },
+        { label: 'Singles', xKey: 'singlesX', yKey: 'stakeCheckY' },
+        { label: 'Provisional', xKey: 'provisionalX', yKey: 'stakeCheckY' },
+        { label: 'Dog', xKey: 'dogX', yKey: 'sexCheckY' },
+        { label: 'Bitch', xKey: 'bitchX', yKey: 'sexCheckY' },
+        { label: 'Kennel', xKey: 'kennelX', yKey: 'kennelY' },
+        { label: 'Breeder', xKey: 'breederX', yKey: 'breederY' },
+        { label: 'Bench', xKey: 'benchX', yKey: 'benchY' },
+        { label: 'Separate', xKey: 'ownerSeparationX', yKey: 'ownerSeparationY' },
+        { label: 'First ASFA', xKey: 'firstAsfaTrialX', yKey: 'firstAsfaTrialY' },
+        { label: 'First-time', xKey: 'firstTimeEntryX', yKey: 'firstTimeEntryY' },
+        { label: 'Info changed', xKey: 'changeInfoX', yKey: 'changeInfoY' },
+        { label: 'Dismissed', xKey: 'dismissedX', yKey: 'dismissedY' },
+    ];
+    container.innerHTML = `
+        <p class="field-note">This is the left half of the official ASFA entry form. Drag red text, circles, and check boxes into place. Stakes and additional stakes print as check boxes.</p>
+        <div class="entry-sheet-stage">
+            <svg class="entry-sheet-overlay" viewBox="0 0 ${width} ${height}" aria-label="ASFA entry form overlay alignment editor">
+                <image href="templates/asfa/EF-A-Entry-Form-Rev-06-26-half.png" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>
+            </svg>
+        </div>
+    `;
+    const svg = container.querySelector('svg');
+    textItems.forEach((item) => appendAsfaEntryTextItem(svg, layout, item));
+    circles.forEach((item) => appendAsfaEntryCircleItem(svg, layout, item));
+    checks.forEach((item) => appendAsfaEntryCheckItem(svg, layout, item));
+    enableAsfaEntryVisualDrag(svg);
+}
+
+function asfaEntryDisplayY(layout, key) {
+    return Number(layout[key] || 0) + Number(layout.globalYAdjust || 0);
+}
+
+function appendAsfaEntryTextItem(svg, layout, item) {
+    const x = Number(layout[item.xKey] || 0);
+    const y = asfaEntryDisplayY(layout, item.yKey);
+    const fontSize = Number(item.small ? layout.smallFontSize : layout.fontSize);
+    const group = svgElement('g', { class: 'entry-editor-item', 'data-type': 'text', 'data-x-key': item.xKey, 'data-y-key': item.yKey });
+    group.appendChild(svgElement('rect', { x: x - 2, y: y - fontSize - 3, width: 76, height: fontSize + 7, fill: 'rgba(255,255,255,0.72)', stroke: '#b3261e' }));
+    group.appendChild(svgElement('text', { x, y, 'font-size': String(fontSize), fill: '#b3261e', 'font-weight': '700' }, item.label));
+    svg.appendChild(group);
+}
+
+function appendAsfaEntryCircleItem(svg, layout, item) {
+    const cx = Number(layout[item.xKey] || 0);
+    const cy = asfaEntryDisplayY(layout, item.yKey);
+    const rx = Number(layout[item.rxKey] || 12);
+    const ry = Number(layout[item.ryKey] || 7);
+    const group = svgElement('g', { class: 'entry-editor-item', 'data-type': 'circle', 'data-x-key': item.xKey, 'data-y-key': item.yKey });
+    group.appendChild(svgElement('ellipse', { cx, cy, rx, ry, fill: 'none', stroke: '#b3261e', 'stroke-width': '1.8' }));
+    group.appendChild(svgElement('text', { x: cx + rx + 4, y: cy + 2, 'font-size': '6', fill: '#5c2b25' }, item.label));
+    svg.appendChild(group);
+}
+
+function appendAsfaEntryCheckItem(svg, layout, item) {
+    const x = Number(layout[item.xKey] || 0);
+    const y = asfaEntryDisplayY(layout, item.yKey);
+    const size = Number(layout.checkSize || 7);
+    const group = svgElement('g', { class: 'entry-editor-item', 'data-type': 'check', 'data-x-key': item.xKey, 'data-y-key': item.yKey });
+    group.appendChild(svgElement('rect', { x, y: y - size + 2, width: size, height: size, fill: 'none', stroke: '#b3261e', 'stroke-width': '1.8' }));
+    group.appendChild(svgElement('text', { x: x + size + 4, y: y + 1, 'font-size': '6', fill: '#5c2b25' }, item.label));
+    svg.appendChild(group);
+}
+
+function enableAsfaEntryVisualDrag(svg) {
+    enableAsfaEntryVisualDragFor(svg, 'asfaEntryForm', getAsfaEntryLayout, renderAsfaEntryAlignmentTool);
+}
+
+function enableAsfaEntryVisualDragFor(svg, reportKey, getLayout, renderTool) {
+    let drag = null;
+    const pointFromEvent = (event) => {
+        const point = svg.createSVGPoint();
+        point.x = event.clientX;
+        point.y = event.clientY;
+        return point.matrixTransform(svg.getScreenCTM().inverse());
+    };
+    svg.addEventListener('pointerdown', (event) => {
+        if (isAlignmentLocked(reportKey)) {
+            return;
+        }
+        const item = event.target.closest('.entry-editor-item');
+        if (!item) {
+            return;
+        }
+        event.preventDefault();
+        item.setPointerCapture?.(event.pointerId);
+        drag = { item, start: pointFromEvent(event), layout: { ...getLayout() } };
+    });
+    svg.addEventListener('pointermove', (event) => {
+        if (!drag) {
+            return;
+        }
+        const point = pointFromEvent(event);
+        const dx = point.x - drag.start.x;
+        const dy = point.y - drag.start.y;
+        const layout = getLayout();
+        const xKey = drag.item.dataset.xKey;
+        const yKey = drag.item.dataset.yKey;
+        layout[xKey] = Math.max(0, Math.round(Number(drag.layout[xKey] || 0) + dx));
+        layout[yKey] = Math.max(0, Math.round(Number(drag.layout[yKey] || 0) + dy));
+        saveFormAlignment();
+        updateAsfaEntryVisualItem(drag.item, layout);
+    });
+    svg.addEventListener('pointerup', () => {
+        if (drag) {
+            renderTool(readForm());
+        }
+        drag = null;
+    });
+    svg.addEventListener('pointercancel', () => {
+        drag = null;
+    });
+}
+
+function updateAsfaEntryVisualItem(item, layout) {
+    const x = Number(layout[item.dataset.xKey] || 0);
+    const y = asfaEntryDisplayY(layout, item.dataset.yKey);
+    if (item.dataset.type === 'circle') {
+        const ellipse = item.querySelector('ellipse');
+        const text = item.querySelector('text');
+        const rx = Number(ellipse?.getAttribute('rx') || 12);
+        ellipse?.setAttribute('cx', x);
+        ellipse?.setAttribute('cy', y);
+        text?.setAttribute('x', x + rx + 4);
+        text?.setAttribute('y', y + 2);
+        return;
+    }
+    if (item.dataset.type === 'check') {
+        const rect = item.querySelector('rect');
+        const text = item.querySelector('text');
+        const size = Number(layout.checkSize || 7);
+        rect?.setAttribute('x', x);
+        rect?.setAttribute('y', y - size + 2);
+        text?.setAttribute('x', x + size + 4);
+        text?.setAttribute('y', y + 1);
+        return;
+    }
+    const rect = item.querySelector('rect');
+    const text = item.querySelector('text');
+    rect?.setAttribute('x', x - 2);
+    rect?.setAttribute('y', y - Number(text?.getAttribute('font-size') || 8) - 3);
+    text?.setAttribute('x', x);
+    text?.setAttribute('y', y);
 }
 
 function renderAsfaRecordVisualEditor(layout) {
@@ -2145,6 +3270,10 @@ function renderAlignmentControls(container, reportKey, layout, controls) {
             renderAsfaRecordAlignmentTool(readForm());
         } else if (reportKey === 'asfaSecretaryReport') {
             renderAsfaSecretaryAlignmentTool(readForm());
+        } else if (reportKey === 'asfaEntryForm') {
+            renderAsfaEntryAlignmentTool(readForm());
+        } else if (reportKey === 'asfaLciEntryForm') {
+            renderAsfaLciEntryAlignmentTool(readForm());
         }
     });
     const lockText = document.createElement('span');
@@ -2190,6 +3319,10 @@ function renderAlignmentControls(container, reportKey, layout, controls) {
                 renderAsfaRecordVisualEditor(formAlignment.asfaRecordSheet);
             } else if (reportKey === 'asfaSecretaryReport') {
                 renderAsfaSecretaryVisualEditor(formAlignment.asfaSecretaryReport);
+            } else if (reportKey === 'asfaEntryForm') {
+                renderAsfaEntryVisualEditor(formAlignment.asfaEntryForm);
+            } else if (reportKey === 'asfaLciEntryForm') {
+                renderAsfaLciEntryVisualEditor(formAlignment.asfaLciEntryForm);
             }
         };
         range.addEventListener('input', () => update(range.value));
@@ -2571,8 +3704,9 @@ function renderRosterTables(trial) {
         entryDatesLabel: entryDatesLabel(entry, trial),
         trialMembershipLabel: entryTrialMembershipLabel(entry),
         ownerSeparationLabel: entry.ownerSeparationRequested ? (entry.ownerSeparationGroup || 'Yes') : '',
+        documentLabel: entryDocumentLabel(entry),
     }));
-    renderRows('entriesTable', entryRows, ['callName', 'registeredName', 'breed', 'registrationNumber', 'registry', 'className', 'entryDatesLabel', 'trialMembershipLabel', 'handler', 'ownerSeparationLabel'], { actions: 'entries' });
+    renderRows('entriesTable', entryRows, ['callName', 'registeredName', 'breed', 'registrationNumber', 'registry', 'className', 'entryDatesLabel', 'trialMembershipLabel', 'handler', 'ownerSeparationLabel', 'documentLabel'], { actions: 'entries' });
     renderRows('masterJudgesTable', masterJudges, ['name', 'number', 'email', 'phone']);
     renderRows('judgesTable', trial.judges || [], ['name', 'number', 'assignment']);
     renderRows('masterWorkersTable', masterWorkers, ['name', 'email', 'phone', 'notes']);
@@ -2776,6 +3910,14 @@ function renderOwnerSeparationQuickEditor(entries) {
         return;
     }
 
+    const trial = getSelectedTrial();
+    const status = document.getElementById('ownerSeparationReviewedStatus');
+    if (status) {
+        status.textContent = trial && trial.ownerSeparationReviewedAt
+            ? `Owner separation reviewed ${formatTimestamp(trial.ownerSeparationReviewedAt)}.`
+            : 'Owner separation has not been reviewed yet.';
+    }
+
     container.innerHTML = '';
     if (!entries.length) {
         const empty = document.createElement('p');
@@ -2951,9 +4093,27 @@ function autoMarkOwnerSeparationGroups() {
         }, 'Auto marked owner separation groups.');
     }
 
+    trial.ownerSeparationReviewedAt = new Date().toISOString();
     upsertTrial(trial);
     saveTrials();
     showMessage(rollCallMessage, `Marked owner separation for ${ownersToSeparate.length} owner group${ownersToSeparate.length === 1 ? '' : 's'}.`, 'success');
+    render();
+}
+
+function markOwnerSeparationReviewed() {
+    const trial = readForm();
+    if (isPreliminaryDrawLocked(trial)) {
+        showPreliminaryDrawLockedMessage('draw');
+        return;
+    }
+    if (!trial || !trial.id || !(trial.entries || []).length) {
+        showMessage(rollCallMessage, 'Add trial entries before marking owner separation reviewed.', 'warning');
+        return;
+    }
+    trial.ownerSeparationReviewedAt = new Date().toISOString();
+    upsertTrial(trial);
+    saveTrials();
+    showMessage(rollCallMessage, 'Owner separation marked reviewed for this trial.', 'success');
     render();
 }
 
@@ -3309,6 +4469,12 @@ function updateDrawSeparationGroup(entryId, groupValue) {
         showPreliminaryDrawLockedMessage('group');
         render();
         return;
+    }
+    const existingEntry = (trial.entries || []).find((entry) => entry.id === entryId);
+    const changed = clean((existingEntry || {}).ownerSeparationGroup) !== clean(group)
+        || Boolean((existingEntry || {}).ownerSeparationRequested) !== Boolean(group);
+    if (changed) {
+        trial.ownerSeparationReviewedAt = '';
     }
     trial.entries = (trial.entries || []).map((entry) => entry.id === entryId ? {
         ...entry,
@@ -7853,6 +9019,7 @@ function printRibbonReport() {
 
     renderRibbonReportPrint(trial, groups, document.getElementById('ribbonPlacementOrder')?.value || 'nbqFirst');
     printSection('scoreReportPrint');
+    markTrialGuidePrinted('ribbonReport');
 }
 
 async function printAsfaRecordSheet({ groupId = '', breed = '' } = {}) {
@@ -7880,7 +9047,7 @@ async function printAsfaRecordSheet({ groupId = '', breed = '' } = {}) {
         const response = await fetch('/api/asfa-record-sheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial, groupId, breed, layout: getAsfaRecordLayout() }),
+            body: JSON.stringify({ trial, groupId, breed, layout: getAsfaRecordLayout(), entryLayout: getAsfaEntryLayout(), lciEntryLayout: getAsfaLciEntryLayout() }),
         });
 
         if (!response.ok) {
@@ -7906,6 +9073,7 @@ async function printAsfaRecordSheet({ groupId = '', breed = '' } = {}) {
             link.click();
         }
         showMessage(message, 'ASFA record sheet PDF created.', 'success');
+        markTrialGuidePrinted('stakeBreedSheets');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -7929,7 +9097,28 @@ async function printAsfaRecordPacket() {
     await openTrialPdf('/api/asfa-record-packet', {
         trial,
         layout: getAsfaRecordLayout(),
+        entryLayout: getAsfaEntryLayout(),
+        lciEntryLayout: getAsfaLciEntryLayout(),
     }, message, 'ASFA record packet PDF created.', 'ASFA record packet could not be created.');
+}
+
+async function printAsfaEntryForms() {
+    const message = wrapUpMessage || officialFormsMessage || mainResultsMessage || document.getElementById('scoringMessage');
+    const trial = readForm();
+    if (clean(trial.association || 'ASFA') !== 'ASFA') {
+        showMessage(message, 'The first-time entry forms are set up for ASFA trials first.', 'warning');
+        return;
+    }
+    const count = (trial.entries || []).filter((entry) => entry.firstTime).length;
+    if (count === 0) {
+        showMessage(message, 'No first-time ASFA entries are marked for this trial.', 'warning');
+        return;
+    }
+    await openTrialPdf('/api/asfa-entry-forms', {
+        trial,
+        layout: getAsfaEntryLayout(),
+        lciLayout: getAsfaLciEntryLayout(),
+    }, message, `Created ${count} first-time ASFA entry form${count === 1 ? '' : 's'}.`, 'ASFA first-time entry forms could not be created.');
 }
 
 async function printAsfaSecretaryReport() {
@@ -7943,6 +9132,117 @@ async function printAsfaSecretaryReport() {
         trial,
         layout: getAsfaSecretaryLayout(),
     }, message, 'ASFA secretary report PDF created.', 'ASFA secretary report could not be created.');
+}
+
+async function createFinalTrialArchive() {
+    const trial = readForm();
+    if (!trial || !trial.id) {
+        showMessage(archiveTrialMessage, 'Select a trial before creating a final archive.', 'warning');
+        return;
+    }
+    if (trial.archivedAt && !window.confirm('This trial is already archived. Create another final archive package?')) {
+        return;
+    }
+    if (!isLocalServerMode()) {
+        showMessage(archiveTrialMessage, 'Final archive packages require SQLite/server mode. Start the app with start_field_trial_secretary.ps1.', 'warning');
+        return;
+    }
+    if (!window.confirm(`Create a final archive package for ${trial.trialName || 'this trial'} and lock it against edits?`)) {
+        return;
+    }
+
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/trial-archive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                trial,
+                state: makeBackupSnapshot(),
+                recordLayout: getAsfaRecordLayout(),
+                entryLayout: getAsfaEntryLayout(),
+                lciEntryLayout: getAsfaLciEntryLayout(),
+                secretaryLayout: getAsfaSecretaryLayout(),
+            }),
+        });
+        if (!response.ok) {
+            let errorMessage = 'Final archive package could not be created.';
+            try {
+                const body = await response.json();
+                errorMessage = body.error || errorMessage;
+            } catch {
+                // Keep the generic failure message when the response is a file/HTML.
+            }
+            throw new Error(errorMessage);
+        }
+
+        const blob = await response.blob();
+        const archivePath = response.headers.get('X-Archive-Path') || '';
+        const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition')) || `${safeDownloadName(trial.trialName || 'field-trial')}-final-archive.zip`;
+        downloadBlob(blob, filename);
+
+        const archivedTrial = {
+            ...trial,
+            archivedAt: new Date().toISOString(),
+            archivePackageName: filename,
+            archivePackagePath: archivePath,
+            archiveUnlockedAt: '',
+        };
+        upsertTrial(archivedTrial);
+        if (localStorage.getItem(activeKey) === archivedTrial.id) {
+            localStorage.removeItem(activeKey);
+            setActiveTrialLocked(false);
+        }
+        selectedTrialId = archivedTrial.id;
+        await saveToSQLite();
+        showMessage(archiveTrialMessage, `Final archive created and trial locked: ${filename}`, 'success');
+        render();
+    } catch (error) {
+        showMessage(archiveTrialMessage, error.message || 'Final archive package could not be created.', 'warning');
+    }
+}
+
+function unlockArchivedTrial() {
+    const trial = getSelectedTrial();
+    if (!trial) {
+        showMessage(archiveTrialMessage, 'Select an archived trial first.', 'warning');
+        return;
+    }
+    if (!trial.archivedAt) {
+        showMessage(archiveTrialMessage, 'This trial is not archived.', 'warning');
+        return;
+    }
+    if (!window.confirm(`Unlock ${trial.trialName || 'this trial'} for corrections? It will become editable again.`)) {
+        return;
+    }
+    const unlocked = {
+        ...trial,
+        archivedAt: '',
+        archiveUnlockedAt: new Date().toISOString(),
+    };
+    upsertTrial(unlocked);
+    showMessage(archiveTrialMessage, 'Archived trial unlocked for corrections.', 'success');
+    render();
+}
+
+function filenameFromContentDisposition(value) {
+    const match = String(value || '').match(/filename="?([^";]+)"?/i);
+    return match ? match[1] : '';
+}
+
+function safeDownloadName(value) {
+    return String(value || 'download').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'download';
+}
+
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
 }
 
 async function openTrialPdf(endpoint, payload, messageElement, successMessage, failureMessage) {
@@ -8039,6 +9339,100 @@ function resetAsfaRecordAlignment() {
     saveFormAlignment();
     renderAsfaRecordAlignmentTool(readForm());
     showMessage(officialFormsMessage, 'ASFA record sheet alignment reset to defaults.', 'success');
+}
+
+async function previewAsfaEntryAlignment() {
+    const message = officialFormsMessage;
+    const trial = readForm();
+    const firstEntry = (trial.entries || []).find((entry) => entry.firstTime);
+    if (!firstEntry) {
+        showMessage(message, 'Mark at least one trial entry as first-time before previewing the ASFA entry form.', 'warning');
+        return;
+    }
+    if (!isLocalServerMode()) {
+        showMessage(message, 'ASFA entry form preview requires SQLite/server mode.', 'warning');
+        return;
+    }
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/asfa-entry-forms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial, entryId: firstEntry.id, layout: getAsfaEntryLayout() }),
+        });
+        if (!response.ok) {
+            let errorMessage = 'ASFA entry form preview could not be created.';
+            try {
+                const payload = await response.json();
+                errorMessage = payload.error || errorMessage;
+            } catch {
+                // Keep generic message.
+            }
+            throw new Error(errorMessage);
+        }
+        const blob = await response.blob();
+        const frame = document.getElementById('asfaEntryAlignmentPreview');
+        if (frame) {
+            frame.src = URL.createObjectURL(blob);
+        }
+        showMessage(message, `Previewing first-time entry form for ${firstEntry.callName || firstEntry.registeredName || 'hound'}.`, 'success');
+    } catch (error) {
+        showMessage(message, error.message || 'ASFA entry form preview could not be created.', 'warning');
+    }
+}
+
+function resetAsfaEntryAlignment() {
+    formAlignment.asfaEntryForm = { ...defaultFormAlignment.asfaEntryForm };
+    saveFormAlignment();
+    renderAsfaEntryAlignmentTool(readForm());
+    showMessage(officialFormsMessage, 'ASFA entry form alignment reset to defaults.', 'success');
+}
+
+async function previewAsfaLciEntryAlignment() {
+    const message = officialFormsMessage;
+    const trial = readForm();
+    const firstEntry = (trial.entries || []).find((entry) => entry.firstTime && isLciEntry(entry));
+    if (!firstEntry) {
+        showMessage(message, 'Mark at least one LCI trial entry as first-time before previewing the ASFA LCI entry form.', 'warning');
+        return;
+    }
+    if (!isLocalServerMode()) {
+        showMessage(message, 'ASFA LCI entry form preview requires SQLite/server mode.', 'warning');
+        return;
+    }
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/asfa-entry-forms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial, entryId: firstEntry.id, layout: getAsfaEntryLayout(), lciLayout: getAsfaLciEntryLayout() }),
+        });
+        if (!response.ok) {
+            let errorMessage = 'ASFA LCI entry form preview could not be created.';
+            try {
+                const payload = await response.json();
+                errorMessage = payload.error || errorMessage;
+            } catch {
+                // Keep generic message.
+            }
+            throw new Error(errorMessage);
+        }
+        const blob = await response.blob();
+        const frame = document.getElementById('asfaLciEntryAlignmentPreview');
+        if (frame) {
+            frame.src = URL.createObjectURL(blob);
+        }
+        showMessage(message, `Previewing LCI entry form for ${firstEntry.callName || firstEntry.registeredName || 'hound'}.`, 'success');
+    } catch (error) {
+        showMessage(message, error.message || 'ASFA LCI entry form preview could not be created.', 'warning');
+    }
+}
+
+function resetAsfaLciEntryAlignment() {
+    formAlignment.asfaLciEntryForm = { ...defaultFormAlignment.asfaLciEntryForm };
+    saveFormAlignment();
+    renderAsfaLciEntryAlignmentTool(readForm());
+    showMessage(officialFormsMessage, 'ASFA LCI entry form alignment reset to defaults.', 'success');
 }
 
 async function previewAsfaJudgeAlignment() {
@@ -10166,6 +11560,11 @@ function printSection(sectionId) {
     }, 250);
 }
 
+function printSectionAndMark(sectionId, guideKey) {
+    printSection(sectionId);
+    markTrialGuidePrinted(guideKey);
+}
+
 async function printDrawSheet() {
     const trial = readForm();
     const draw = trial.preliminaryDraw;
@@ -10211,6 +11610,7 @@ async function printDrawSheet() {
             link.click();
         }
         showMessage(rollCallMessage, 'Official draw order PDF created.', 'success');
+        markTrialGuidePrinted('prelimDrawSheet');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -10264,6 +11664,7 @@ async function printJudgeSheets() {
             link.click();
         }
         showMessage(rollCallMessage, 'Official preliminary judge sheets created.', 'success');
+        markTrialGuidePrinted('prelimJudgeSheets');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -10315,6 +11716,7 @@ async function printRunoffJudgeSheets(groupId, tie) {
             link.click();
         }
         showMessage(document.getElementById('scoringMessage'), 'Runoff judge sheets created.', 'success');
+        markTrialGuidePrinted('runoffJudgeSheets');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -10371,6 +11773,7 @@ async function printRunoffDrawSheet() {
             link.click();
         }
         showMessage(runoffMessage, 'Runoff draw sheet created.', 'success');
+        markTrialGuidePrinted('runoffDrawSheet');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -10427,6 +11830,7 @@ async function printFinalsJudgeSheets(groupId) {
             link.click();
         }
         showMessage(document.getElementById('scoringMessage'), 'Finals judge sheets created.', 'success');
+        markTrialGuidePrinted('finalJudgeSheets');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -10497,6 +11901,7 @@ async function printBifJudgeSheets() {
             link.click();
         }
         showMessage(bifMessage, 'BIF judge sheets created.', 'success');
+        markTrialGuidePrinted('bifJudgeSheets');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -10553,6 +11958,7 @@ async function printAllRunoffJudgeSheets() {
             link.click();
         }
         showMessage(runoffMessage, 'Runoff judge sheets created.', 'success');
+        markTrialGuidePrinted('runoffJudgeSheets');
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
@@ -10815,6 +12221,12 @@ function buildAdminTrialEntry(hound, className, entryIndex, association) {
         certRequired: false,
         ownerSeparationRequested: false,
         ownerSeparationGroup: '',
+        additionalKennel: false,
+        additionalBreeder: false,
+        additionalBench: false,
+        infoChanged: false,
+        dismissedLastSix: false,
+        signatureName: hound.owner || '',
         rollCallStatus: '',
         rollCallNotes: '',
     };
@@ -10878,16 +12290,32 @@ function addAdminBreedPlanRow() {
 function deleteSelectedAdminTrial() {
     const select = document.getElementById('adminDeleteTrial');
     const trialId = select && select.value;
+    deleteTrialById(trialId, adminTestMessage);
+}
+
+function deleteSelectedSetupTrial() {
+    deleteTrialById(selectedTrialId, formMessage);
+}
+
+function deleteTrialById(trialId, messageElement) {
     const trial = trials.find((item) => item.id === trialId);
     if (!trial) {
-        showMessage(adminTestMessage, 'Choose a trial to delete.', 'warning');
+        showMessage(messageElement, 'Choose a trial to delete.', 'warning');
         return;
     }
 
-    if (!window.confirm(`Delete "${trial.trialName || 'Untitled trial'}"? This removes the trial from this browser.`)) {
+    if (!window.confirm(`Are you sure you want to delete "${trial.trialName || 'Untitled trial'}"? It can be recovered from Admin Test until five newer trial deletions replace it.`)) {
         return;
     }
 
+    deletedTrials = [
+        {
+            id: crypto.randomUUID(),
+            deletedAt: new Date().toISOString(),
+            trial: { ...trial },
+        },
+        ...(Array.isArray(deletedTrials) ? deletedTrials : []),
+    ].slice(0, 5);
     trials = trials.filter((item) => item.id !== trialId);
     if (selectedTrialId === trialId) {
         selectedTrialId = trials[0] ? trials[0].id : '';
@@ -10898,10 +12326,34 @@ function deleteSelectedAdminTrial() {
         } else {
             localStorage.removeItem(activeKey);
         }
+        setActiveTrialLocked(false);
         queueSQLiteSave();
     }
+    saveDeletedTrials();
     saveTrials();
-    showMessage(adminTestMessage, 'Trial deleted.', 'success');
+    showMessage(messageElement, 'Trial deleted. It can be recovered from Admin Test.', 'success');
+    render();
+}
+
+function restoreDeletedTrial(recordId) {
+    const record = (deletedTrials || []).find((item) => item.id === recordId);
+    if (!record || !record.trial) {
+        showMessage(adminTestMessage, 'Deleted trial record not found.', 'warning');
+        return;
+    }
+    const trial = {
+        ...record.trial,
+        id: trials.some((item) => item.id === record.trial.id) ? crypto.randomUUID() : record.trial.id,
+        trialId: '',
+        updatedAt: new Date().toISOString(),
+    };
+    trial.trialId = trial.id;
+    trials.unshift(trial);
+    deletedTrials = deletedTrials.filter((item) => item.id !== recordId);
+    selectedTrialId = trial.id;
+    saveDeletedTrials();
+    saveTrials();
+    showMessage(adminTestMessage, `Restored "${trial.trialName || 'Untitled trial'}".`, 'success');
     render();
 }
 
@@ -11111,7 +12563,20 @@ function renderRows(tableId, rows, keys, options = {}) {
                 }
             });
 
-            td.append(edit, remove);
+            td.append(edit);
+            if (options.actions === 'entries' && entryDocumentLinks(row).length > 0) {
+                const docs = document.createElement('button');
+                docs.type = 'button';
+                docs.className = 'text-button';
+                docs.textContent = 'Docs';
+                docs.addEventListener('click', () => {
+                    entryDocumentLinks(row).forEach((documentInfo) => {
+                        window.open(`/api/document/${encodeURIComponent(documentInfo.id)}`, '_blank', 'noopener');
+                    });
+                });
+                td.append(docs);
+            }
+            td.append(remove);
             tr.appendChild(td);
         }
         body.appendChild(tr);
@@ -11243,39 +12708,39 @@ function updateSelectedTrialList(key, row) {
 
 function addMasterHoundFromForm(source = 'master') {
     const prefix = source === 'entry' ? 'entry' : 'master';
-    const primaryRegistry = source === 'master' ? document.getElementById('masterRegistry').value : '';
-    const primaryRegType = source === 'master' ? document.getElementById('masterRegType').value : '';
-    const altRegistry = source === 'master' ? document.getElementById('masterAltRegistry').value : '';
-    const altRegNumber = source === 'master' ? document.getElementById('masterAltRegNumber').value.trim() : '';
+    const primaryRegistry = getFormValue(`${prefix}Registry`);
+    const primaryRegType = getFormValue(`${prefix}RegType`);
+    const altRegistry = getFormValue(`${prefix}AltRegistry`);
+    const altRegNumber = getFormValue(`${prefix}AltRegNumber`);
     const existing = source === 'master' && editingHoundId ? masterHounds.find((item) => item.id === editingHoundId) : null;
     const hound = {
         ...(existing || {}),
         id: existing ? existing.id : crypto.randomUUID(),
-        callName: document.getElementById(`${prefix}CallName`).value.trim(),
-        registeredName: document.getElementById(`${prefix}RegName`).value.trim(),
-        breed: document.getElementById(`${prefix}Breed`).value.trim(),
-        registrationNumber: document.getElementById(`${prefix}RegNumber`).value.trim(),
+        callName: getFormValue(`${prefix}CallName`),
+        registeredName: getFormValue(`${prefix}RegName`),
+        breed: getFormValue(`${prefix}Breed`),
+        registrationNumber: getFormValue(`${prefix}RegNumber`),
         registry: primaryRegistry,
         registrationType: primaryRegType,
-        registrationDisplay: formatRegistration(primaryRegistry, document.getElementById(`${prefix}RegNumber`).value.trim(), primaryRegType),
+        registrationDisplay: formatRegistration(primaryRegistry, getFormValue(`${prefix}RegNumber`), primaryRegType),
         alternateRegistry: altRegistry,
         alternateRegistrationNumber: altRegNumber,
         alternateRegistrationDisplay: formatRegistration(altRegistry, altRegNumber, ''),
         registrationVerificationStatus: 'not_checked',
         alternateVerificationStatus: altRegNumber ? 'not_checked' : '',
-        sex: source === 'master' ? document.getElementById('masterSex').value : '',
-        dob: source === 'master' ? document.getElementById('masterDob').value : '',
-        owner: source === 'master' ? document.getElementById('masterOwner').value.trim() : '',
-        ownerEmail: source === 'master' ? document.getElementById('masterOwnerEmail').value.trim() : '',
-        ownerPhone: source === 'master' ? document.getElementById('masterOwnerPhone').value.trim() : '',
-        ownerAddress: source === 'master' ? document.getElementById('masterOwnerAddress').value.trim() : '',
-        ownerCity: source === 'master' ? document.getElementById('masterOwnerCity').value.trim() : '',
-        ownerState: source === 'master' ? document.getElementById('masterOwnerState').value.trim() : '',
-        ownerPostalCode: source === 'master' ? document.getElementById('masterOwnerPostalCode').value.trim() : '',
-        ownerCountry: source === 'master' ? document.getElementById('masterOwnerCountry').value.trim() : '',
-        breeder: source === 'master' ? document.getElementById('masterBreeder').value.trim() : '',
-        sire: source === 'master' ? document.getElementById('masterSire').value.trim() : '',
-        dam: source === 'master' ? document.getElementById('masterDam').value.trim() : '',
+        sex: getFormValue(`${prefix}Sex`),
+        dob: getFormValue(`${prefix}Dob`),
+        owner: getFormValue(`${prefix}Owner`),
+        ownerEmail: getFormValue(`${prefix}OwnerEmail`),
+        ownerPhone: getFormValue(`${prefix}OwnerPhone`),
+        ownerAddress: getFormValue(`${prefix}OwnerAddress`),
+        ownerCity: getFormValue(`${prefix}OwnerCity`),
+        ownerState: getFormValue(`${prefix}OwnerState`),
+        ownerPostalCode: getFormValue(`${prefix}OwnerPostalCode`),
+        ownerCountry: getFormValue(`${prefix}OwnerCountry`),
+        breeder: getFormValue(`${prefix}Breeder`),
+        sire: getFormValue(`${prefix}Sire`),
+        dam: getFormValue(`${prefix}Dam`),
         createdAt: existing ? existing.createdAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     };
@@ -11315,6 +12780,11 @@ function addMasterHoundFromForm(source = 'master') {
     saveMasterHounds();
     showMessage(source === 'entry' ? entryMessage : masterHoundMessage, existing ? 'Hound updated.' : 'Hound saved to the database.', 'success');
     return hound;
+}
+
+function getFormValue(id) {
+    const field = document.getElementById(id);
+    return field ? String(field.value || '').trim() : '';
 }
 
 function importAsfaRecentHounds() {
@@ -11485,9 +12955,11 @@ function getAsfaRecentCount() {
 
 async function addTrialEntry() {
     let hound = findHoundFromSearch();
+    let createdHoundFromEntry = false;
 
     if (!hound) {
         hound = addMasterHoundFromForm('entry');
+        createdHoundFromEntry = Boolean(hound);
     }
 
     if (!hound) {
@@ -11504,6 +12976,9 @@ async function addTrialEntry() {
         document.getElementById('entryOwnerSeparationGroup').value = suggestOwnerSeparationGroup();
     }
 
+    if (createdHoundFromEntry) {
+        renderEntryRegistrationOptions(hound);
+    }
     const selectedRegistration = parseRegistrationChoice(document.getElementById('entryRegistrationUsed').value, hound);
     let documentResult;
     try {
@@ -11553,6 +13028,7 @@ async function addTrialEntry() {
                         };
                         return preserveEntryDocumentsOnEdit(row, mergedEntry);
                     }),
+                    ownerSeparationReviewedAt: '',
                     updatedAt: new Date().toISOString(),
                 };
             }
@@ -11572,6 +13048,7 @@ async function addTrialEntry() {
             return {
                 ...trial,
                 entries: [...entries, buildTrialEntry(hound, selectedRegistration, className, crypto.randomUUID(), documentResult)],
+                ownerSeparationReviewedAt: '',
                 updatedAt: new Date().toISOString(),
             };
         });
@@ -11616,6 +13093,7 @@ async function addTrialEntry() {
         return {
             ...trial,
             entries: [...entries, buildTrialEntry(hound, selectedRegistration, className, crypto.randomUUID(), documentResult)],
+            ownerSeparationReviewedAt: '',
             updatedAt: new Date().toISOString(),
         };
     });
@@ -11730,6 +13208,16 @@ function buildTrialEntry(hound, selectedRegistration, className, id = crypto.ran
         owner: hound.owner || '',
         ownerEmail: hound.ownerEmail || '',
         ownerPhone: hound.ownerPhone || '',
+        ownerAddress: hound.ownerAddress || '',
+        ownerCity: hound.ownerCity || '',
+        ownerState: hound.ownerState || '',
+        ownerPostalCode: hound.ownerPostalCode || '',
+        ownerCountry: hound.ownerCountry || '',
+        sex: hound.sex || '',
+        dob: hound.dob || '',
+        breeder: hound.breeder || '',
+        sire: hound.sire || '',
+        dam: hound.dam || '',
         entryNumber: document.getElementById('entryNumber').value.trim(),
         firstTime,
         certRequired,
@@ -11747,6 +13235,12 @@ function buildTrialEntry(hound, selectedRegistration, className, id = crypto.ran
         ownerSeparationGroup: document.getElementById('entryOwnerSeparation').checked
             ? document.getElementById('entryOwnerSeparationGroup').value.trim().toUpperCase()
             : '',
+        additionalKennel: document.getElementById('entryAdditionalKennel')?.checked || false,
+        additionalBreeder: document.getElementById('entryAdditionalBreeder')?.checked || false,
+        additionalBench: document.getElementById('entryAdditionalBench')?.checked || false,
+        infoChanged: document.getElementById('entryInfoChanged')?.checked || false,
+        dismissedLastSix: document.getElementById('entryDismissedLastSix')?.checked || false,
+        signatureName: hound.owner || '',
         rollCallStatus: '',
         rollCallNotes: '',
     };
@@ -11838,6 +13332,16 @@ function buildImportedTrialEntry(hound, imported, id = crypto.randomUUID()) {
         owner: imported.owner || hound.owner || '',
         ownerEmail: imported.ownerEmail || hound.ownerEmail || '',
         ownerPhone: imported.ownerPhone || hound.ownerPhone || '',
+        ownerAddress: imported.ownerAddress || hound.ownerAddress || '',
+        ownerCity: imported.ownerCity || hound.ownerCity || '',
+        ownerState: imported.ownerState || hound.ownerState || '',
+        ownerPostalCode: imported.ownerPostalCode || hound.ownerPostalCode || '',
+        ownerCountry: imported.ownerCountry || hound.ownerCountry || '',
+        sex: imported.sex || hound.sex || '',
+        dob: imported.dob || hound.dob || '',
+        breeder: imported.breeder || hound.breeder || '',
+        sire: imported.sire || hound.sire || '',
+        dam: imported.dam || hound.dam || '',
         entryNumber: imported.entryNumber || '',
         trialDates: imported.trialDates || '',
         entryDates: imported.entryDates || parseImportedEntryDates(imported.trialDates),
@@ -11845,6 +13349,12 @@ function buildImportedTrialEntry(hound, imported, id = crypto.randomUUID()) {
         certRequired,
         ownerSeparationRequested: false,
         ownerSeparationGroup: '',
+        additionalKennel: Boolean(imported.additionalKennel),
+        additionalBreeder: Boolean(imported.additionalBreeder),
+        additionalBench: Boolean(imported.additionalBench),
+        infoChanged: Boolean(imported.infoChanged),
+        dismissedLastSix: Boolean(imported.dismissedLastSix),
+        signatureName: imported.owner || hound.owner || '',
         rollCallStatus: '',
         rollCallNotes: '',
         importedFrom: imported.importSource || 'Entry import',
@@ -12628,6 +14138,63 @@ function entryTrialMembershipLabel(entry) {
     return memberships.join('; ');
 }
 
+function entryDocumentLinks(entry) {
+    const links = [];
+    if (entry.registrationCertDocumentId) {
+        links.push({
+            id: entry.registrationCertDocumentId,
+            label: `Registration: ${entry.registrationCertFileName || 'certificate'}`,
+        });
+    }
+    if (entry.coursingCertDocumentId) {
+        links.push({
+            id: entry.coursingCertDocumentId,
+            label: `Coursing: ${entry.coursingCertFileName || 'certification'}`,
+        });
+    }
+    if (links.length === 0 && Array.isArray(entry.documentRecords)) {
+        entry.documentRecords.forEach((documentRecord, index) => {
+            if (documentRecord.id) {
+                links.push({
+                    id: documentRecord.id,
+                    label: documentRecord.fileName || `Document ${index + 1}`,
+                });
+            }
+        });
+    }
+    if (links.length === 0 && Array.isArray(entry.documentIds)) {
+        entry.documentIds.forEach((documentId, index) => {
+            if (documentId) {
+                links.push({
+                    id: documentId,
+                    label: `Document ${index + 1}`,
+                });
+            }
+        });
+    }
+    return links;
+}
+
+function entryDocumentLabel(entry) {
+    const links = entryDocumentLinks(entry);
+    if (links.length > 0) {
+        return `${links.length} attached`;
+    }
+    if (entry.needsDocumentUpload || entry.documentStatus === 'needed') {
+        return 'Needed';
+    }
+    return '';
+}
+
+function documentViewLink(documentInfo) {
+    const link = document.createElement('a');
+    link.href = `/api/document/${encodeURIComponent(documentInfo.id)}`;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = documentInfo.label;
+    return link;
+}
+
 function sameHoundEntry(a, b) {
     if (a.houndId && b.houndId && a.houndId === b.houndId) {
         return true;
@@ -12833,12 +14400,45 @@ function isSameEntry(entry, hound, selectedRegistration, className) {
     return sameHound && entry.className === className;
 }
 
+function entryHoundFieldIds() {
+    return [
+        'entryHoundSearch',
+        'entryCallName',
+        'entryRegName',
+        'entryRegNumber',
+        'entryAltRegNumber',
+        'entryOwner',
+        'entryOwnerEmail',
+        'entryOwnerPhone',
+        'entryDob',
+        'entryOwnerAddress',
+        'entryOwnerCity',
+        'entryOwnerState',
+        'entryOwnerPostalCode',
+        'entryOwnerCountry',
+        'entryBreeder',
+        'entrySire',
+        'entryDam',
+        'entryHandler',
+        'entryNumber',
+    ];
+}
+
 function clearEntryForm() {
     editingEntryId = '';
-    clearValues(['entryHoundSearch', 'entryCallName', 'entryRegName', 'entryRegNumber', 'entryHandler', 'entryNumber']);
+    clearValues(entryHoundFieldIds());
     document.getElementById('entryBreed').value = '';
+    document.getElementById('entryRegistry').value = '';
+    document.getElementById('entryRegType').value = '';
+    document.getElementById('entryAltRegistry').value = '';
+    document.getElementById('entrySex').value = '';
     document.getElementById('entryFirstTime').checked = false;
     document.getElementById('entryCertRequired').checked = false;
+    document.getElementById('entryAdditionalKennel').checked = false;
+    document.getElementById('entryAdditionalBreeder').checked = false;
+    document.getElementById('entryAdditionalBench').checked = false;
+    document.getElementById('entryInfoChanged').checked = false;
+    document.getElementById('entryDismissedLastSix').checked = false;
     document.getElementById('entryRegistrationCertFile').value = '';
     document.getElementById('entryCoursingCertFile').value = '';
     updateEntryDocumentNote(null);
@@ -12905,20 +14505,27 @@ function editTrialEntry(entryId) {
     document.getElementById('entryRegName').value = entry.registeredName || '';
     document.getElementById('entryBreed').value = entry.breed || '';
     document.getElementById('entryRegNumber').value = entry.registrationNumber || '';
+    const hound = entry.houndId ? masterHounds.find((item) => item.id === entry.houndId) : null;
+    fillEntryHoundFields(hound || entry);
     document.getElementById('entryClass').value = entry.className || document.getElementById('entryClass').value;
     document.getElementById('entryHandler').value = entry.handler || '';
     document.getElementById('entryNumber').value = entry.entryNumber || '';
     document.getElementById('entryFirstTime').checked = Boolean(entry.firstTime);
     document.getElementById('entryCertRequired').checked = Boolean(entry.certRequired);
+    document.getElementById('entryAdditionalKennel').checked = Boolean(entry.additionalKennel);
+    document.getElementById('entryAdditionalBreeder').checked = Boolean(entry.additionalBreeder);
+    document.getElementById('entryAdditionalBench').checked = Boolean(entry.additionalBench);
+    document.getElementById('entryInfoChanged').checked = Boolean(entry.infoChanged);
+    document.getElementById('entryDismissedLastSix').checked = Boolean(entry.dismissedLastSix);
     document.getElementById('entryRegistrationCertFile').value = '';
     document.getElementById('entryCoursingCertFile').value = '';
     updateEntryDocumentNote(entry);
     document.getElementById('entryOwnerSeparation').checked = Boolean(entry.ownerSeparationRequested);
     document.getElementById('entryOwnerSeparationGroup').value = entry.ownerSeparationGroup || '';
     toggleOwnerSeparationGroupField();
-    const hound = findHoundFromSearch();
-    if (hound) {
-        renderEntryRegistrationOptions(hound);
+    const searchedHound = findHoundFromSearch();
+    if (searchedHound) {
+        renderEntryRegistrationOptions(searchedHound);
     } else {
         renderEntryRegistrationOptions(null);
     }
@@ -12933,17 +14540,24 @@ function updateEntryDocumentNote(entry) {
     if (!note) {
         return;
     }
+    note.innerHTML = '';
     if (!entry) {
         note.textContent = 'Attach first-time entry paperwork here. LCI and Singles need the registration certificate only; regular breed stakes also need the coursing certification.';
         return;
     }
-    const attached = [
-        entry.registrationCertFileName ? `Registration: ${entry.registrationCertFileName}` : '',
-        entry.coursingCertFileName ? `Coursing: ${entry.coursingCertFileName}` : '',
-    ].filter(Boolean);
-    note.textContent = attached.length
-        ? `Attached documents: ${attached.join(' | ')}. Choose a new file only if replacing or adding paperwork.`
-        : 'No first-time documents are attached yet. Choose files before updating if this entry needs paperwork.';
+    const documents = entryDocumentLinks(entry);
+    if (documents.length === 0) {
+        note.textContent = 'No first-time documents are attached yet. Choose files before updating if this entry needs paperwork.';
+        return;
+    }
+    note.append('Attached documents: ');
+    documents.forEach((documentInfo, index) => {
+        if (index > 0) {
+            note.append(' | ');
+        }
+        note.appendChild(documentViewLink(documentInfo));
+    });
+    note.append('. Choose a new file only if replacing or adding paperwork.');
 }
 
 function removeTrialEntry(entryId) {
@@ -13132,11 +14746,35 @@ function fillEntryFromSearch() {
         return;
     }
 
+    fillEntryHoundFields(hound);
+    renderEntryRegistrationOptions(hound);
+}
+
+function fillEntryHoundFields(hound) {
+    if (!hound) {
+        return;
+    }
     document.getElementById('entryCallName').value = hound.callName || '';
     document.getElementById('entryRegName').value = hound.registeredName || '';
     document.getElementById('entryBreed').value = hound.breed || '';
     document.getElementById('entryRegNumber').value = hound.registrationNumber || '';
-    renderEntryRegistrationOptions(hound);
+    document.getElementById('entryRegistry').value = hound.registry || '';
+    document.getElementById('entryRegType').value = hound.registrationType || '';
+    document.getElementById('entryAltRegistry').value = hound.alternateRegistry || '';
+    document.getElementById('entryAltRegNumber').value = hound.alternateRegistrationNumber || '';
+    document.getElementById('entrySex').value = hound.sex || '';
+    document.getElementById('entryDob').value = hound.dob || '';
+    document.getElementById('entryOwner').value = hound.owner || '';
+    document.getElementById('entryOwnerEmail').value = hound.ownerEmail || '';
+    document.getElementById('entryOwnerPhone').value = hound.ownerPhone || '';
+    document.getElementById('entryOwnerAddress').value = hound.ownerAddress || '';
+    document.getElementById('entryOwnerCity').value = hound.ownerCity || '';
+    document.getElementById('entryOwnerState').value = hound.ownerState || '';
+    document.getElementById('entryOwnerPostalCode').value = hound.ownerPostalCode || '';
+    document.getElementById('entryOwnerCountry').value = hound.ownerCountry || '';
+    document.getElementById('entryBreeder').value = hound.breeder || '';
+    document.getElementById('entrySire').value = hound.sire || '';
+    document.getElementById('entryDam').value = hound.dam || '';
 }
 
 function findJudgeFromSearch() {
@@ -13280,6 +14918,10 @@ function isQuasiBreedClass(value) {
     return normalized === 'SINGLES' || normalized.startsWith('LCI');
 }
 
+function isLciEntry(entry) {
+    return clean(entry && entry.className).startsWith('LCI') || clean(runGroupBreedForEntry(entry || {})).startsWith('LCI');
+}
+
 function parseLciClass(value) {
     const label = String(value || '').trim();
     const division = lciDivisions.find((candidate) => clean(label).startsWith(clean(candidate)));
@@ -13351,7 +14993,7 @@ function showMessage(element, text, tone) {
 }
 
 function clearMessages() {
-    [formMessage, entryMessage, masterHoundMessage, masterJudgeMessage, masterWorkerMessage, runPlanMessage, rollCallMessage, runoffMessage, bifMessage, mainResultsMessage, wrapUpMessage, wrapUpSecretaryMessage, adminTestMessage, officialFormsMessage].forEach((element) => {
+    [formMessage, entryMessage, masterHoundMessage, masterJudgeMessage, masterWorkerMessage, runPlanMessage, rollCallMessage, runoffMessage, bifMessage, mainResultsMessage, wrapUpMessage, wrapUpSecretaryMessage, archiveTrialMessage, adminTestMessage, officialFormsMessage].forEach((element) => {
         if (!element) {
             return;
         }
@@ -13485,6 +15127,60 @@ function renderWrapUpPages() {
         const heading = section.querySelector('h2, h3');
         section.hidden = heading ? heading.textContent !== currentWrapUpPage : true;
     });
+    renderTrialArchiveStatus(getSelectedTrial());
+}
+
+function renderTrialArchiveStatus(trial) {
+    if (!archiveTrialStatus) {
+        return;
+    }
+    archiveTrialStatus.innerHTML = '';
+    const paragraph = document.createElement('p');
+    if (!trial) {
+        paragraph.textContent = 'Select a trial to see archive status.';
+        archiveTrialStatus.appendChild(paragraph);
+        return;
+    }
+    if (trial.archivedAt) {
+        paragraph.innerHTML = `<strong>Archived:</strong> ${formatTimestamp(trial.archivedAt)}. This trial is read-only until unlocked.`;
+        archiveTrialStatus.appendChild(paragraph);
+        if (trial.archivePackageName || trial.archivePackagePath) {
+            const details = document.createElement('p');
+            details.textContent = [trial.archivePackageName, trial.archivePackagePath].filter(Boolean).join(' | ');
+            archiveTrialStatus.appendChild(details);
+        }
+        return;
+    }
+    paragraph.textContent = trial.archiveUnlockedAt
+        ? `Unlocked for corrections on ${formatTimestamp(trial.archiveUnlockedAt)}. Create a new final archive after corrections are complete.`
+        : 'Not archived yet. Create the final archive package when all reports and results are complete.';
+    archiveTrialStatus.appendChild(paragraph);
+}
+
+function applyArchiveReadOnlyMode(trial) {
+    const archived = Boolean(trial && trial.archivedAt);
+    document.body.classList.toggle('trial-archived', archived);
+    document.querySelectorAll('#trialForm input, #trialForm select, #trialForm textarea, #trialForm button').forEach((control) => {
+        const allowed = control.dataset.archiveAllowed === 'true'
+            || control.id === 'showArchivedTrials'
+            || control.id === 'newTrialButton'
+            || control.id === 'setSelectedActiveButton'
+            || control.id === 'deleteSelectedSetupTrialButton'
+            || control.closest('#trialList')
+            || control.closest('#deletedTrialsTable')
+            || control.classList.contains('report-button');
+        if (archived && !allowed) {
+            if (!control.disabled) {
+                control.dataset.archiveDisabledByLock = 'true';
+                control.disabled = true;
+            }
+            return;
+        }
+        if (!archived && control.dataset.archiveDisabledByLock === 'true') {
+            control.disabled = false;
+            delete control.dataset.archiveDisabledByLock;
+        }
+    });
 }
 
 function renderAdminPages() {
@@ -13514,14 +15210,26 @@ async function initializeResilientStorage() {
 }
 
 function render() {
+    normalizeSelectedTrialForArchiveFilter();
     renderTrialList();
     renderActiveBadge();
 
     const selected = trials.find((trial) => trial.id === selectedTrialId);
+    renderTrialGuide(selected || null);
     renderWorkflowStrip(selected || null);
     writeForm(selected || null);
     switchTab(currentTab);
+    applyArchiveReadOnlyMode(selected || null);
     requestAnimationFrame(restorePendingScoreFocus);
+}
+
+function normalizeSelectedTrialForArchiveFilter() {
+    const showArchived = Boolean(showArchivedTrials && showArchivedTrials.checked);
+    const selected = trials.find((trial) => trial.id === selectedTrialId);
+    if (!showArchived && selected && selected.archivedAt) {
+        const firstActiveTrial = trials.find((trial) => !trial.archivedAt);
+        selectedTrialId = firstActiveTrial ? firstActiveTrial.id : '';
+    }
 }
 
 function formatDateRange(start, end) {
@@ -13550,6 +15258,9 @@ setActiveButton.addEventListener('click', () => {
         showMessage(formMessage, 'Active trial set.', 'success');
     }
 });
+
+setSelectedActiveButton?.addEventListener('click', toggleSelectedActiveTrialLock);
+deleteSelectedSetupTrialButton?.addEventListener('click', deleteSelectedSetupTrial);
 
 document.querySelectorAll('.tab-button').forEach((button) => {
     button.addEventListener('click', () => switchTab(button.dataset.tabTarget));
@@ -13690,16 +15401,21 @@ document.getElementById('buildPreliminaryDrawButton').addEventListener('click', 
 document.getElementById('returnTopButton')?.addEventListener('click', scrollToPageTop);
 window.addEventListener('scroll', updateReturnTopButton, { passive: true });
 window.addEventListener('resize', updateReturnTopButton);
-document.getElementById('printWorkerSheetButton').addEventListener('click', () => printSection('workerSheetPrint'));
-document.getElementById('printRollCallButton').addEventListener('click', () => printSection('rollCallPrint'));
+document.getElementById('printWorkerSheetButton').addEventListener('click', () => printSectionAndMark('workerSheetPrint', 'workerSheet'));
+document.getElementById('printRollCallButton').addEventListener('click', () => printSectionAndMark('rollCallPrint', 'rollCallSheet'));
+document.getElementById('markSeparationReviewedButton')?.addEventListener('click', markOwnerSeparationReviewed);
 document.getElementById('printDrawSheetButton').addEventListener('click', printDrawSheet);
 document.getElementById('printJudgeSheetsButton').addEventListener('click', printJudgeSheets);
 document.getElementById('markScoringCompleteButton').addEventListener('click', markPrelimScoringComplete);
 document.getElementById('togglePrelimLockButton').addEventListener('click', togglePrelimLock);
 document.getElementById('toggleFinalsLockButton')?.addEventListener('click', toggleFinalsLock);
 document.getElementById('printRibbonReportButton')?.addEventListener('click', printRibbonReport);
+document.getElementById('printAsfaEntryFormsButton')?.addEventListener('click', printAsfaEntryForms);
 document.getElementById('printAsfaRecordPacketButton')?.addEventListener('click', printAsfaRecordPacket);
 document.getElementById('printAsfaSecretaryReportButton')?.addEventListener('click', printAsfaSecretaryReport);
+document.getElementById('createFinalArchiveButton')?.addEventListener('click', createFinalTrialArchive);
+document.getElementById('unlockArchivedTrialButton')?.addEventListener('click', unlockArchivedTrial);
+showArchivedTrials?.addEventListener('change', renderTrialList);
 [
     'secretaryPerCapitaRate',
     'secretarySpecialBreederCount',
@@ -13736,6 +15452,8 @@ document.getElementById('deleteSelectedTrialButton').addEventListener('click', d
 document.getElementById('enablePersistentStorageButton').addEventListener('click', enablePersistentStorage);
 document.getElementById('restoreBrowserBackupButton').addEventListener('click', restoreBrowserSafetyBackup);
 document.getElementById('createSQLiteBackupButton').addEventListener('click', createSQLiteBackup);
+document.getElementById('createTransferPackageButton')?.addEventListener('click', createTransferPackage);
+document.getElementById('restartServerButton')?.addEventListener('click', restartAppServer);
 document.getElementById('exportDataBackupButton').addEventListener('click', exportDataBackup);
 document.getElementById('importDataBackupButton').addEventListener('click', () => document.getElementById('importDataBackupFile').click());
 document.getElementById('importDataBackupFile').addEventListener('change', (event) => {
@@ -13745,6 +15463,10 @@ document.getElementById('importDataBackupFile').addEventListener('change', (even
 document.getElementById('officialFormsAssociation').addEventListener('change', () => renderOfficialForms(getSelectedTrial()));
 document.getElementById('previewAsfaRecordAlignmentButton').addEventListener('click', previewAsfaRecordAlignment);
 document.getElementById('resetAsfaRecordAlignmentButton').addEventListener('click', resetAsfaRecordAlignment);
+document.getElementById('previewAsfaEntryAlignmentButton')?.addEventListener('click', previewAsfaEntryAlignment);
+document.getElementById('resetAsfaEntryAlignmentButton')?.addEventListener('click', resetAsfaEntryAlignment);
+document.getElementById('previewAsfaLciEntryAlignmentButton')?.addEventListener('click', previewAsfaLciEntryAlignment);
+document.getElementById('resetAsfaLciEntryAlignmentButton')?.addEventListener('click', resetAsfaLciEntryAlignment);
 document.getElementById('previewAsfaJudgeAlignmentButton').addEventListener('click', previewAsfaJudgeAlignment);
 document.getElementById('resetAsfaJudgeAlignmentButton').addEventListener('click', resetAsfaJudgeAlignment);
 document.getElementById('previewAsfaSecretaryAlignmentButton')?.addEventListener('click', previewAsfaSecretaryAlignment);
