@@ -5,6 +5,7 @@ import base64
 import copy
 import io
 import json
+import re
 import subprocess
 import shutil
 import sqlite3
@@ -98,6 +99,14 @@ DEFAULT_ASFA_RECORD_LAYOUT = {
     "finalScoreY": 164,
     "combinedScoreX": 585,
     "combinedScoreY": 164,
+    "stakesRunoffLabelX": 640,
+    "stakesRunoffLabelY": 159,
+    "stakesRunoffCodeX": 640,
+    "stakesRunoffCodeY": 169,
+    "bobRunoffLabelX": 724,
+    "bobRunoffLabelY": 159,
+    "bobRunoffCodeX": 724,
+    "bobRunoffCodeY": 169,
     "placementX": 760,
     "placementY": 164,
     "judge1X": 365,
@@ -134,6 +143,9 @@ DEFAULT_ASFA_JUDGE_LAYOUT = {
     "stakeCircleY": 147,
     "stakeCircleW": 15,
     "stakeCircleH": 8,
+    "provisionalStakeX": 305,
+    "mixedTextX": 292,
+    "mixedTextY": 169,
     "flightCircleX": 58,
     "flightCircleY": 167,
     "flightCircleW": 8,
@@ -169,7 +181,7 @@ DEFAULT_ASFA_JUDGE_LAYOUT = {
     "courseCircleW": 8,
     "courseCircleH": 7,
     "phaseTextX": 66,
-    "phaseTextY": 218,
+    "phaseTextY": 197,
     "judgeX": 150,
     "judgeY": 235,
     "judgeNumberCircleX": 62,
@@ -183,6 +195,28 @@ DEFAULT_ASFA_JUDGE_LAYOUT = {
     "pinkColumnX": 285,
     "blueColumnX": 365,
     "colorColumnW": 80,
+}
+
+DEFAULT_ASFA_DRAW_LAYOUT = {
+    "globalXAdjust": 0,
+    "globalYAdjust": 0,
+    "checkSize": 7,
+    "checkWeight": 0.7,
+    "checkFontSize": 8,
+    "breedTextX": 35,
+    "breedTextYAdjust": 0,
+    "stakeTextX": 35,
+    "stakeTextYAdjust": 0,
+    "prelimCheckX": 74,
+    "prelimCheckY": 90,
+    "finalCheckX": 113,
+    "finalCheckY": 90,
+    "runoffCheckX": 183,
+    "runoffCheckY": 90,
+    "bobCheckX": 231,
+    "bobCheckY": 90,
+    "bifCheckX": 281,
+    "bifCheckY": 90,
 }
 DEFAULT_ASFA_SECRETARY_LAYOUT = {
     "fontSize": 9,
@@ -771,7 +805,14 @@ def safe_text(value: object, limit: int = 28) -> str:
     return text[: max(0, limit - 1)].rstrip() + "."
 
 
-def generate_draw_sheet_pdf(trial: dict) -> bytes:
+def printable_hound_name(hound: dict) -> str:
+    name = hound.get("callName") or hound.get("registeredName") or "Unnamed hound"
+    text = re.sub(r"\s*\(\s*sep(?:arate)?\s+[A-Z0-9]{1,3}\s*\)\s*$", "", str(name), flags=re.IGNORECASE)
+    text = re.sub(r"\s*\(\s*(?:open|field champion|fch|veteran)?\s*BOB\s*\)\s*$", "", text, flags=re.IGNORECASE)
+    return text.strip() or "Unnamed hound"
+
+
+def generate_draw_sheet_pdf(trial: dict, layout: dict | None = None, copies: int = 1) -> bytes:
     association = str(trial.get("association") or "ASFA").upper()
     template_path = DRAW_TEMPLATES.get(association, DRAW_TEMPLATES["ASFA"])
     if not template_path.exists():
@@ -781,25 +822,65 @@ def generate_draw_sheet_pdf(trial: dict) -> bytes:
     if not course_blocks:
         raise ValueError("No preliminary draw courses were found.")
 
+    layout_settings = asfa_draw_layout(layout)
+    copy_count = max(1, min(10, int(copies or 1)))
     page_capacity = draw_sheet_page_capacity(association)
     writer = PdfWriter()
 
-    for page_start in range(0, len(course_blocks), page_capacity):
-        page_courses = course_blocks[page_start:page_start + page_capacity]
-        page = fresh_template_page(template_path)
-        overlay = PdfReader(io.BytesIO(build_draw_overlay(
-            trial,
-            association,
-            page_courses,
-            page_start // page_capacity + 1,
-            page_start + 1,
-        ))).pages[0]
-        page.merge_page(overlay)
-        writer.add_page(page)
+    if association == "ASFA" and copy_count > 1 and len(course_blocks) <= 7:
+        for copy_start in range(0, copy_count, 3):
+            copies_on_page = min(3, copy_count - copy_start)
+            page_courses = []
+            for _ in range(copies_on_page):
+                page_courses.extend(course_blocks)
+                page_courses.extend([None] * (7 - len(course_blocks)))
+            page = fresh_template_page(template_path)
+            overlay = PdfReader(io.BytesIO(build_draw_overlay(
+                trial,
+                association,
+                page_courses,
+                copy_start // 3 + 1,
+                1,
+                layout_settings,
+                True,
+            ))).pages[0]
+            page.merge_page(overlay)
+            writer.add_page(page)
+        output = io.BytesIO()
+        writer.write(output)
+        return output.getvalue()
+
+    for _copy_index in range(copy_count):
+        for page_start in range(0, len(course_blocks), page_capacity):
+            page_courses = course_blocks[page_start:page_start + page_capacity]
+            page = fresh_template_page(template_path)
+            overlay = PdfReader(io.BytesIO(build_draw_overlay(
+                trial,
+                association,
+                page_courses,
+                page_start // page_capacity + 1,
+                page_start + 1,
+                layout_settings,
+                False,
+            ))).pages[0]
+            page.merge_page(overlay)
+            writer.add_page(page)
 
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
+
+
+def asfa_draw_layout(layout: dict | None) -> dict:
+    merged = {**DEFAULT_ASFA_DRAW_LAYOUT}
+    if isinstance(layout, dict):
+        for key in merged:
+            try:
+                value = float(layout.get(key))
+            except (TypeError, ValueError):
+                continue
+            merged[key] = value
+    return merged
 
 
 def draw_sheet_page_capacity(association: str) -> int:
@@ -813,9 +894,10 @@ def flatten_draw_courses(groups: list[dict]) -> list[dict]:
             hounds = sorted(course.get("hounds") or [], key=lambda hound: int(hound.get("drawPosition") or 0))
             blocks.append({
                 "breed": group.get("breed") or "",
-                "stake": abbreviate_stake(group.get("stake") or ""),
+                "stake": "Mixed" if group.get("mixedStake") else abbreviate_stake(group.get("stake") or ""),
                 "mixedStake": bool(group.get("mixedStake")),
                 "manualNote": group.get("manualNote") or "",
+                "phase": group.get("phase") or "",
                 "course": course.get("number") or "",
                 "hounds": hounds,
             })
@@ -829,32 +911,55 @@ def abbreviate_stake(stake: str) -> str:
     return stake
 
 
-def build_draw_overlay(trial: dict, association: str, course_blocks: list[dict], page_number: int, first_order: int) -> bytes:
+def build_draw_overlay(trial: dict, association: str, course_blocks: list[dict | None], page_number: int, first_order: int, layout: dict, duplicate_copy_numbers: bool = False) -> bytes:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
     pdf.setTitle("Official Draw Order Sheet")
     if association == "AKC":
         draw_akc_overlay(pdf, trial, course_blocks, page_number, first_order)
     else:
-        draw_asfa_overlay(pdf, trial, course_blocks, page_number, first_order)
+        draw_asfa_overlay(pdf, trial, course_blocks, page_number, first_order, layout, duplicate_copy_numbers)
     pdf.save()
     return buffer.getvalue()
 
 
-def draw_asfa_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict], page_number: int, first_order: int) -> None:
+def draw_asfa_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict | None], page_number: int, first_order: int, layout: dict, duplicate_copy_numbers: bool = False) -> None:
     columns = [36, 297, 545]
     rows = [137, 200, 263, 326, 389, 452, 515]
-    draw_page_header(pdf, trial, page_number, first_order, first_order + len(course_blocks) - 1)
-    draw_sheet_numbers(pdf, columns, rows, len(course_blocks), page_number, 195, 58)
+    non_empty_blocks = [block for block in course_blocks if block]
+    if any(block is None for block in course_blocks):
+        logical_count = next((index for index, block in enumerate(course_blocks) if block is None), len(non_empty_blocks))
+    else:
+        logical_count = len(non_empty_blocks)
+    draw_page_header(pdf, trial, page_number, first_order, first_order + max(0, logical_count - 1))
+    draw_sheet_numbers(pdf, columns, rows, len(course_blocks), page_number, 195, 58, duplicate_copy_numbers)
     pdf.setFont("Helvetica", 6)
     for index, block in enumerate(course_blocks):
+        if not block:
+            continue
         column, top = draw_block_position(index, columns, rows)
-        draw_check(pdf, column + 38, 90)
-        pdf.drawString(column + 35, y_from_top(top + 4), safe_text(block["breed"], 24))
-        pdf.drawString(column + 35, y_from_top(top + 21), safe_text(block["stake"], 12))
+        draw_asfa_draw_sheet_phase_checks(pdf, column, block, trial, layout)
+        pdf.drawString(column + layout["breedTextX"], y_from_top(top + 4 + layout["breedTextYAdjust"]), safe_text(block["breed"], 24))
+        pdf.drawString(column + layout["stakeTextX"], y_from_top(top + 21 + layout["stakeTextYAdjust"]), safe_text(block["stake"], 12))
         pdf.drawString(column + 35, y_from_top(top + 36), "A")
         pdf.drawString(column + 35, y_from_top(top + 51), str(block["course"]))
         draw_hound_lines(pdf, column + 91, top + 21, block)
+
+
+def draw_asfa_draw_sheet_phase_checks(pdf: canvas.Canvas, column: int, block: dict, trial: dict, layout: dict) -> None:
+    phase = clean_text(block.get("phase") or (trial.get("preliminaryDraw") or {}).get("phase"))
+    stake = clean_text(block.get("stake"))
+    is_bob = phase in {"BOB"} or "BOB" in stake
+    is_bif = phase in {"BIF"} or "BIF" in stake
+    is_runoff = phase in {"RUNOFF", "BOB"} or "RUNOFF" in stake or "TIE" in stake
+    if is_runoff:
+        draw_check(pdf, column + layout["runoffCheckX"] + layout["globalXAdjust"], layout["runoffCheckY"] + layout["globalYAdjust"], layout)
+    elif not is_bif:
+        draw_check(pdf, column + layout["prelimCheckX"] + layout["globalXAdjust"], layout["prelimCheckY"] + layout["globalYAdjust"], layout)
+    if is_bob:
+        draw_check(pdf, column + layout["bobCheckX"] + layout["globalXAdjust"], layout["bobCheckY"] + layout["globalYAdjust"], layout)
+    if is_bif:
+        draw_check(pdf, column + layout["bifCheckX"] + layout["globalXAdjust"], layout["bifCheckY"] + layout["globalYAdjust"], layout)
 
 
 def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict], page_number: int, first_order: int) -> None:
@@ -889,21 +994,23 @@ def draw_block_position(index: int, columns: list[int], rows: list[int]) -> tupl
     return columns[column_index], rows[row_index]
 
 
-def draw_sheet_numbers(pdf: canvas.Canvas, columns: list[int], rows: list[int], course_count: int, page_number: int, x_offset: int, title_top: int) -> None:
+def draw_sheet_numbers(pdf: canvas.Canvas, columns: list[int], rows: list[int], course_count: int, page_number: int, x_offset: int, title_top: int, duplicate_copy_numbers: bool = False) -> None:
     pdf.setFont("Helvetica-Bold", 10)
     row_count = len(rows)
     first_sheet_number = ((page_number - 1) * len(columns)) + 1
     for column_index, column in enumerate(columns):
         if column_index * row_count >= course_count:
             continue
-        pdf.drawString(column + x_offset, y_from_top(title_top), f"#{first_sheet_number + column_index}")
+        sheet_number = first_sheet_number if duplicate_copy_numbers else first_sheet_number + column_index
+        pdf.drawString(column + x_offset, y_from_top(title_top), f"#{sheet_number}")
 
 
-def draw_check(pdf: canvas.Canvas, x: float, top: float) -> None:
+def draw_check(pdf: canvas.Canvas, x: float, top: float, layout: dict | None = None) -> None:
+    size = (layout or {}).get("checkSize", 7)
     y = y_from_top(top)
-    pdf.setLineWidth(0.7)
-    pdf.rect(x - 1, y - 1, 7, 7, stroke=1, fill=0)
-    pdf.setFont("Helvetica-Bold", 8)
+    pdf.setLineWidth((layout or {}).get("checkWeight", 0.7))
+    pdf.rect(x - 1, y - 1, size, size, stroke=1, fill=0)
+    pdf.setFont("Helvetica-Bold", (layout or {}).get("checkFontSize", 8))
     pdf.drawString(x, y, "X")
 
 
@@ -917,13 +1024,9 @@ def draw_hound_lines(pdf: canvas.Canvas, x: float, first_top: float, block: dict
         if not hound:
             continue
         notes = []
-        if block.get("mixedStake"):
-            notes.append(abbreviate_stake(hound.get("stake") or block.get("stake")))
         if hound.get("manuallyMoved"):
             notes.append("manual")
-        if hound.get("ownerSeparationGroup"):
-            notes.append(f"sep {hound.get('ownerSeparationGroup')}")
-        name = hound.get("callName") or hound.get("registeredName") or "Unnamed hound"
+        name = printable_hound_name(hound)
         line = safe_text(name, 23)
         if notes:
             line = safe_text(f"{line} ({', '.join(notes)})", 34)
@@ -934,13 +1037,13 @@ def y_from_top(top: float) -> float:
     return 612 - top
 
 
-def generate_judge_sheets_pdf(trial: dict, layout: dict | None = None) -> bytes:
+def generate_judge_sheets_pdf(trial: dict, layout: dict | None = None, group_ids: list[str] | None = None) -> bytes:
     association = str(trial.get("association") or "ASFA").upper()
     template_path = JUDGE_TEMPLATES.get(association, JUDGE_TEMPLATES["ASFA"])
     if not template_path.exists():
         raise FileNotFoundError(f"Judge sheet template not found: {template_path}")
 
-    courses = flatten_judge_courses(trial)
+    courses = flatten_judge_courses(trial, group_ids)
     if not courses:
         raise ValueError("No preliminary draw courses were found.")
 
@@ -997,15 +1100,20 @@ def generate_runoff_judge_sheets_pdf(trial: dict, group_id: str, runoff_key: str
     return output.getvalue()
 
 
-def generate_finals_judge_sheets_pdf(trial: dict, group_id: str, layout: dict | None = None) -> bytes:
+def generate_finals_judge_sheets_pdf(trial: dict, group_id: str, layout: dict | None = None, group_ids: list[str] | None = None) -> bytes:
     association = str(trial.get("association") or "ASFA").upper()
     template_path = JUDGE_TEMPLATES.get(association, JUDGE_TEMPLATES["ASFA"])
     if not template_path.exists():
         raise FileNotFoundError(f"Judge sheet template not found: {template_path}")
 
-    courses = flatten_finals_judge_courses(trial, group_id)
+    selected_group_ids = [str(value or "") for value in (group_ids or []) if str(value or "")]
+    if not selected_group_ids and group_id:
+        selected_group_ids = [str(group_id)]
+    courses = []
+    for selected_group_id in selected_group_ids:
+        courses.extend(flatten_finals_judge_courses(trial, selected_group_id))
     if not courses:
-        raise ValueError("No finals draw courses were found for that stake.")
+        raise ValueError("No finals draw courses were found for the selected stake.")
 
     writer = PdfWriter()
     if association == "AKC":
@@ -1099,7 +1207,8 @@ def generate_asfa_record_sheet_pdf(
             ))).pages[0]
             page.merge_page(overlay)
             writer.add_page(page)
-        append_first_time_documents_for_group(writer, trial, group, entry_layout, lci_entry_layout)
+        if clean_text(group.get("breed")) != "BIF":
+            append_first_time_documents_for_group(writer, trial, group, entry_layout, lci_entry_layout)
 
     if not writer.pages:
         raise ValueError("No ASFA record sheet pages could be created.")
@@ -1513,7 +1622,80 @@ def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", so
         groups = [group for group in groups if clean_text(group.get("breed")) == clean_text(breed)]
     elif sort_mode == "alpha":
         groups = sorted(groups, key=record_packet_sort_key)
+    groups = split_mixed_record_groups(groups)
+    if not group_id and (not breed or clean_text(breed) == "BIF"):
+        bif_group = bif_record_group(trial)
+        if bif_group:
+            groups.append(bif_group)
     return groups
+
+
+def bif_record_group(trial: dict) -> dict | None:
+    bif = (trial.get("scorebook") or {}).get("bif") or {}
+    draw = bif.get("draw") or {}
+    courses = draw.get("courses") or []
+    if not courses:
+        return None
+    has_rows = any((course.get("hounds") or []) for course in courses)
+    if not has_rows:
+        return None
+    return {
+        "id": "asfa-record-bif",
+        "breed": "BIF",
+        "stake": "BIF",
+        "phase": "bif",
+        "courses": courses,
+    }
+
+
+def split_mixed_record_groups(groups: list[dict]) -> list[dict]:
+    split_groups: list[dict] = []
+    for group in groups:
+        if not group.get("mixedStake"):
+            split_groups.append(group)
+            continue
+        stakes = []
+        for course in group.get("courses") or []:
+            for hound in course.get("hounds") or []:
+                stake = str(hound.get("stake") or group.get("stake") or "").strip()
+                if stake and clean_text(stake) not in {clean_text(item) for item in stakes}:
+                    stakes.append(stake)
+        if not stakes:
+            split_groups.append(group)
+            continue
+        for stake in stakes:
+            stake_key = clean_text(stake)
+            split_group = copy.deepcopy(group)
+            split_group["stake"] = stake
+            split_group["mixedStake"] = False
+            split_group["id"] = f"{group.get('id') or ''}::{stake_key}"
+            split_group["courses"] = [
+                {
+                    **course,
+                    "hounds": [
+                        hound for hound in course.get("hounds") or []
+                        if clean_text(hound.get("stake") or group.get("stake")) == stake_key
+                    ],
+                }
+                for course in group.get("courses") or []
+            ]
+            final_draw = split_group.get("finalDraw") or {}
+            if isinstance(final_draw, dict):
+                split_group["finalDraw"] = {
+                    **final_draw,
+                    "courses": [
+                        {
+                            **course,
+                            "hounds": [
+                                hound for hound in course.get("hounds") or []
+                                if clean_text(hound.get("stake") or group.get("stake")) == stake_key
+                            ],
+                        }
+                        for course in final_draw.get("courses") or []
+                    ],
+                }
+            split_groups.append(split_group)
+    return split_groups
 
 
 def record_packet_sort_key(group: dict) -> tuple:
@@ -1533,6 +1715,8 @@ def record_packet_sort_key(group: dict) -> tuple:
 
 
 def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
+    if clean_text(group.get("phase")) == "BIF" or clean_text(group.get("breed")) == "BIF":
+        return asfa_bif_record_rows(trial, group)
     entries_by_id = {
         str(entry.get("id") or ""): entry
         for entry in trial.get("entries") or []
@@ -1543,10 +1727,15 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
     final_outcome_by_id = final_outcome_by_entry(group)
     combined_by_entry = final_combined_scores_by_entry(group)
     final_placement_by_entry = final_placements_by_entry(group)
+    award_by_entry = asfa_record_awards_by_entry(trial)
+    stake_runoff_by_entry = stake_runoff_boxes_by_entry(trial, group)
+    bob_runoff_by_entry = bob_runoff_boxes_by_entry(trial)
     rows = []
     for course in sorted(group.get("courses") or [], key=lambda item: int(item.get("number") or 0)):
         for hound in sorted_hounds_by_blanket(course.get("hounds") or []):
+            entry_id = str(hound.get("entryId") or "")
             entry = entries_by_id.get(str(hound.get("entryId") or "")) or {}
+            placement = final_placement_by_entry.get(entry_id) or ""
             rows.append({
                 "callName": hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound",
                 "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
@@ -1558,14 +1747,203 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
                 "prelimJudge1": hound.get("prelimJudge1Score") or "",
                 "prelimJudge2": hound.get("prelimJudge2Score") or "",
                 "prelimScore": score_or_outcome(hound.get("prelimScore"), hound.get("prelimOutcome")),
-                "finalCode": final_by_entry.get(str(hound.get("entryId") or "")) or "",
-                "finalJudge1": final_judge_scores.get(str(hound.get("entryId") or ""), {}).get("judge1", ""),
-                "finalJudge2": final_judge_scores.get(str(hound.get("entryId") or ""), {}).get("judge2", ""),
-                "finalScore": final_score_by_entry.get(str(hound.get("entryId") or "")) or "",
-                "combinedScore": combined_by_entry.get(str(hound.get("entryId") or "")) or "",
-                "placement": final_placement_by_entry.get(str(hound.get("entryId") or "")) or "",
+                "finalCode": final_by_entry.get(entry_id) or "",
+                "finalJudge1": final_judge_scores.get(entry_id, {}).get("judge1", ""),
+                "finalJudge2": final_judge_scores.get(entry_id, {}).get("judge2", ""),
+                "finalScore": final_score_by_entry.get(entry_id) or "",
+                "combinedScore": combined_by_entry.get(entry_id) or "",
+                "stakesRunoffLabel": stake_runoff_by_entry.get(entry_id, {}).get("label", ""),
+                "stakesRunoffCode": stake_runoff_by_entry.get(entry_id, {}).get("code", ""),
+                "bobRunoffLabel": bob_runoff_by_entry.get(entry_id, {}).get("label", ""),
+                "bobRunoffCode": bob_runoff_by_entry.get(entry_id, {}).get("code", ""),
+                "placement": award_by_entry.get(entry_id) or placement,
             })
     return rows
+
+
+def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
+    entries_by_id = {
+        str(entry.get("id") or ""): entry
+        for entry in trial.get("entries") or []
+    }
+    bif = (trial.get("scorebook") or {}).get("bif") or {}
+    outcomes = bif.get("outcomes") or {}
+    bif_results = bif_results_by_entry(trial)
+    rows = []
+    for course in sorted(group.get("courses") or [], key=lambda item: int(item.get("number") or 0)):
+        for hound in sorted_hounds_by_blanket([
+            {
+                **hound,
+                "blanketColor": hound.get("bifBlanketColor") or hound.get("blanketColor"),
+            }
+            for hound in course.get("hounds") or []
+        ]):
+            entry_id = str(hound.get("entryId") or "")
+            entry = entries_by_id.get(entry_id) or {}
+            outcome = normalized_record_outcome(outcomes.get(entry_id))
+            rows.append({
+                "callName": hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound",
+                "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
+                "rollCallStatus": "",
+                "rollCallNotes": "",
+                "prelimOutcome": outcome.get("value") or "",
+                "finalOutcome": "",
+                "prelimCode": course_color_code(course.get("number"), hound.get("bifBlanketColor") or hound.get("blanketColor")),
+                "prelimJudge1": outcome.get("judge1") or "",
+                "prelimJudge2": outcome.get("judge2") or "",
+                "prelimScore": score_or_outcome(outcome.get("score"), outcome.get("value")),
+                "finalCode": "",
+                "finalJudge1": "",
+                "finalJudge2": "",
+                "finalScore": "",
+                "combinedScore": outcome.get("score") or "",
+                "placement": bif_results.get(entry_id) or "",
+            })
+    return rows
+
+
+def asfa_record_awards_by_entry(trial: dict) -> dict[str, str]:
+    awards: dict[str, str] = {}
+    for entry_id, result in ((trial.get("resultState") or {}).get("bobResultsByEntry") or {}).items():
+        if result == "BOB":
+            awards[str(entry_id)] = "BOB"
+    for entry_id, result in bif_results_by_entry(trial).items():
+        if result == "BIF":
+            awards[str(entry_id)] = "BIF"
+    return awards
+
+
+def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str, str]]:
+    boxes: dict[str, dict[str, str]] = {}
+    for runoff in group.get("runoffs") or []:
+        label = concise_tie_label(runoff.get("label") or "")
+        for course in runoff.get("courses") or []:
+            for hound in course.get("hounds") or []:
+                entry_id = str(hound.get("entryId") or "")
+                code = hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor"))
+                if entry_id and code:
+                    boxes[entry_id] = {"label": label, "code": str(code)}
+    group_id = str(group.get("id") or "").split("::", 1)[0]
+    for runoff in (trial.get("bobRunoffs") or []):
+        if str(runoff.get("tieGroupId") or "") not in {str(group.get("id") or ""), group_id}:
+            continue
+        label = concise_tie_label(runoff.get("tieLabel") or runoff.get("label") or "")
+        for course in runoff.get("courses") or []:
+            for hound in course.get("hounds") or []:
+                if hound.get("runoffRole") != "tie" and clean_text(hound.get("tieBreakLabel")) in {"BOB", ""}:
+                    continue
+                entry_id = str(hound.get("entryId") or "")
+                code = hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor"))
+                if entry_id and code:
+                    boxes[entry_id] = {"label": label, "code": str(code)}
+    return boxes
+
+
+def bob_runoff_boxes_by_entry(trial: dict) -> dict[str, dict[str, str]]:
+    boxes: dict[str, dict[str, str]] = {}
+    for runoff in trial.get("bobRunoffs") or []:
+        for course in runoff.get("courses") or []:
+            for hound in course.get("hounds") or []:
+                if hound.get("isPlaceholder"):
+                    continue
+                entry_id = str(hound.get("entryId") or "")
+                code = hound.get("bobCode") or hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("bobBlanketColor") or hound.get("tieBreakBlanketColor") or hound.get("blanketColor"))
+                role = clean_text(hound.get("runoffRole") or hound.get("tieBreakLabel") or "")
+                if entry_id and code and (role in {"BOB", ""} or "BOB" in clean_text(runoff.get("key"))):
+                    boxes[entry_id] = {"label": "BOB", "code": str(code)}
+    return boxes
+
+
+def concise_tie_label(value: object) -> str:
+    text = str(value or "").replace(" Runoff", "").replace(" Tie", "").strip()
+    return text or "Tie"
+
+
+def normalized_record_outcome(value: object) -> dict[str, str]:
+    if isinstance(value, dict):
+        return {
+            "value": str(value.get("value") or ""),
+            "forfeitOrder": str(value.get("forfeitOrder") or ""),
+            "judge1": str(value.get("judge1") or ""),
+            "judge2": str(value.get("judge2") or ""),
+            "score": str(value.get("score") or ""),
+        }
+    if value:
+        return {"value": str(value), "forfeitOrder": "", "judge1": "", "judge2": "", "score": ""}
+    return {"value": "", "forfeitOrder": "", "judge1": "", "judge2": "", "score": ""}
+
+
+def record_score_outcome_label(value: object) -> str:
+    normalized = clean_text(value)
+    labels = {
+        "FORFEIT": "FOR",
+        "FOR": "FOR",
+        "EXCUSED": "EXC",
+        "EXC": "EXC",
+        "DISMISSED": "DIS",
+        "DIS": "DIS",
+        "DISQUALIFIED": "DQ",
+        "DQ": "DQ",
+    }
+    return labels.get(normalized, str(value or ""))
+
+
+def bif_results_by_entry(trial: dict) -> dict[str, str]:
+    bif = (trial.get("scorebook") or {}).get("bif") or {}
+    results = bif_main_results_by_entry(bif)
+    tie_results = bif_tie_results_by_entry(bif)
+    results.update({entry_id: result for entry_id, result in tie_results.items() if result})
+    return results
+
+
+def bif_main_results_by_entry(bif: dict) -> dict[str, str]:
+    outcomes = bif.get("outcomes") or {}
+    rows = []
+    for course in ((bif.get("draw") or {}).get("courses") or []):
+        for hound in course.get("hounds") or []:
+            entry_id = str(hound.get("entryId") or "")
+            outcome = normalized_record_outcome(outcomes.get(entry_id))
+            try:
+                score = float(outcome.get("score") or "")
+            except ValueError:
+                score = None
+            rows.append({"entryId": entry_id, "score": score, "outcome": outcome.get("value") or ""})
+    return bif_results_from_rows(rows)
+
+
+def bif_tie_results_by_entry(bif: dict) -> dict[str, str]:
+    tie_runoffs = bif.get("tieRunoffs") or []
+    if not tie_runoffs and bif.get("tieRunoff"):
+        tie_runoffs = [bif.get("tieRunoff")]
+    if not tie_runoffs:
+        return {}
+    current = tie_runoffs[-1] or {}
+    outcomes = current.get("outcomes") or {}
+    rows = []
+    for course in ((current.get("draw") or {}).get("courses") or []):
+        for hound in course.get("hounds") or []:
+            entry_id = str(hound.get("entryId") or "")
+            outcome = normalized_record_outcome(outcomes.get(entry_id))
+            try:
+                score = float(outcome.get("score") or "")
+            except ValueError:
+                score = None
+            rows.append({"entryId": entry_id, "score": score, "outcome": outcome.get("value") or ""})
+    return bif_results_from_rows(rows)
+
+
+def bif_results_from_rows(rows: list[dict]) -> dict[str, str]:
+    if not rows or any(row["score"] is None and not row["outcome"] for row in rows):
+        return {}
+    scored = sorted([row for row in rows if row["score"] is not None and not row["outcome"]], key=lambda row: row["score"], reverse=True)
+    if not scored:
+        return {row["entryId"]: record_score_outcome_label(row["outcome"]) for row in rows if row["outcome"]}
+    top_score = scored[0]["score"]
+    top_ids = {row["entryId"] for row in scored if row["score"] == top_score}
+    return {
+        row["entryId"]: ("BIF Tie" if row["entryId"] in top_ids and len(top_ids) > 1 else "BIF" if row["entryId"] in top_ids else record_score_outcome_label(row["outcome"]))
+        for row in rows
+    }
 
 
 def final_outcome_by_entry(group: dict) -> dict[str, str]:
@@ -1837,6 +2215,10 @@ def draw_asfa_record_rows(pdf: canvas.Canvas, rows: list[dict], layout: dict) ->
         pdf.drawCentredString(layout["finalJudge2X"], y_from_top(asfa_record_y(layout, "finalJudge2Y", row_offset)), safe_text(row.get("finalJudge2"), 8))
         pdf.drawCentredString(layout["finalScoreX"], y_from_top(asfa_record_y(layout, "finalScoreY", row_offset)), safe_text(row.get("finalScore"), 8))
         pdf.drawCentredString(layout["combinedScoreX"], y_from_top(asfa_record_y(layout, "combinedScoreY", row_offset)), safe_text(row.get("combinedScore"), 8))
+        pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(asfa_record_y(layout, "stakesRunoffLabelY", row_offset)), safe_text(row.get("stakesRunoffLabel"), 8))
+        pdf.drawCentredString(layout["stakesRunoffCodeX"], y_from_top(asfa_record_y(layout, "stakesRunoffCodeY", row_offset)), safe_text(row.get("stakesRunoffCode"), 5))
+        pdf.drawCentredString(layout["bobRunoffLabelX"], y_from_top(asfa_record_y(layout, "bobRunoffLabelY", row_offset)), safe_text(row.get("bobRunoffLabel"), 8))
+        pdf.drawCentredString(layout["bobRunoffCodeX"], y_from_top(asfa_record_y(layout, "bobRunoffCodeY", row_offset)), safe_text(row.get("bobRunoffCode"), 5))
         pdf.drawCentredString(layout["placementX"], y_from_top(asfa_record_y(layout, "placementY", row_offset)), safe_text(row.get("placement"), 10))
         reason = asfa_record_refund_reason(row)
         if reason:
@@ -2162,20 +2544,33 @@ def fresh_half_page_template(template_path: Path, split_x: float):
     return page
 
 
-def flatten_judge_courses(trial: dict) -> list[dict]:
+def flatten_judge_courses(trial: dict, group_ids: list[str] | None = None) -> list[dict]:
     judges_by_breed = {
         clean_text(row.get("breed")): [value for value in [row.get("judge1"), row.get("judge2")] if value]
         for row in trial.get("runPlan") or []
     }
+    selected_ids = {str(value or "") for value in (group_ids or []) if str(value or "")}
     courses = []
     for group in draw_groups_for_print(trial):
+        if selected_ids and str(group.get("id") or "") not in selected_ids:
+            continue
         for course in group.get("courses") or []:
             hounds = sorted(course.get("hounds") or [], key=lambda hound: int(hound.get("drawPosition") or 0))
+            mixed_stakes = sorted({
+                abbreviate_stake(hound.get("stake") or "")
+                for hound in hounds
+                if hound.get("stake")
+            }, key=lambda value: clean_text(value))
             courses.append({
-                "breed": group.get("breed") or "",
-                "stake": abbreviate_stake(group.get("stake") or ""),
+                "breed": group.get("judgeBreed") or group.get("breed") or "",
+                "stake": group.get("judgeStake") or abbreviate_stake(group.get("stake") or ""),
+                "lciType": infer_lci_type_from_group_and_hounds(group, hounds),
                 "course": course.get("number") or "",
+                "phase": group.get("phase") or "",
+                "runoffText": group.get("runoffText") or "",
                 "mixedStake": bool(group.get("mixedStake")),
+                "mixedStakes": mixed_stakes,
+                "mixedText": group.get("manualNote") or "Mixed",
                 "judges": judges_by_breed.get(clean_text(group.get("breed")), []),
                 "hounds": hounds,
             })
@@ -2207,8 +2602,11 @@ def flatten_runoff_judge_courses(trial: dict, group_id: str, runoff_key: str) ->
             ]
             courses.append({
                 "breed": group.get("breed") or "",
-                "stake": f"{abbreviate_stake(group.get('stake') or '')} Runoff",
+                "stake": abbreviate_stake(group.get("stake") or ""),
+                "lciType": infer_lci_type_from_group_and_hounds(group, normalized_hounds),
                 "course": course.get("number") or "",
+                "phase": "runoff",
+                "runoffText": runoff.get("label") or "",
                 "mixedStake": False,
                 "judges": judges_by_breed.get(clean_text(group.get("breed")), []),
                 "hounds": normalized_hounds,
@@ -2241,14 +2639,34 @@ def flatten_finals_judge_courses(trial: dict, group_id: str) -> list[dict]:
             courses.append({
                 "breed": group.get("breed") or "",
                 "stake": abbreviate_stake(group.get("stake") or ""),
+                "lciType": infer_lci_type_from_group_and_hounds(group, normalized_hounds),
                 "course": course.get("number") or "",
                 "phase": "final",
                 "mixedStake": bool(group.get("mixedStake")),
+                "mixedStakes": sorted({
+                    abbreviate_stake(hound.get("stake") or "")
+                    for hound in normalized_hounds
+                    if hound.get("stake")
+                }, key=lambda value: clean_text(value)),
+                "mixedText": group.get("manualNote") or "Mixed",
                 "judges": judges_by_breed.get(clean_text(group.get("breed")), []),
                 "hounds": normalized_hounds,
             })
         return courses
     return []
+
+
+def infer_lci_type_from_group_and_hounds(group: dict, hounds: list[dict]) -> str:
+    for value in (group.get("lciType"), group.get("breed"), group.get("stake"), group.get("judgeBreed"), group.get("judgeStake")):
+        lci_type = asfa_lci_type(clean_text(value))
+        if lci_type:
+            return lci_type
+    for hound in hounds or []:
+        for value in (hound.get("breed"), hound.get("className"), hound.get("stake"), hound.get("entryBreed"), hound.get("entryClassName")):
+            lci_type = asfa_lci_type(clean_text(value))
+            if lci_type:
+                return lci_type
+    return ""
 
 
 def flatten_bif_judge_courses(trial: dict) -> list[dict]:
@@ -2358,9 +2776,14 @@ def draw_asfa_judge_form(pdf: canvas.Canvas, trial: dict, form: dict, x: float, 
     pdf.drawString(x + layout["clubX"], y_from_top(layout["clubY"] + y_adjust), safe_text(trial.get("clubName"), 30))
     pdf.drawString(x + layout["dateX"], y_from_top(layout["dateY"] + y_adjust), safe_text(trial.get("startsOn"), 14))
     draw_asfa_breed_mark(pdf, x, form.get("breed"), y_adjust, layout)
-    draw_asfa_stake_mark(pdf, x, form.get("stake"), y_adjust, layout)
+    lci_type = infer_asfa_lci_type(form)
+    if lci_type:
+        draw_asfa_lci_mark(pdf, x, lci_type, y_adjust, layout)
+    draw_asfa_stake_mark(pdf, x, form.get("stake"), y_adjust, layout, form.get("phase"), form)
+    draw_asfa_mixed_text(pdf, x, form, y_adjust, layout)
     draw_asfa_flight_mark(pdf, x, y_adjust, layout)
     draw_asfa_phase_mark(pdf, x, y_adjust, layout, form.get("phase"))
+    draw_asfa_runoff_text(pdf, x, form.get("runoffText"), y_adjust, layout)
     draw_asfa_course_mark(pdf, x, form.get("course"), y_adjust, layout)
     draw_asfa_judge_number_mark(pdf, x, form.get("judgeIndex") or 1, y_adjust, layout)
     pdf.drawString(x + layout["judgeX"], y_from_top(layout["judgeY"] + y_adjust), safe_text(form.get("judge"), 26))
@@ -2399,6 +2822,8 @@ def draw_asfa_unused_color_strikes(pdf: canvas.Canvas, x: float, form: dict, y_a
 def draw_asfa_breed_mark(pdf: canvas.Canvas, x: float, breed: object, y_adjust: float, layout: dict) -> None:
     breed_code_positions = {
         "A": x + 57,
+        "AF": x + 57,
+        "AH": x + 57,
         "AFGHANHOUND": x + 57,
         "AFGHANHOUNDS": x + 57,
         "AZ": x + 72,
@@ -2408,12 +2833,15 @@ def draw_asfa_breed_mark(pdf: canvas.Canvas, x: float, breed: object, y_adjust: 
         "BASENJI": x + 90,
         "BASENJIS": x + 90,
         "B": x + 104,
+        "BZ": x + 104,
         "BORZOI": x + 104,
         "BORZOIS": x + 104,
+        "C": x + 121,
         "CE": x + 121,
         "CIRNECODELLETNA": x + 121,
         "CIRNECHI": x + 121,
         "G": x + 134,
+        "GH": x + 134,
         "GREYHOUND": x + 134,
         "GREYHOUNDS": x + 134,
         "IB": x + 149,
@@ -2426,18 +2854,23 @@ def draw_asfa_breed_mark(pdf: canvas.Canvas, x: float, breed: object, y_adjust: 
         "ITALIANGREYHOUND": x + 179,
         "ITALIANGREYHOUNDS": x + 179,
         "P": x + 191,
+        "PH": x + 191,
         "PHARAOHOUND": x + 191,
         "PHARAOHHOUNDS": x + 191,
         "PIO": x + 207,
-        "PORTUGUESEPODENGO": x + 207,
-        "PORTUGUESEPODENGOS": x + 207,
+        "PERUVIANINCAORCHID": x + 207,
+        "PERUVIANINCAORCHIDS": x + 207,
         "RR": x + 227,
         "RHODESIANRIDGEBACK": x + 227,
         "RHODESIANRIDGEBACKS": x + 227,
         "S": x + 242,
+        "SA": x + 242,
         "SALUKI": x + 242,
         "SALUKIS": x + 242,
         "SD": x + 259,
+        "DH": x + 259,
+        "DEERHOUND": x + 259,
+        "DEERHOUNDS": x + 259,
         "SCOTTISHDEERHOUND": x + 259,
         "SCOTTISHDEERHOUNDS": x + 259,
         "SL": x + 278,
@@ -2447,10 +2880,17 @@ def draw_asfa_breed_mark(pdf: canvas.Canvas, x: float, breed: object, y_adjust: 
         "SILKENWINDHOUND": x + 299,
         "SILKENWINDHOUNDS": x + 299,
         "W": x + 316,
+        "WH": x + 316,
         "WHIPPET": x + 316,
         "WHIPPETS": x + 316,
     }
     normalized = clean_text(breed)
+    if normalized in {"BIF", "BIE"}:
+        return
+    if "LCI" in normalized:
+        return
+    if asfa_lci_type(normalized):
+        return
     target_x = breed_code_positions.get(normalized)
     if target_x:
         draw_circle(pdf, target_x, y_from_top(layout["breedCircleY"] + y_adjust), layout["breedCircleW"], layout["breedCircleH"], layout["circleWeight"])
@@ -2458,15 +2898,37 @@ def draw_asfa_breed_mark(pdf: canvas.Canvas, x: float, breed: object, y_adjust: 
         pdf.drawString(x + layout["otherBreedX"], y_from_top(layout["otherBreedY"] + y_adjust), safe_text(breed, 10))
 
 
-def draw_asfa_stake_mark(pdf: canvas.Canvas, x: float, stake: object, y_adjust: float, layout: dict) -> None:
-    normalized = clean_text(stake)
-    lci_type = asfa_lci_type(normalized)
-    if lci_type:
-        draw_asfa_lci_mark(pdf, x, lci_type, y_adjust, layout)
-        for candidate in ("OPEN", "EXCELLENT", "VETERAN"):
-            if normalized.endswith(candidate):
-                normalized = candidate
-                break
+def draw_asfa_mixed_text(pdf: canvas.Canvas, x: float, form: dict, y_adjust: float, layout: dict) -> None:
+    if not form.get("mixedStake"):
+        return
+    text = form.get("mixedText") or "Mixed"
+    pdf.drawString(x + layout.get("mixedTextX", layout.get("otherBreedX", 292)), y_from_top(layout.get("mixedTextY", layout.get("otherBreedY", 169)) + y_adjust), safe_text(text, 12))
+
+
+def draw_asfa_stake_mark(pdf: canvas.Canvas, x: float, stake: object, y_adjust: float, layout: dict, phase: object = "", form: dict | None = None) -> None:
+    normalized_phase = clean_text(phase)
+    raw_stakes = [stake]
+    if form and form.get("mixedStake"):
+        raw_stakes = form.get("mixedStakes") or [
+            hound.get("stake")
+            for hound in form.get("hounds") or []
+            if hound.get("stake")
+        ]
+    if form and asfa_form_has_provisional_breed(form):
+        raw_stakes.append("Provisional")
+    normalized_stakes: list[str] = []
+    for raw_stake in raw_stakes:
+        normalized = clean_text(raw_stake)
+        lci_type = asfa_lci_type(normalized)
+        if lci_type:
+            for candidate in ("OPEN", "EXCELLENT", "VETERAN"):
+                if normalized.endswith(candidate):
+                    normalized = candidate
+                    break
+        if normalized and normalized not in normalized_stakes:
+            normalized_stakes.append(normalized)
+    if not normalized_stakes:
+        return
     x_positions = {
         "OPEN": x + 65,
         "FCH": x + 103,
@@ -2474,17 +2936,75 @@ def draw_asfa_stake_mark(pdf: canvas.Canvas, x: float, stake: object, y_adjust: 
         "EXCELLENT": x + 146,
         "VETERAN": x + 196,
         "SINGLES": x + 245,
+        "PROVISIONAL": x + layout.get("provisionalStakeX", 305),
     }
-    draw_circle(pdf, x_positions.get(normalized, x + 65), y_from_top(layout["stakeCircleY"] + y_adjust), layout["stakeCircleW"], layout["stakeCircleH"], layout["circleWeight"])
+    for normalized in normalized_stakes:
+        if normalized_phase in {"BOB", "BIF", "BIE"} and normalized in {"", "BOB", "BIF", "BIE", "BOBTIE", "BOBTIERUNOFF"}:
+            continue
+        if normalized in {"RUNOFF", "TIE", "BOB", "BIF", "BIE", "BOBTIE", "BOBTIERUNOFF", "MIXED"}:
+            continue
+        target_x = x_positions.get(normalized)
+        if not target_x:
+            continue
+        draw_circle(pdf, target_x, y_from_top(layout["stakeCircleY"] + y_adjust), layout["stakeCircleW"], layout["stakeCircleH"], layout["circleWeight"])
+
+
+def asfa_form_has_provisional_breed(form: dict) -> bool:
+    values = [form.get("breed")]
+    values.extend(
+        hound.get(key)
+        for hound in form.get("hounds") or []
+        for key in ("breed", "entryBreed", "registeredBreed")
+    )
+    for value in values:
+        normalized = clean_text(value)
+        if not normalized or normalized in {"BIF", "BIE", "SINGLES"} or normalized.startswith("LCI"):
+            continue
+        if secretary_breed_code(normalized) == "PROVISIONAL":
+            return True
+    return False
 
 
 def asfa_lci_type(normalized_stake: str) -> str:
-    if normalized_stake.startswith("LCISMALL"):
+    normalized = clean_text(normalized_stake)
+    if "LCI" not in normalized:
+        return ""
+    if normalized in {"LCIS", "LCISM", "LCISMALL"} or normalized.startswith("LCISMALL"):
         return "SMALL"
-    if normalized_stake.startswith("LCILARGE"):
+    if normalized in {"LCIL", "LCILG", "LCILARGE"} or normalized.startswith("LCILARGE"):
         return "LARGE"
-    if normalized_stake.startswith("LCISIGHTHOUNDMIX") or normalized_stake.startswith("LCISHMIX"):
+    if (
+        normalized in {"LCISH", "LCISHMIX", "LCISIGHTHOUNDMIX"}
+        or normalized.startswith("LCISIGHTHOUNDMIX")
+        or normalized.startswith("LCISHMIX")
+        or ("LCI" in normalized and "MIX" in normalized)
+    ):
         return "SHMIX"
+    if "SMALL" in normalized:
+        return "SMALL"
+    if "LARGE" in normalized:
+        return "LARGE"
+    if "SIGHTHOUND" in normalized or "SH" in normalized:
+        return "SHMIX"
+    return ""
+
+
+def infer_asfa_lci_type(form: dict) -> str:
+    for value in (form.get("lciType"), form.get("breed"), form.get("stake"), form.get("judgeBreed"), form.get("judgeStake")):
+        lci_type = asfa_lci_type(clean_text(value))
+        if lci_type:
+            return lci_type
+    for hound in form.get("hounds") or []:
+        for value in (
+            hound.get("breed"),
+            hound.get("className"),
+            hound.get("stake"),
+            hound.get("entryBreed"),
+            hound.get("entryClassName"),
+        ):
+            lci_type = asfa_lci_type(clean_text(value))
+            if lci_type:
+                return lci_type
     return ""
 
 
@@ -2513,7 +3033,17 @@ def draw_asfa_phase_mark(pdf: canvas.Canvas, x: float, y_adjust: float, layout: 
     if normalized == "BIE":
         draw_circle(pdf, x + layout["biePhaseCircleX"], y_from_top(layout["biePhaseCircleY"] + y_adjust), layout["biePhaseCircleW"], layout["biePhaseCircleH"], layout["circleWeight"])
         return
+    if normalized in {"RUNOFF", "TIE", "TIERUNOFF"}:
+        return
     draw_circle(pdf, x + layout["phaseCircleX"], y_from_top(layout["phaseCircleY"] + y_adjust), layout["phaseCircleW"], layout["phaseCircleH"], layout["circleWeight"])
+
+
+def draw_asfa_runoff_text(pdf: canvas.Canvas, x: float, runoff_text: object, y_adjust: float, layout: dict) -> None:
+    text = str(runoff_text or "").replace(" Tie", "").replace(" Runoff", "").strip()
+    if not text:
+        return
+    pdf.setFont("Helvetica-Bold", layout["fontSize"])
+    pdf.drawString(x + layout["phaseTextX"], y_from_top(layout["phaseTextY"] + y_adjust), safe_text(text, 12))
 
 
 def draw_asfa_flight_mark(pdf: canvas.Canvas, x: float, y_adjust: float, layout: dict) -> None:
@@ -2629,6 +3159,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/template-image/asfa-draw":
+            try:
+                body = render_template_page_png(DRAW_TEMPLATES["ASFA"], "asfa-draw")
+                self.send_png(body, "asfa-draw-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/template-image/asfa-entry":
             try:
                 body = render_template_half_page_png(ENTRY_FORM_TEMPLATES["ASFA"], "asfa-entry-half", DEFAULT_ASFA_ENTRY_LAYOUT["copyOffsetX"])
@@ -2733,7 +3270,11 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 trial = payload.get("trial")
                 if not isinstance(trial, dict):
                     raise ValueError("trial must be an object")
-                pdf = generate_draw_sheet_pdf(trial)
+                pdf = generate_draw_sheet_pdf(
+                    trial,
+                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
+                    int(payload.get("copies") or 1),
+                )
                 association = str(trial.get("association") or "ASFA").lower()
                 self.send_pdf(pdf, f"{association}-draw-order-sheet.pdf")
             except Exception as exc:
@@ -2750,6 +3291,7 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 pdf = generate_judge_sheets_pdf(
                     trial,
                     payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
+                    [str(value or "") for value in payload.get("groupIds")] if isinstance(payload.get("groupIds"), list) else None,
                 )
                 association = str(trial.get("association") or "ASFA").lower()
                 self.send_pdf(pdf, f"{association}-preliminary-judge-sheets.pdf")
@@ -2787,6 +3329,7 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     trial,
                     str(payload.get("groupId") or ""),
                     payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
+                    [str(value or "") for value in payload.get("groupIds")] if isinstance(payload.get("groupIds"), list) else None,
                 )
                 association = str(trial.get("association") or "ASFA").lower()
                 self.send_pdf(pdf, f"{association}-finals-judge-sheets.pdf")

@@ -56,6 +56,7 @@
                         </div>
                         <div class="button-row">
                             <label class="switch compact-switch"><input id="showArchivedTrials" type="checkbox"> <span>Show archived</span></label>
+                            <button type="button" class="secondary small" id="setActiveButton">Set Active</button>
                             <button class="secondary small" id="setSelectedActiveButton" type="button">Lock Active Trial</button>
                             <button class="secondary small danger-button" id="deleteSelectedSetupTrialButton" type="button">Delete Selected</button>
                             <button class="secondary small" id="newTrialButton" type="button">New Trial</button>
@@ -188,7 +189,7 @@
                         <h2>Schedule</h2>
                         <p>These times drive the setup checklist and later premium/schedule exports.</p>
                     </div>
-                    <div class="grid four">
+                    <div class="grid two">
                         <label>
                             Closing date/time
                             <input id="closingAt" type="datetime-local">
@@ -196,14 +197,6 @@
                         <label>
                             Roll call
                             <input id="rollCallAt" type="time">
-                        </label>
-                        <label>
-                            Inspection
-                            <input id="inspectionAt" type="time">
-                        </label>
-                        <label>
-                            First course
-                            <input id="firstCourseAt" type="time">
                         </label>
                     </div>
                 </section>
@@ -225,10 +218,6 @@
                         <label>
                             Trial chair
                             <input id="trialChair" placeholder="Name">
-                        </label>
-                        <label>
-                            Huntmaster
-                            <input id="huntmaster" placeholder="Name">
                         </label>
                         <label>
                             Field clerk
@@ -388,74 +377,74 @@
                     </div>
                     <datalist id="houndSearchOptions"></datalist>
                     <div class="inline-entry">
-                        <input id="entryHoundSearch" list="houndSearchOptions" placeholder="Search hound by call name, registered name, or registration">
-                        <select id="entryClass"></select>
-                        <select id="entryRegistrationUsed"></select>
-                        <input id="entryHandler" placeholder="Handler">
-                        <input id="entryNumber" placeholder="Entry number">
+                        <label class="field-label">Hound search<input id="entryHoundSearch" list="houndSearchOptions" placeholder="Search call name, registered name, or registration"></label>
+                        <label class="field-label">Stake/class<select id="entryClass"></select></label>
+                        <label class="field-label">Registration used<select id="entryRegistrationUsed"></select></label>
+                        <label class="field-label">Handler<input id="entryHandler" placeholder="Handler"></label>
+                        <label class="field-label">Entry number<input id="entryNumber" placeholder="Entry number"></label>
                     </div>
                     <div class="inline-entry">
-                        <input id="entryCallName" placeholder="New hound call name">
-                        <input id="entryRegName" placeholder="New hound registered name">
-                        <select id="entryBreed"></select>
-                        <input id="entryRegNumber" placeholder="Registration number">
+                        <label class="field-label">Call name<input id="entryCallName" placeholder="New hound call name"></label>
+                        <label class="field-label">Registered name<input id="entryRegName" placeholder="New hound registered name"></label>
+                        <label class="field-label">Breed<select id="entryBreed"></select></label>
+                        <label class="field-label">Registration number<input id="entryRegNumber" placeholder="Registration number"></label>
                     </div>
                     <div class="inline-entry">
-                        <select id="entryRegistry">
-                            <option value="">Primary registry</option>
-                            <option>AKC</option>
-                            <option>ASFA</option>
-                            <option>CKC</option>
-                            <option>FCI</option>
-                            <option>NGA</option>
-                            <option>UKC</option>
-                            <option>Foreign Registry</option>
-                            <option>Other</option>
-                        </select>
-                        <select id="entryRegType">
-                            <option value="">Registration type</option>
-                            <option>Regular</option>
-                            <option>PAL/ILP</option>
-                            <option>FSS</option>
-                            <option>Foreign</option>
-                            <option>Critique</option>
-                            <option>Other</option>
-                        </select>
-                        <select id="entryAltRegistry">
-                            <option value="">Alternate registry</option>
-                            <option>AKC</option>
-                            <option>ASFA</option>
-                            <option>CKC</option>
-                            <option>FCI</option>
-                            <option>NGA</option>
-                            <option>UKC</option>
-                            <option>Foreign Registry</option>
-                            <option>Other</option>
-                        </select>
-                        <input id="entryAltRegNumber" placeholder="Alternate registration number">
+                        <label class="field-label">Primary registry<select id="entryRegistry">
+                                <option value="">Primary registry</option>
+                                <option>AKC</option>
+                                <option>ASFA</option>
+                                <option>CKC</option>
+                                <option>FCI</option>
+                                <option>NGA</option>
+                                <option>UKC</option>
+                                <option>Foreign Registry</option>
+                                <option>Other</option>
+                            </select></label>
+                        <label class="field-label">Registration type<select id="entryRegType">
+                                <option value="">Registration type</option>
+                                <option>Regular</option>
+                                <option>PAL/ILP</option>
+                                <option>FSS</option>
+                                <option>Foreign</option>
+                                <option>Critique</option>
+                                <option>Other</option>
+                            </select></label>
+                        <label class="field-label">Alternate registry<select id="entryAltRegistry">
+                                <option value="">Alternate registry</option>
+                                <option>AKC</option>
+                                <option>ASFA</option>
+                                <option>CKC</option>
+                                <option>FCI</option>
+                                <option>NGA</option>
+                                <option>UKC</option>
+                                <option>Foreign Registry</option>
+                                <option>Other</option>
+                            </select></label>
+                        <label class="field-label">Alternate reg #<input id="entryAltRegNumber" placeholder="Alternate registration number"></label>
                     </div>
                     <div class="inline-entry">
-                        <input id="entryOwner" placeholder="Owner">
-                        <input id="entryOwnerEmail" type="email" placeholder="Owner email">
-                        <input id="entryOwnerPhone" placeholder="Owner phone">
-                        <input id="entryDob" type="date" title="Date of birth">
+                        <label class="field-label">Owner<input id="entryOwner" placeholder="Owner"></label>
+                        <label class="field-label">Owner email<input id="entryOwnerEmail" type="email" placeholder="Owner email"></label>
+                        <label class="field-label">Owner phone<input id="entryOwnerPhone" placeholder="Owner phone"></label>
+                        <label class="field-label">Date of birth<input id="entryDob" type="date" title="Date of birth"></label>
                     </div>
                     <div class="inline-entry">
-                        <select id="entrySex">
-                            <option value="">Sex</option>
-                            <option>Dog</option>
-                            <option>Bitch</option>
-                        </select>
-                        <input id="entryOwnerAddress" placeholder="Owner address">
-                        <input id="entryOwnerCity" placeholder="City">
-                        <input id="entryOwnerState" maxlength="2" placeholder="State">
-                        <input id="entryOwnerPostalCode" placeholder="ZIP/postal">
+                        <label class="field-label">Sex<select id="entrySex">
+                                <option value="">Sex</option>
+                                <option>Dog</option>
+                                <option>Bitch</option>
+                            </select></label>
+                        <label class="field-label">Owner address<input id="entryOwnerAddress" placeholder="Owner address"></label>
+                        <label class="field-label">City<input id="entryOwnerCity" placeholder="City"></label>
+                        <label class="field-label">State<input id="entryOwnerState" maxlength="2" placeholder="State"></label>
+                        <label class="field-label">ZIP/postal<input id="entryOwnerPostalCode" placeholder="ZIP/postal"></label>
                     </div>
                     <div class="inline-entry">
-                        <input id="entryOwnerCountry" placeholder="Country">
-                        <input id="entryBreeder" placeholder="Breeder">
-                        <input id="entrySire" placeholder="Sire">
-                        <input id="entryDam" placeholder="Dam">
+                        <label class="field-label">Country<input id="entryOwnerCountry" placeholder="Country"></label>
+                        <label class="field-label">Breeder<input id="entryBreeder" placeholder="Breeder"></label>
+                        <label class="field-label">Sire<input id="entrySire" placeholder="Sire"></label>
+                        <label class="field-label">Dam<input id="entryDam" placeholder="Dam"></label>
                     </div>
                     <div class="switch-row">
                         <label class="switch"><input id="entryFirstTime" type="checkbox"> <span>First-time entry</span></label>
@@ -490,8 +479,32 @@
                         <p>Select one or more setup trials. The current trial is selected automatically.</p>
                     </div>
                     <div class="quick-grid" id="entryTrialTargets"></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Call Name</th>
+                                    <th>Registered Name</th>
+                                    <th>Breed</th>
+                                    <th>Registration</th>
+                                    <th>Registry</th>
+                                    <th>Class</th>
+                                    <th>Entry Dates</th>
+                                    <th>Trial(s)</th>
+                                    <th>Handler</th>
+                                    <th>Separate</th>
+                                    <th>Docs</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="entriesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="entries">
                     <div class="section-heading table-heading">
-                        <h2>Entry Import</h2>
+                        <h2>Import Dogs</h2>
                         <p>Import Jotform emails, CSV exports, or copied form text. Preview, map fields, choose hound matches, then import.</p>
                     </div>
                     <div class="inline-entry">
@@ -556,27 +569,6 @@
                             <tbody id="jotformImportPreviewTable"></tbody>
                         </table>
                     </div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Call Name</th>
-                                    <th>Registered Name</th>
-                                    <th>Breed</th>
-                                    <th>Registration</th>
-                                    <th>Registry</th>
-                                    <th>Class</th>
-                                    <th>Entry Dates</th>
-                                    <th>Trial(s)</th>
-                                    <th>Handler</th>
-                                    <th>Separate</th>
-                                    <th>Docs</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="entriesTable"></tbody>
-                        </table>
-                    </div>
                 </section>
 
                 <section class="form-section" data-tab="rollcall">
@@ -615,7 +607,7 @@
                     <div class="section-heading with-action">
                         <div>
                             <h2>Owner Separation</h2>
-                            <p>Mark hounds that should be separated before the preliminary draw. Use the same letter for hounds linked together.</p>
+                            <p>Mark hounds that should be separated before the preliminary draw. For Singles and LCI, the letter is used only to avoid back-to-back runs when possible.</p>
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small" id="autoOwnerSeparationButton">Auto Mark Multi-Hound Owners</button>
@@ -647,6 +639,7 @@
                         </div>
                     </div>
                     <div id="preliminaryDraw" class="course-groups no-print"></div>
+                    <div class="sheet-queue-panel" id="prelimJudgeSheetQueue"></div>
                     <div class="print-area sheet-preview" id="drawSheetPrint">
                         <h2 id="drawSheetHeading">Draw Order Sheet</h2>
                         <p id="drawSheetTitle"></p>
@@ -680,6 +673,7 @@
                         </div>
                         <button type="button" class="secondary small" id="toggleFinalsLockButton" data-help="Locks or unlocks finals score entry. Use Unlock Finals only when correcting a finals score or outcome.">Lock Finals</button>
                     </div>
+                    <div class="sheet-queue-panel" id="finalsJudgeSheetQueue"></div>
                     <div id="finalsScorebook" class="scorebook"></div>
                 </section>
 
@@ -705,11 +699,12 @@
                 <section class="form-section" data-tab="scoring">
                     <div class="section-heading with-action">
                         <div>
-                            <h2>BIF/BIE Check</h2>
+                            <h2>BIF / BIE</h2>
                             <p>Bring in BOB winners, check the hounds running in Best in Field, and assign BIF judges.</p>
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small draw-needed-button" id="buildBifDrawButton">Draw BIF Draw</button>
+                            <button type="button" class="secondary small report-button" id="printBifDrawSheetButton">Print BIF Draw Sheet</button>
                             <button type="button" class="secondary small report-button" id="printBifJudgeSheetsButton">Print BIF Judge Sheets</button>
                         </div>
                     </div>
@@ -896,6 +891,25 @@
                         <button type="button" class="secondary small" id="buildRunPlanButton">Build From Entries</button>
                     </div>
                     <div class="form-message compact" id="runPlanMessage"></div>
+                    <details class="inline-tool-panel">
+                        <summary>Import Premium Judge Assignments</summary>
+                        <p class="field-note">Paste the premium judge assignment grid. Tab-delimited text copied from a spreadsheet/PDF table works best. The importer applies only breeds or LCI/Singles groups that have trial entries.</p>
+                        <p class="field-note" id="premiumJudgeAssignmentsStatus">No premium judge matrix loaded.</p>
+                        <textarea id="premiumJudgeAssignmentsText" rows="7" placeholder="Example: paste the premium Judges & Assignments table here, including day names, judge names, breed headers, and S/X/* marks."></textarea>
+                        <div class="button-row">
+                            <label class="secondary small file-button">
+                                Load Grid Image
+                                <input id="premiumJudgeGridImage" type="file" accept="image/*" hidden>
+                            </label>
+                        </div>
+                        <div class="premium-grid-preview" id="premiumJudgeGridPreview"></div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small" id="importPremiumJudgesButton">Save Premium Matrix</button>
+                            <button type="button" class="secondary small" id="applyPremiumJudgesButton">Apply Saved Matrix</button>
+                            <button type="button" class="secondary small" id="removePremiumJudgesButton">Remove Saved Matrix</button>
+                            <button type="button" class="secondary small" id="clearPremiumJudgesButton">Clear Paste</button>
+                        </div>
+                    </details>
                     <div class="run-order-controls">
                         <span id="selectedRunPlanLabel">No breed selected</span>
                     </div>
@@ -1205,6 +1219,21 @@
                         <div class="entry-visual-editor" id="asfaLciEntryVisualEditor"></div>
                         <iframe class="pdf-preview-frame" id="asfaLciEntryAlignmentPreview" title="ASFA LCI entry form preview"></iframe>
                     </div>
+                    <div class="tool-panel" id="asfaDrawAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>ASFA Draw Sheet Alignment</h3>
+                                <p>Adjust the check marks on the official ASFA draw order sheet, then preview before printing.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAsfaDrawAlignmentButton">Preview Draw Sheet</button>
+                                <button type="button" class="secondary small" id="resetAsfaDrawAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="asfaDrawAlignmentControls"></div>
+                        <div class="draw-visual-editor" id="asfaDrawVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="asfaDrawAlignmentPreview" title="ASFA draw sheet preview"></iframe>
+                    </div>
                     <div class="tool-panel" id="asfaJudgeAlignmentTool">
                         <div class="section-heading with-action compact-heading">
                             <div>
@@ -1363,7 +1392,6 @@
                 </section>
 
                 <footer class="actions" data-tab="setup">
-                    <button type="button" class="secondary" id="setActiveButton">Set Active</button>
                     <button type="submit">Save Trial</button>
                 </footer>
             </form>
@@ -1371,6 +1399,6 @@
     </main>
 
     <script src="asfa_recent_hounds.js"></script>
-    <script src="script.js?v=20260627-server-restart"></script>
+    <script src="script.js?v=20260628-record-alignment-runoff-handles"></script>
 </body>
 </html>

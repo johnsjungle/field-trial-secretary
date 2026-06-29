@@ -501,6 +501,36 @@ body:has(.trial-guide-card[open]) .trial-form {
     color: var(--warn);
 }
 
+.inline-tool-panel {
+    border: 1px solid var(--line);
+    background: #fbfcfc;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+}
+
+.inline-tool-panel summary {
+    color: var(--accent-dark);
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.inline-tool-panel textarea {
+    margin-top: 8px;
+    width: 100%;
+}
+
+.premium-grid-preview {
+    margin: 8px 0;
+}
+
+.premium-grid-preview img {
+    border: 1px solid var(--line);
+    display: block;
+    max-height: 260px;
+    max-width: 100%;
+    object-fit: contain;
+}
+
 .edit-banner {
     align-items: center;
     background: #fff7ea;
@@ -717,6 +747,7 @@ textarea {
 .judge-visual-editor,
 .record-visual-editor,
 .entry-visual-editor,
+.draw-visual-editor,
 .secretary-visual-editor {
     background: #f7f8f8;
     border: 1px solid var(--line);
@@ -725,7 +756,8 @@ textarea {
 }
 
 .judge-sheet-stage,
-.record-sheet-stage {
+.record-sheet-stage,
+.draw-sheet-stage {
     aspect-ratio: 792 / 612;
     background: #fff;
     border: 1px solid #d8dfdc;
@@ -758,6 +790,7 @@ textarea {
 }
 
 .judge-sheet-overlay,
+.draw-sheet-overlay,
 .record-sheet-overlay {
     height: 100%;
     inset: 0;
@@ -774,6 +807,7 @@ textarea {
 }
 
 .judge-sheet-overlay,
+.draw-sheet-overlay,
 .record-sheet-overlay,
 .secretary-sheet-overlay {
     display: block;
@@ -785,6 +819,7 @@ textarea {
 }
 
 .judge-editor-item,
+.draw-editor-item,
 .entry-editor-item,
 .record-editor-item,
 .record-row-height-item,
@@ -793,6 +828,7 @@ textarea {
 }
 
 .judge-editor-item:hover ellipse,
+.draw-editor-item:hover rect:first-child,
 .entry-editor-item:hover ellipse,
 .entry-editor-item:hover rect,
 .record-editor-item:hover rect:first-child,
@@ -802,6 +838,7 @@ textarea {
 }
 
 .judge-editor-handle,
+.draw-editor-handle,
 .record-editor-handle,
 .secretary-editor-handle {
     cursor: nwse-resize;
@@ -826,6 +863,72 @@ textarea {
 .scorebook {
     display: grid;
     gap: 14px;
+}
+
+.sheet-queue-panel {
+    background: #f7faf9;
+    border: 1px solid #c8d8d3;
+    display: grid;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 14px;
+}
+
+.sheet-queue-heading {
+    align-items: start;
+    display: flex;
+    gap: 14px;
+    justify-content: space-between;
+}
+
+.sheet-queue-heading h3 {
+    margin: 0 0 4px;
+}
+
+.sheet-queue-heading p {
+    color: var(--muted);
+    margin: 0;
+}
+
+.sheet-queue-body[hidden] {
+    display: none;
+}
+
+.sheet-queue-table th:first-child,
+.sheet-queue-table td:first-child {
+    text-align: center;
+    width: 70px;
+}
+
+.sheet-queue-row.status-stale {
+    background: #fff6f6;
+}
+
+.sheet-status {
+    border: 1px solid var(--line);
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 3px 7px;
+    text-transform: uppercase;
+}
+
+.sheet-status-ready {
+    background: #eaf7ef;
+    border-color: #9ad5af;
+    color: #1d6f3c;
+}
+
+.sheet-status-printed {
+    background: #edf1f4;
+    border-color: #c9d1d6;
+    color: #47545d;
+}
+
+.sheet-status-stale {
+    background: #ffecec;
+    border-color: #e2a1a1;
+    color: #9d2f2f;
 }
 
 .scorebook-summary {
@@ -1296,6 +1399,120 @@ textarea {
     margin-bottom: 14px;
 }
 
+.field-label {
+    color: #4a5652;
+    font-size: 12px;
+    font-weight: 750;
+    gap: 4px;
+}
+
+.field-label input,
+.field-label select {
+    font-size: 15px;
+}
+
+.score-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.score-input::-webkit-outer-spin-button,
+.score-input::-webkit-inner-spin-button {
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+tr.entry-needs-documents > td {
+    background: #ffe4ef;
+}
+
+tr.roll-call-needs-documents > td {
+    background: #fff1f6;
+}
+
+tr.roll-call-print-needs-documents > td {
+    background: #ffe4ef;
+}
+
+.document-warning-badge {
+    display: inline-block;
+    margin-left: 8px;
+    border: 1px solid #f19ab9;
+    background: #ffd7e6;
+    color: #7a1738;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.trial-action-modal-backdrop {
+    align-items: center;
+    background: rgba(20, 29, 34, 0.38);
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    padding: 24px;
+    position: fixed;
+    z-index: 100;
+}
+
+.trial-action-modal {
+    background: #fff;
+    border: 1px solid #b8c5c1;
+    box-shadow: 0 20px 60px rgba(16, 24, 32, 0.24);
+    max-width: 520px;
+    padding: 24px;
+    width: min(520px, 100%);
+}
+
+.trial-action-modal-eyebrow {
+    color: #006b5c;
+    font-size: 14px;
+    font-weight: 850;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.trial-action-modal h2 {
+    font-size: 26px;
+    margin: 0 0 10px;
+}
+
+.trial-action-modal p {
+    color: #34403d;
+    font-size: 17px;
+    line-height: 1.45;
+    margin: 0;
+}
+
+.trial-action-modal-input {
+    border: 1px solid #b8c5c1;
+    border-radius: 6px;
+    font-size: 18px;
+    margin-top: 18px;
+    padding: 12px 14px;
+    width: 100%;
+}
+
+.trial-action-modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 22px;
+}
+
+.score-course-header-row td {
+    background: #eef5f3;
+    color: #173b35;
+    font-size: 13px;
+    font-weight: 850;
+    letter-spacing: 0;
+    padding: 7px 10px;
+}
+
 .inline-entry.three-cols {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1594,6 +1811,12 @@ tbody tr.row-flash td {
     #rollCallPrint .check-column,
     #rollCallPrint .roll-call-check-cell {
         width: 28px;
+    }
+
+    #rollCallPrint tr.roll-call-print-needs-documents > td {
+        background: #ffd9e8 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
     }
 
     #workerSheetPrint {
