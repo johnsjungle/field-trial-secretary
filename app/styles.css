@@ -152,6 +152,68 @@ h2 {
     font-size: 13px;
 }
 
+.save-status {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    min-height: 22px;
+    padding: 3px 8px;
+    border: 1px solid #9fc9ba;
+    background: #e9f6f0;
+    color: #0e4b3f;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.save-status.checking,
+.save-status.saving {
+    border-color: #8ab0d6;
+    background: #eef6ff;
+    color: #174d7c;
+}
+
+.save-status.warning,
+.save-status.browser-only {
+    border-color: #d9a35a;
+    background: #fff6e7;
+    color: #7d4607;
+}
+
+.save-status.error {
+    border-color: #d79a9a;
+    background: #fff0f0;
+    color: var(--danger);
+}
+
+.backup-restore-grid {
+    margin-top: 12px;
+}
+
+.backup-restore-note {
+    align-self: end;
+    border: 1px solid var(--line);
+    background: #fbfcfc;
+    color: var(--muted);
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 12px;
+    word-break: break-word;
+}
+
+.backup-restore-note.success {
+    border-color: #9fc9ba;
+    background: #e9f6f0;
+    color: #0e4b3f;
+    font-weight: 700;
+}
+
+.backup-restore-note.warning {
+    border-color: #d9a35a;
+    background: #fff6e7;
+    color: #7d4607;
+    font-weight: 700;
+}
+
 .trial-guide-card {
     position: relative;
     min-width: 280px;
@@ -266,6 +328,12 @@ h2 {
     background: #d2a02c;
 }
 
+.guide-step.attention .guide-dot,
+.tab-button.guide-attention::before {
+    background: #d2a02c;
+    box-shadow: 0 0 0 2px rgba(210, 160, 44, 0.18);
+}
+
 .guide-step.blocked .guide-dot,
 .tab-button.guide-blocked::before {
     background: #b24a4a;
@@ -280,6 +348,7 @@ h2 {
 
 .tab-button.guide-done,
 .tab-button.guide-ready,
+.tab-button.guide-attention,
 .tab-button.guide-blocked {
     position: relative;
     padding-left: 20px;
@@ -287,6 +356,7 @@ h2 {
 
 .tab-button.guide-done::before,
 .tab-button.guide-ready::before,
+.tab-button.guide-attention::before,
 .tab-button.guide-blocked::before {
     border-radius: 999px;
     content: "";
@@ -1448,6 +1518,36 @@ tr.roll-call-print-needs-documents > td {
     white-space: nowrap;
 }
 
+.signed-sheet-cell {
+    min-width: 120px;
+}
+
+.signed-sheet-status {
+    font-size: 12px;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+
+.signed-sheet-status.needed {
+    color: #9a3412;
+}
+
+.signed-sheet-status.complete {
+    color: #12613a;
+}
+
+.signed-sheet-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.signed-sheet-links a {
+    font-size: 12px;
+    font-weight: 750;
+}
+
 .trial-action-modal-backdrop {
     align-items: center;
     background: rgba(20, 29, 34, 0.38);
@@ -1540,7 +1640,7 @@ tr.roll-call-print-needs-documents > td {
 .roll-call-print-table .check-column,
 .roll-call-print-table .roll-call-check-cell {
     text-align: center;
-    width: 44px;
+    width: 58px;
 }
 
 .roll-call-print-table {
@@ -1763,7 +1863,15 @@ tbody tr.row-flash td {
         display: block !important;
         box-shadow: none;
         border: 0;
+        margin: 0;
         padding: 0;
+        break-after: avoid;
+        page-break-after: avoid;
+    }
+
+    body[data-print-section="workerSheetPrint"] .form-section:has(#workerSheetPrint) > :not(#workerSheetPrint),
+    body[data-print-section="rollCallPrint"] .form-section:has(#rollCallPrint) > :not(#rollCallPrint) {
+        display: none !important;
     }
 
     body[data-print-section="scoreReportPrint"] .form-section:has(#scoreReportPrint) > :not(#scoreReportPrint) {
@@ -1772,7 +1880,14 @@ tbody tr.row-flash td {
 
     .print-area .table-wrap {
         border: 0;
+        margin: 0;
         overflow: visible;
+    }
+
+    #workerSheetPrint,
+    #rollCallPrint {
+        max-height: 7.25in;
+        overflow: hidden;
     }
 
     table {
@@ -1810,7 +1925,13 @@ tbody tr.row-flash td {
 
     #rollCallPrint .check-column,
     #rollCallPrint .roll-call-check-cell {
-        width: 28px;
+        width: 52px;
+        min-width: 52px;
+    }
+
+    #rollCallPrint .roll-call-print-table th:nth-child(2),
+    #rollCallPrint .roll-call-print-table td:nth-child(2) {
+        padding-left: 8px;
     }
 
     #rollCallPrint tr.roll-call-print-needs-documents > td {

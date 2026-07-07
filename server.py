@@ -34,6 +34,7 @@ DB_PATH = DATA_DIR / "field_trial_secretary.sqlite"
 DB_BACKUP_DIR = ROOT / "backups" / "database"
 TRIAL_ARCHIVE_DIR = ROOT / "backups" / "trial_archives"
 TRANSFER_PACKAGE_DIR = ROOT / "backups" / "transfer_packages"
+APP_RESTORE_BACKUP_DIR = ROOT / "backups" / "app_file_restores"
 STATE_KEY = "current"
 MAX_DB_BACKUPS = 75
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
@@ -475,6 +476,45 @@ def create_database_backup(reason: str) -> str:
     return str(backup_path)
 
 
+def list_database_backups() -> list[dict]:
+    DB_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    rows: list[dict] = []
+    for path in sorted(DB_BACKUP_DIR.glob("field_trial_secretary-*.sqlite"), key=lambda item: item.stat().st_mtime, reverse=True):
+        stat = path.stat()
+        rows.append(
+            {
+                "fileName": path.name,
+                "path": str(path),
+                "size": stat.st_size,
+                "modifiedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            }
+        )
+    return rows
+
+
+def backup_path_from_name(file_name: str) -> Path:
+    cleaned = Path(str(file_name or "")).name
+    if not cleaned or not cleaned.endswith(".sqlite"):
+        raise ValueError("Choose a SQLite backup file.")
+    path = (DB_BACKUP_DIR / cleaned).resolve()
+    backup_root = DB_BACKUP_DIR.resolve()
+    if backup_root not in path.parents or not path.exists() or not path.is_file():
+        raise ValueError("Backup file was not found.")
+    return path
+
+
+def restore_database_backup(file_name: str) -> dict:
+    ensure_database()
+    backup_path = backup_path_from_name(file_name)
+    pre_restore_path = create_database_backup("before_sqlite_restore")
+    shutil.copy2(backup_path, DB_PATH)
+    return {
+        "restoredFrom": str(backup_path),
+        "preRestoreBackup": pre_restore_path,
+        "state": read_state(),
+    }
+
+
 def safe_filename_part(value: object, fallback: str = "trial") -> str:
     text = str(value or fallback).strip().lower()
     cleaned = "".join(char if char.isalnum() else "-" for char in text)
@@ -519,7 +559,7 @@ def create_trial_archive_package(payload: dict) -> tuple[bytes, str, str]:
             try:
                 entry_layout = payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None
                 lci_entry_layout = payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None
-                archive.writestr("reports/asfa-record-packet.pdf", generate_asfa_record_sheet_pdf(trial, "", "", record_layout, "alpha", entry_layout, lci_entry_layout))
+                archive.writestr("reports/asfa-record-packet.pdf", generate_asfa_record_sheet_pdf(trial, "", "", record_layout, "alpha", entry_layout, lci_entry_layout, secretary_layout, True, True))
             except Exception as exc:
                 notes.append(f"ASFA record packet was not generated: {exc}")
             try:
@@ -552,6 +592,88 @@ def latest_portable_zip() -> Path | None:
         return None
     zips = sorted(portable_dir.glob("*.zip"), key=lambda path: path.stat().st_mtime, reverse=True)
     return zips[0] if zips else None
+
+
+def newest_relevant_app_file() -> tuple[Path | None, float]:
+    candidates: list[Path] = []
+    for file_name in RESTORABLE_ROOT_FILES:
+        candidates.append(ROOT / file_name)
+    for folder in (APP_DIR, ROOT / "database"):
+        if folder.exists():
+            candidates.extend(path for path in folder.rglob("*") if path.is_file())
+    newest_path: Path | None = None
+    newest_time = 0.0
+    for path in candidates:
+        if not path.exists() or not path.is_file() or should_skip_transfer_file(path):
+            continue
+        mtime = path.stat().st_mtime
+        if mtime > newest_time:
+            newest_path = path
+            newest_time = mtime
+    return newest_path, newest_time
+
+
+def portable_package_status() -> dict:
+    portable_zip = latest_portable_zip()
+    newest_path, newest_time = newest_relevant_app_file()
+    if not portable_zip:
+        return {
+            "hasPortable": False,
+            "current": False,
+            "message": "No portable zip was found.",
+            "newestAppFile": str(newest_path) if newest_path else "",
+            "newestAppFileModifiedAt": datetime.fromtimestamp(newest_time).isoformat() if newest_time else "",
+        }
+    zip_time = portable_zip.stat().st_mtime
+    current = not newest_time or zip_time >= newest_time
+    return {
+        "hasPortable": True,
+        "current": current,
+        "zipName": portable_zip.name,
+        "zipPath": str(portable_zip),
+        "zipModifiedAt": datetime.fromtimestamp(zip_time).isoformat(),
+        "zipSize": portable_zip.stat().st_size,
+        "newestAppFile": str(newest_path) if newest_path else "",
+        "newestAppFileModifiedAt": datetime.fromtimestamp(newest_time).isoformat() if newest_time else "",
+        "message": "Portable package is current." if current else "Portable package is older than current app files.",
+    }
+
+
+def build_portable_package() -> dict:
+    if getattr(sys, "frozen", False):
+        raise ValueError("Portable packages must be built from the source folder, not from inside the portable EXE.")
+    script = ROOT / "build_portable_package.ps1"
+    if not script.exists():
+        raise FileNotFoundError("build_portable_package.ps1 was not found.")
+    before = latest_portable_zip()
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script),
+    ]
+    result = subprocess.run(
+        command,
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "Portable build failed.").strip())
+    after = latest_portable_zip()
+    if not after or (before and after == before and after.stat().st_mtime <= before.stat().st_mtime):
+        raise RuntimeError("Portable build completed, but no new portable zip was found.")
+    return {
+        "zipName": after.name,
+        "zipPath": str(after),
+        "zipModifiedAt": datetime.fromtimestamp(after.stat().st_mtime).isoformat(),
+        "zipSize": after.stat().st_size,
+        "stdout": result.stdout[-4000:],
+        "status": portable_package_status(),
+    }
 
 
 def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
@@ -622,6 +744,80 @@ def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
             archive.write(portable_zip, f"portable/{portable_zip.name}")
 
     return package_path.read_bytes(), filename, str(package_path)
+
+
+RESTORABLE_ROOT_FILES = {
+    "server.py",
+    "start_field_trial_secretary.ps1",
+    "build_portable_package.ps1",
+    "backup_field_trial_secretary.ps1",
+    "FieldTrialSecretary.spec",
+    "README.md",
+    "BACKUP_AND_TRANSFER.md",
+    "PHASE_1_SQLITE_MODE.md",
+    "TRIAL_DAY_DATA_SAFETY.md",
+}
+
+
+def is_restorable_app_file(member_name: str) -> bool:
+    normalized = member_name.replace("\\", "/").lstrip("/")
+    if not normalized or normalized.endswith("/"):
+        return False
+    parts = normalized.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        return False
+    if parts[0] in {"app", "database"}:
+        return True
+    return len(parts) == 1 and parts[0] in RESTORABLE_ROOT_FILES
+
+
+def create_app_files_restore_backup() -> str:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    APP_RESTORE_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup_path = APP_RESTORE_BACKUP_DIR / f"app-files-before-restore-{timestamp}.zip"
+    with zipfile.ZipFile(backup_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file_name in sorted(RESTORABLE_ROOT_FILES):
+            path = ROOT / file_name
+            if path.exists() and path.is_file():
+                archive.write(path, file_name)
+        add_directory_to_archive(archive, APP_DIR, "app")
+        add_directory_to_archive(archive, ROOT / "database", "database")
+    return str(backup_path)
+
+
+def restore_app_files_from_transfer_package(payload: dict) -> dict:
+    encoded = str(payload.get("contentBase64") or "")
+    if "," in encoded and encoded.split(",", 1)[0].startswith("data:"):
+        encoded = encoded.split(",", 1)[1]
+    if not encoded.strip():
+        raise ValueError("Transfer package file was empty.")
+    package_bytes = base64.b64decode(encoded)
+    pre_restore_backup = create_app_files_restore_backup()
+    restored: list[str] = []
+    skipped: list[str] = []
+    with zipfile.ZipFile(io.BytesIO(package_bytes)) as archive:
+        for member in archive.infolist():
+            normalized = member.filename.replace("\\", "/").lstrip("/")
+            if not is_restorable_app_file(normalized):
+                if normalized and not normalized.endswith("/"):
+                    skipped.append(normalized)
+                continue
+            target = (ROOT / normalized).resolve()
+            if ROOT.resolve() not in target.parents and target != ROOT.resolve():
+                skipped.append(normalized)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(member) as source, open(target, "wb") as destination:
+                shutil.copyfileobj(source, destination)
+            restored.append(normalized)
+    if not restored:
+        raise ValueError("No restorable app files were found in that transfer package.")
+    return {
+        "restoredCount": len(restored),
+        "restored": restored[:25],
+        "skippedCount": len(skipped),
+        "preRestoreBackup": pre_restore_backup,
+    }
 
 
 def restart_command(host: str, port: int) -> list[str]:
@@ -951,9 +1147,12 @@ def draw_asfa_draw_sheet_phase_checks(pdf: canvas.Canvas, column: int, block: di
     stake = clean_text(block.get("stake"))
     is_bob = phase in {"BOB"} or "BOB" in stake
     is_bif = phase in {"BIF"} or "BIF" in stake
+    is_final = phase in {"FINAL", "FINALS"} or "FINAL" in stake
     is_runoff = phase in {"RUNOFF", "BOB"} or "RUNOFF" in stake or "TIE" in stake
     if is_runoff:
         draw_check(pdf, column + layout["runoffCheckX"] + layout["globalXAdjust"], layout["runoffCheckY"] + layout["globalYAdjust"], layout)
+    elif is_final:
+        draw_check(pdf, column + layout["finalCheckX"] + layout["globalXAdjust"], layout["finalCheckY"] + layout["globalYAdjust"], layout)
     elif not is_bif:
         draw_check(pdf, column + layout["prelimCheckX"] + layout["globalXAdjust"], layout["prelimCheckY"] + layout["globalYAdjust"], layout)
     if is_bob:
@@ -1026,11 +1225,21 @@ def draw_hound_lines(pdf: canvas.Canvas, x: float, first_top: float, block: dict
         notes = []
         if hound.get("manuallyMoved"):
             notes.append("manual")
-        name = printable_hound_name(hound)
+        name = draw_sheet_hound_name(hound, block)
         line = safe_text(name, 23)
         if notes:
             line = safe_text(f"{line} ({', '.join(notes)})", 34)
         pdf.drawString(x, y_from_top(first_top + (15 * offset)), line)
+
+
+def draw_sheet_hound_name(hound: dict, block: dict) -> str:
+    name = printable_hound_name(hound)
+    if clean_text(block.get("breed")) == "SINGLES" or clean_text(block.get("stake")) == "SINGLES":
+        breed = str(hound.get("breed") or hound.get("entryBreed") or hound.get("registeredBreed") or "").strip()
+        display = breed_display_for_record(breed)
+        if display and display not in name:
+            return f"{name} ({display})"
+    return name
 
 
 def y_from_top(top: float) -> float:
@@ -1175,6 +1384,9 @@ def generate_asfa_record_sheet_pdf(
     sort_mode: str = "",
     entry_layout: dict | None = None,
     lci_entry_layout: dict | None = None,
+    secretary_layout: dict | None = None,
+    include_secretary_report: bool = False,
+    include_first_time_documents: bool = False,
 ) -> bytes:
     template_path = RECORD_TEMPLATES["ASFA"]
     if not template_path.exists():
@@ -1185,6 +1397,11 @@ def generate_asfa_record_sheet_pdf(
         raise ValueError("No score rows were found for that ASFA record sheet.")
 
     writer = PdfWriter()
+    if include_secretary_report and not group_id and not breed:
+        secretary_reader = PdfReader(io.BytesIO(generate_asfa_secretary_report_pdf(trial, secretary_layout)))
+        for page in secretary_reader.pages:
+            writer.add_page(page)
+
     rows_per_page = 10
     layout_settings = asfa_record_layout(layout)
     for group in groups:
@@ -1207,7 +1424,8 @@ def generate_asfa_record_sheet_pdf(
             ))).pages[0]
             page.merge_page(overlay)
             writer.add_page(page)
-        if clean_text(group.get("breed")) != "BIF":
+        append_signed_judge_sheets_for_group(writer, group)
+        if include_first_time_documents and clean_text(group.get("breed")) != "BIF":
             append_first_time_documents_for_group(writer, trial, group, entry_layout, lci_entry_layout)
 
     if not writer.pages:
@@ -1377,6 +1595,7 @@ def first_time_entries_for_print(trial: dict, entry_id: str = "") -> list[dict]:
 
 
 def build_asfa_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) -> bytes:
+    source = entry_form_source(trial, entry)
     buffer = io.BytesIO()
     width = float(page.mediabox.width)
     height = float(page.mediabox.height)
@@ -1386,18 +1605,18 @@ def build_asfa_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) 
     pdf.setStrokeColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica", layout["fontSize"])
 
-    draw_asfa_entry_text(pdf, layout, "breed", run_group_breed_for_entry(entry), 20)
-    draw_asfa_entry_text(pdf, layout, "callName", entry.get("callName") or entry.get("registeredName"), 24)
-    draw_asfa_entry_text(pdf, layout, "registeredName", entry.get("registeredName") or entry.get("callName"), 34)
-    draw_asfa_entry_text(pdf, layout, "registration", entry_registration_text(entry), 28)
-    draw_asfa_entry_text(pdf, layout, "dob", entry.get("dob"), 12)
-    draw_asfa_entry_text(pdf, layout, "owner", entry.get("owner"), 34)
-    draw_asfa_entry_text(pdf, layout, "address", entry_address_line(entry), 38)
-    draw_asfa_entry_text(pdf, layout, "phone", entry.get("ownerPhone"), 18)
-    draw_asfa_entry_text(pdf, layout, "city", entry.get("ownerCity"), 20)
-    draw_asfa_entry_text(pdf, layout, "state", entry.get("ownerState"), 4)
-    draw_asfa_entry_text(pdf, layout, "zip", entry.get("ownerPostalCode"), 10)
-    draw_asfa_entry_text(pdf, layout, "email", entry.get("ownerEmail"), 30)
+    draw_asfa_entry_text(pdf, layout, "breed", run_group_breed_for_entry(source), 20)
+    draw_asfa_entry_text(pdf, layout, "callName", source.get("callName") or entry_registered_name_for_form(source), 24)
+    draw_asfa_entry_text(pdf, layout, "registeredName", entry_registered_name_for_form(source) or source.get("callName"), 34)
+    draw_asfa_entry_text(pdf, layout, "registration", entry_registration_text(source), 28)
+    draw_asfa_entry_text(pdf, layout, "dob", source.get("dob"), 12)
+    draw_asfa_entry_text(pdf, layout, "owner", entry_owner_for_form(source), 34)
+    draw_asfa_entry_text(pdf, layout, "address", entry_address_line(source), 38)
+    draw_asfa_entry_text(pdf, layout, "phone", source.get("ownerPhone"), 18)
+    draw_asfa_entry_text(pdf, layout, "city", source.get("ownerCity"), 20)
+    draw_asfa_entry_text(pdf, layout, "state", source.get("ownerState"), 4)
+    draw_asfa_entry_text(pdf, layout, "zip", source.get("ownerPostalCode"), 10)
+    draw_asfa_entry_text(pdf, layout, "email", source.get("ownerEmail"), 30)
     draw_asfa_entry_text(pdf, layout, "region", trial.get("region"), 8)
 
     draw_asfa_entry_stake_mark(pdf, layout, run_group_stake_for_entry(entry))
@@ -1407,7 +1626,7 @@ def build_asfa_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) 
         draw_asfa_entry_check(pdf, layout, "breeder")
     if entry_flag(entry, "additionalBench"):
         draw_asfa_entry_check(pdf, layout, "bench")
-    draw_asfa_entry_sex_mark(pdf, layout, entry.get("sex"))
+    draw_asfa_entry_sex_mark(pdf, layout, source.get("sex"))
     if entry.get("ownerSeparationRequested"):
         draw_asfa_entry_check(pdf, layout, "ownerSeparation")
     if not is_quasi_breed_entry(entry):
@@ -1417,12 +1636,13 @@ def build_asfa_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) 
         draw_asfa_entry_check(pdf, layout, "changeInfo")
     if entry_flag(entry, "dismissedLastSix"):
         draw_asfa_entry_check(pdf, layout, "dismissed")
-    draw_asfa_entry_signature(pdf, layout, entry)
+    draw_asfa_entry_signature(pdf, layout, source)
     pdf.save()
     return buffer.getvalue()
 
 
 def build_asfa_lci_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) -> bytes:
+    source = entry_form_source(trial, entry)
     buffer = io.BytesIO()
     width = float(page.mediabox.width)
     height = float(page.mediabox.height)
@@ -1432,27 +1652,27 @@ def build_asfa_lci_entry_form_overlay(trial: dict, entry: dict, page, layout: di
     pdf.setStrokeColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica", layout["fontSize"])
 
-    draw_asfa_lci_entry_text(pdf, layout, "breed", run_group_breed_for_entry(entry), 20)
-    draw_asfa_lci_entry_text(pdf, layout, "callName", entry.get("callName") or entry.get("registeredName"), 24)
-    draw_asfa_lci_entry_text(pdf, layout, "registeredName", entry.get("registeredName") or entry.get("callName"), 34)
-    draw_asfa_lci_entry_text(pdf, layout, "registration", entry_registration_text(entry), 28)
-    draw_asfa_lci_entry_text(pdf, layout, "dob", entry.get("dob"), 12)
-    draw_asfa_lci_entry_text(pdf, layout, "owner", entry.get("owner"), 34)
-    draw_asfa_lci_entry_text(pdf, layout, "address", entry_address_line(entry), 38)
-    draw_asfa_lci_entry_text(pdf, layout, "phone", entry.get("ownerPhone"), 18)
-    draw_asfa_lci_entry_text(pdf, layout, "city", entry.get("ownerCity"), 20)
-    draw_asfa_lci_entry_text(pdf, layout, "state", entry.get("ownerState"), 4)
-    draw_asfa_lci_entry_text(pdf, layout, "zip", entry.get("ownerPostalCode"), 10)
-    draw_asfa_lci_entry_text(pdf, layout, "email", entry.get("ownerEmail"), 30)
+    draw_asfa_lci_entry_text(pdf, layout, "breed", run_group_breed_for_entry(source), 20)
+    draw_asfa_lci_entry_text(pdf, layout, "callName", source.get("callName") or entry_registered_name_for_form(source), 24)
+    draw_asfa_lci_entry_text(pdf, layout, "registeredName", entry_registered_name_for_form(source) or source.get("callName"), 34)
+    draw_asfa_lci_entry_text(pdf, layout, "registration", entry_registration_text(source), 28)
+    draw_asfa_lci_entry_text(pdf, layout, "dob", source.get("dob"), 12)
+    draw_asfa_lci_entry_text(pdf, layout, "owner", entry_owner_for_form(source), 34)
+    draw_asfa_lci_entry_text(pdf, layout, "address", entry_address_line(source), 38)
+    draw_asfa_lci_entry_text(pdf, layout, "phone", source.get("ownerPhone"), 18)
+    draw_asfa_lci_entry_text(pdf, layout, "city", source.get("ownerCity"), 20)
+    draw_asfa_lci_entry_text(pdf, layout, "state", source.get("ownerState"), 4)
+    draw_asfa_lci_entry_text(pdf, layout, "zip", source.get("ownerPostalCode"), 10)
+    draw_asfa_lci_entry_text(pdf, layout, "email", source.get("ownerEmail"), 30)
     draw_asfa_lci_entry_text(pdf, layout, "region", trial.get("region"), 8)
 
-    draw_asfa_lci_division_mark(pdf, layout, entry)
+    draw_asfa_lci_division_mark(pdf, layout, source)
     draw_asfa_lci_stake_mark(pdf, layout, run_group_stake_for_entry(entry))
-    draw_asfa_lci_sex_mark(pdf, layout, entry.get("sex"))
+    draw_asfa_lci_sex_mark(pdf, layout, source.get("sex"))
     draw_asfa_entry_check(pdf, layout, "firstTimeEntry")
     if entry_flag(entry, "infoChanged"):
         draw_asfa_entry_check(pdf, layout, "changeInfo")
-    draw_asfa_entry_signature(pdf, layout, entry)
+    draw_asfa_entry_signature(pdf, layout, source)
     pdf.save()
     return buffer.getvalue()
 
@@ -1533,7 +1753,7 @@ def draw_asfa_entry_check_at(pdf: canvas.Canvas, layout: dict, x: float, y: floa
 
 
 def draw_asfa_entry_signature(pdf: canvas.Canvas, layout: dict, entry: dict) -> None:
-    signature = str(entry.get("signatureName") or entry.get("owner") or "").strip()
+    signature = entry_signature_for_form(entry)
     if not signature:
         return
     pdf.setFont("Helvetica", layout["fontSize"])
@@ -1558,6 +1778,114 @@ def entry_registration_text(entry: dict) -> str:
     pieces = [piece for piece in (registry, number) if piece]
     text = " ".join(pieces)
     return f"{text} ({reg_type})" if text and reg_type else text
+
+
+def entry_form_source(trial: dict, entry: dict) -> dict:
+    hound = master_hound_for_entry(trial, entry)
+    if not hound:
+        return entry
+    source = dict(entry)
+    for key in (
+        "callName",
+        "registeredName",
+        "breed",
+        "registrationNumber",
+        "registry",
+        "registrationType",
+        "dob",
+        "sex",
+        "owner",
+        "ownerEmail",
+        "ownerPhone",
+        "ownerAddress",
+        "ownerCity",
+        "ownerState",
+        "ownerPostalCode",
+        "ownerCountry",
+        "breeder",
+        "sire",
+        "dam",
+    ):
+        value = hound.get(key)
+        if value not in (None, ""):
+            source[key] = value
+    source["signatureName"] = hound.get("owner") or source.get("signatureName") or source.get("owner")
+    return source
+
+
+def master_hound_for_entry(trial: dict, entry: dict) -> dict | None:
+    hounds = []
+    if isinstance(trial.get("masterHounds"), list):
+        hounds.extend(trial.get("masterHounds") or [])
+    hounds.extend(load_master_hounds_from_state())
+    hound_id = str(entry.get("houndId") or "")
+    if hound_id:
+        for hound in hounds:
+            if str(hound.get("id") or "") == hound_id:
+                return hound
+    entry_reg = clean_text(entry.get("registrationNumber"))
+    if entry_reg:
+        for hound in hounds:
+            if entry_reg in {clean_text(hound.get("registrationNumber")), clean_text(hound.get("alternateRegistrationNumber"))}:
+                return hound
+    entry_name = clean_text(entry.get("registeredName"))
+    entry_call = clean_text(entry.get("callName"))
+    entry_breed = clean_text(entry.get("breed"))
+    for hound in hounds:
+        if entry_name and clean_text(hound.get("registeredName")) == entry_name:
+            return hound
+        if entry_call and clean_text(hound.get("callName")) == entry_call and (not entry_breed or clean_text(hound.get("breed")) == entry_breed):
+            return hound
+    return None
+
+
+def load_master_hounds_from_state() -> list[dict]:
+    if not DB_PATH.exists():
+        return []
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute("select state_json from app_state where key = ?", (STATE_KEY,)).fetchone()
+        if not row:
+            return []
+        state = json.loads(row[0])
+        data = state.get("data") if isinstance(state.get("data"), dict) else state
+        hounds = data.get("masterHounds") if isinstance(data, dict) else []
+        return hounds if isinstance(hounds, list) else []
+    except Exception:
+        return []
+
+
+def entry_registered_name_for_form(entry: dict) -> str:
+    return clean_entry_form_text(entry.get("registeredName"), entry.get("callName"))
+
+
+def entry_owner_for_form(entry: dict) -> str:
+    return clean_entry_form_text(entry.get("owner"))
+
+
+def entry_signature_for_form(entry: dict) -> str:
+    signature = clean_entry_form_text(entry.get("signatureName"))
+    return signature or entry_owner_for_form(entry)
+
+
+def clean_entry_form_text(value: object, call_name: object = "", strip_sire_dam: bool = False) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text)
+    if strip_sire_dam:
+        text = re.sub(r"\s+\bSire\b.*$", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"\s+\b(?:Address|Add\.?|Phone|Email|E-mail|City|State|Zip)\b\.?:?\s*$", "", text, flags=re.IGNORECASE).strip()
+    if not strip_sire_dam:
+        text = dedupe_repeated_phrase(text)
+    return text
+
+
+def dedupe_repeated_phrase(value: str) -> str:
+    words = value.split()
+    if len(words) % 2 == 0 and words[:len(words) // 2] == words[len(words) // 2:]:
+        return " ".join(words[:len(words) // 2])
+    return value
 
 
 def entry_address_line(entry: dict) -> str:
@@ -1730,14 +2058,17 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
     award_by_entry = asfa_record_awards_by_entry(trial)
     stake_runoff_by_entry = stake_runoff_boxes_by_entry(trial, group)
     bob_runoff_by_entry = bob_runoff_boxes_by_entry(trial)
+    qualifying_minimum = placement_qualifying_minimum_for_group(trial, group)
     rows = []
     for course in sorted(group.get("courses") or [], key=lambda item: int(item.get("number") or 0)):
         for hound in sorted_hounds_by_blanket(course.get("hounds") or []):
             entry_id = str(hound.get("entryId") or "")
             entry = entries_by_id.get(str(hound.get("entryId") or "")) or {}
             placement = final_placement_by_entry.get(entry_id) or ""
+            if placement and not combined_score_qualifies(combined_by_entry.get(entry_id), qualifying_minimum):
+                placement = ""
             rows.append({
-                "callName": hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound",
+                "callName": asfa_record_call_name(hound, entry, group),
                 "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
                 "rollCallStatus": entry.get("rollCallStatus") or "",
                 "rollCallNotes": entry.get("rollCallNotes") or "",
@@ -1761,6 +2092,39 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
     return rows
 
 
+def asfa_record_call_name(hound: dict, entry: dict, group: dict) -> str:
+    name = str(hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound")
+    if clean_text(group.get("breed")) == "SINGLES" or clean_text(group.get("stake")) == "SINGLES":
+        breed = str(entry.get("breed") or hound.get("breed") or hound.get("entryBreed") or "").strip()
+        display = breed_display_for_record(breed)
+        if display and display not in name:
+            return f"{name} ({display})"
+    return name
+
+
+def placement_qualifying_minimum_for_group(trial: dict, group: dict) -> float:
+    judge1, judge2 = judges_for_group(trial, group)
+    return 200.0 if str(judge2 or "").strip() else 100.0
+
+
+def combined_score_qualifies(score: object, qualifying_minimum: float) -> bool:
+    try:
+        return float(score) >= qualifying_minimum
+    except (TypeError, ValueError):
+        return False
+
+
+def breed_display_for_record(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = clean_text(text)
+    if normalized.startswith("LCI"):
+        return text
+    code = secretary_breed_code(normalized)
+    return code if code != "PROVISIONAL" else text
+
+
 def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
     entries_by_id = {
         str(entry.get("id") or ""): entry
@@ -1781,6 +2145,7 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
             entry_id = str(hound.get("entryId") or "")
             entry = entries_by_id.get(entry_id) or {}
             outcome = normalized_record_outcome(outcomes.get(entry_id))
+            placement = bif_results.get(entry_id) or ""
             rows.append({
                 "callName": hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound",
                 "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
@@ -1797,19 +2162,20 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
                 "finalJudge2": "",
                 "finalScore": "",
                 "combinedScore": outcome.get("score") or "",
-                "placement": bif_results.get(entry_id) or "",
+                "placement": placement,
             })
     return rows
 
 
 def asfa_record_awards_by_entry(trial: dict) -> dict[str, str]:
     awards: dict[str, str] = {}
-    for entry_id, result in ((trial.get("resultState") or {}).get("bobResultsByEntry") or {}).items():
-        if result == "BOB":
-            awards[str(entry_id)] = "BOB"
-    for entry_id, result in bif_results_by_entry(trial).items():
+    bif_results = bif_results_by_entry(trial)
+    for entry_id, result in bif_results.items():
         if result == "BIF":
             awards[str(entry_id)] = "BIF"
+    for entry_id, result in ((trial.get("resultState") or {}).get("bobResultsByEntry") or {}).items():
+        if result == "BOB" and str(entry_id) not in awards:
+            awards[str(entry_id)] = "BOB"
     return awards
 
 
@@ -1884,6 +2250,9 @@ def record_score_outcome_label(value: object) -> str:
         "DIS": "DIS",
         "DISQUALIFIED": "DQ",
         "DQ": "DQ",
+        "PULL": "PUL",
+        "PULLED": "PUL",
+        "PUL": "PUL",
     }
     return labels.get(normalized, str(value or ""))
 
@@ -1964,6 +2333,10 @@ def asfa_record_refund_reason(row: dict) -> str:
         return "LAME"
     if status in {"INSEASON", "SEASON"} or "INSEASON" in notes or "SEASON" in notes:
         return "IN SEASON"
+    if status in {"BREEDDQ", "BREEDDISQUALIFIED"} or "BREEDDQ" in notes or "BREEDDISQUALIFIED" in notes:
+        return "BREED DQ"
+    if status in {"SCRATCHED", "SCRATCH"} or "SCRATCHED" in notes or "SCRATCH" in notes:
+        return "SCRATCHED"
     if row_outcome_is_dismissed(row.get("prelimOutcome")) or row_outcome_is_dismissed(row.get("finalOutcome")):
         return "DISMISSED"
     return ""
@@ -2002,6 +2375,46 @@ def append_first_time_documents_for_group(writer: PdfWriter, trial: dict, group:
             if not document:
                 continue
             append_document_to_writer(writer, document)
+
+
+def append_signed_judge_sheets_for_group(writer: PdfWriter, group: dict) -> None:
+    seen_documents: set[str] = set()
+    for document_id in signed_judge_sheet_document_ids_for_group(group):
+        if not document_id or document_id in seen_documents:
+            continue
+        seen_documents.add(document_id)
+        document = read_entry_document(document_id)
+        if not document:
+            continue
+        append_document_to_writer(writer, document)
+
+
+def signed_judge_sheet_document_ids_for_group(group: dict) -> list[str]:
+    ids: list[str] = []
+    for course in group.get("courses") or []:
+        for hound in course.get("hounds") or []:
+            if outcome_requires_signed_judge_sheet(hound.get("prelimOutcome")):
+                ids.extend(document_ids_from_hound(hound, "prelimSignedJudgeSheetIds", "prelimSignedJudgeSheets"))
+    final_draw = group.get("finalDraw") or {}
+    for course in final_draw.get("courses") or []:
+        for hound in course.get("hounds") or []:
+            if outcome_requires_signed_judge_sheet(hound.get("finalOutcome")):
+                ids.extend(document_ids_from_hound(hound, "finalSignedJudgeSheetIds", "finalSignedJudgeSheets"))
+    return ids
+
+
+def document_ids_from_hound(hound: dict, id_key: str, record_key: str) -> list[str]:
+    ids = [str(document_id) for document_id in hound.get(id_key) or [] if document_id]
+    for document in hound.get(record_key) or []:
+        document_id = str((document or {}).get("id") or "")
+        if document_id and document_id not in ids:
+            ids.append(document_id)
+    return ids
+
+
+def outcome_requires_signed_judge_sheet(outcome: object) -> bool:
+    normalized = clean_text(outcome)
+    return normalized in {"EXCUSED", "EXC", "DISMISSED", "DIS", "DISQUALIFIED", "DQ"}
 
 
 def append_asfa_entry_form_for_entry(writer: PdfWriter, trial: dict, entry: dict, layout: dict) -> None:
@@ -2155,6 +2568,7 @@ def score_or_outcome(score: object, outcome: object) -> str:
         "dq": "DQ",
         "disqualified": "DQ",
         "forfeit": "F",
+        "pull": "PUL",
         "no_score": "NS",
     }.get(str(outcome or ""), "")
 
@@ -2191,6 +2605,9 @@ def draw_asfa_record_header(pdf: canvas.Canvas, trial: dict, group: dict, entry_
 
 
 def judges_for_group(trial: dict, group: dict) -> tuple[str, str]:
+    if clean_text(group.get("breed")) == "BIF" or clean_text(group.get("phase")) == "BIF":
+        bif = (trial.get("scorebook") or {}).get("bif") or {}
+        return str(bif.get("judge1") or ""), str(bif.get("judge2") or "")
     target = clean_text(group.get("breed"))
     for row in trial.get("runPlan") or []:
         if clean_text(row.get("breed")) == target:
@@ -2680,16 +3097,16 @@ def flatten_bif_judge_courses(trial: dict) -> list[dict]:
             {
                 **hound,
                 "blanketColor": hound.get("bifBlanketColor") or hound.get("blanketColor"),
-                "stake": hound.get("bobStake") or hound.get("stake") or "BIF",
+                "stake": hound.get("bobStake") or hound.get("stake") or "",
             }
             for hound in hounds
         ]
         courses.append({
             "breed": "BIF",
-            "stake": "BIF",
+            "stake": "",
             "course": course.get("number") or "",
             "phase": "bif",
-            "mixedStake": True,
+            "mixedStake": False,
             "judges": judges,
             "hounds": normalized_hounds,
         })
@@ -2899,6 +3316,8 @@ def draw_asfa_breed_mark(pdf: canvas.Canvas, x: float, breed: object, y_adjust: 
 
 
 def draw_asfa_mixed_text(pdf: canvas.Canvas, x: float, form: dict, y_adjust: float, layout: dict) -> None:
+    if clean_text(form.get("phase")) in {"BIF", "BIE"} or clean_text(form.get("breed")) in {"BIF", "BIE"}:
+        return
     if not form.get("mixedStake"):
         return
     text = form.get("mixedText") or "Mixed"
@@ -2907,6 +3326,8 @@ def draw_asfa_mixed_text(pdf: canvas.Canvas, x: float, form: dict, y_adjust: flo
 
 def draw_asfa_stake_mark(pdf: canvas.Canvas, x: float, stake: object, y_adjust: float, layout: dict, phase: object = "", form: dict | None = None) -> None:
     normalized_phase = clean_text(phase)
+    if normalized_phase in {"BIF", "BIE"} or (form and clean_text(form.get("breed")) in {"BIF", "BIE"}):
+        return
     raw_stakes = [stake]
     if form and form.get("mixedStake"):
         raw_stakes = form.get("mixedStakes") or [
@@ -3145,6 +3566,18 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/status":
             self.send_json({"ok": True, "dbPath": str(DB_PATH), "time": utc_now()})
             return
+        if parsed.path == "/api/database-backups":
+            try:
+                self.send_json({"ok": True, "backups": list_database_backups()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/portable-status":
+            try:
+                self.send_json({"ok": True, "portable": portable_package_status()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/api/template-image/asfa-judge":
             try:
                 body = render_template_page_png(JUDGE_TEMPLATES["ASFA"], "asfa-judge")
@@ -3219,6 +3652,18 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if parsed.path == "/api/restore-sqlite-backup":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("restore payload must be an object")
+                restored = restore_database_backup(str(payload.get("fileName") or ""))
+                self.send_json({"ok": True, **restored})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/restart":
             try:
                 threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
@@ -3247,6 +3692,25 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     raise ValueError("transfer payload must be an object")
                 body, filename, archive_path = create_transfer_package(payload)
                 self.send_zip(body, filename, archive_path)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/build-portable":
+            try:
+                payload = build_portable_package()
+                self.send_json({"ok": True, **payload})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/restore-transfer-app-files":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("restore payload must be an object")
+                restored = restore_app_files_from_transfer_package(payload)
+                self.send_json({"ok": True, **restored})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -3390,6 +3854,9 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     "alpha",
                     payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None,
                     payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None,
+                    payload.get("secretaryLayout") if isinstance(payload.get("secretaryLayout"), dict) else None,
+                    True,
+                    True,
                 )
                 self.send_pdf(pdf, "asfa-record-sheet-packet.pdf")
             except Exception as exc:

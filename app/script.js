@@ -1,4 +1,4 @@
-const storageKey = 'fieldTrialSecretary.trials.v1';
+﻿const storageKey = 'fieldTrialSecretary.trials.v1';
 const houndStorageKey = 'fieldTrialSecretary.masterHounds.v1';
 const judgeStorageKey = 'fieldTrialSecretary.masterJudges.v1';
 const workerStorageKey = 'fieldTrialSecretary.masterWorkers.v1';
@@ -63,6 +63,10 @@ const archiveTrialStatus = document.getElementById('archiveTrialStatus');
 const adminTestMessage = document.getElementById('adminTestMessage');
 const officialFormsMessage = document.getElementById('officialFormsMessage');
 const storageSafetyMessage = document.getElementById('storageSafetyMessage');
+const saveStatusBadge = document.getElementById('saveStatusBadge');
+const sqliteBackupSelect = document.getElementById('sqliteBackupSelect');
+const sqliteBackupDetails = document.getElementById('sqliteBackupDetails');
+const portablePackageStatus = document.getElementById('portablePackageStatus');
 const showArchivedTrials = document.getElementById('showArchivedTrials');
 
 const breedOptions = [
@@ -740,6 +744,12 @@ let tableSort = {};
 let sqliteModeAvailable = false;
 let sqliteSaveTimer = null;
 let sqliteLoadComplete = false;
+let lastSQLiteSaveAt = '';
+let lastBrowserSaveAt = '';
+let saveStatusState = 'checking';
+let sqliteBackupRows = [];
+let portableStatusLoaded = false;
+let portableStatusPayload = null;
 let adminBreedPlan = [];
 let stagedJotformEntries = [];
 let stagedJotformFiles = [];
@@ -876,11 +886,16 @@ function normalizeLoadedTrials(rows) {
         if (JSON.stringify(normalizedEntries) !== JSON.stringify(trial.entries || trial.hounds || [])) {
             changed = true;
         }
+        const hasBuiltRunPlan = Array.isArray(trial.runPlan) && trial.runPlan.length > 0;
+        if (hasBuiltRunPlan && !trial.runPlanEntriesFingerprint) {
+            changed = true;
+        }
         list.push({
             ...trial,
             id,
             trialId: id,
             entries: normalizedEntries,
+            runPlanEntriesFingerprint: trial.runPlanEntriesFingerprint || (hasBuiltRunPlan ? entrySetupFingerprint(normalizedEntries) : ''),
         });
         return list;
     }, []);
@@ -1017,13 +1032,68 @@ async function apiRequest(path, options = {}) {
     return payload;
 }
 
-function queueSQLiteSave() {
-    if (!sqliteModeAvailable || !sqliteLoadComplete) {
+function setSaveStatus(state, detail = '') {
+    saveStatusState = state;
+    if (detail) {
+        if (state === 'saved') {
+            lastSQLiteSaveAt = detail;
+        } else if (state === 'browser-saved') {
+            lastBrowserSaveAt = detail;
+        }
+    }
+    renderSaveStatus();
+}
+
+function renderSaveStatus() {
+    if (!saveStatusBadge) {
         return;
     }
+    saveStatusBadge.className = `save-status ${saveStatusState}`;
+    if (!isLocalServerMode()) {
+        saveStatusBadge.textContent = 'Browser only - start app server for SQLite protection';
+        saveStatusBadge.className = 'save-status browser-only';
+        return;
+    }
+    if (!sqliteLoadComplete || saveStatusState === 'checking') {
+        saveStatusBadge.textContent = 'Checking SQLite...';
+        return;
+    }
+    if (!sqliteModeAvailable) {
+        saveStatusBadge.textContent = 'SQLite unavailable - browser backup only';
+        saveStatusBadge.className = 'save-status warning';
+        return;
+    }
+    if (saveStatusState === 'saving') {
+        saveStatusBadge.textContent = 'Saving to SQLite...';
+        return;
+    }
+    if (saveStatusState === 'error') {
+        saveStatusBadge.textContent = 'Save failed - check Tools';
+        return;
+    }
+    if (lastSQLiteSaveAt) {
+        saveStatusBadge.textContent = `SQLite protected - saved ${formatTimestamp(lastSQLiteSaveAt)}`;
+        return;
+    }
+    if (lastBrowserSaveAt) {
+        saveStatusBadge.textContent = 'Browser saved - SQLite pending';
+        saveStatusBadge.className = 'save-status warning';
+        return;
+    }
+    saveStatusBadge.textContent = 'SQLite protected';
+}
+
+function queueSQLiteSave() {
+    lastBrowserSaveAt = new Date().toISOString();
+    if (!sqliteModeAvailable || !sqliteLoadComplete) {
+        renderSaveStatus();
+        return;
+    }
+    setSaveStatus('saving');
     clearTimeout(sqliteSaveTimer);
     sqliteSaveTimer = setTimeout(() => {
         saveToSQLite().catch((error) => {
+            setSaveStatus('error');
             showMessage(storageSafetyMessage || adminTestMessage, `SQLite save failed: ${error.message}`, 'warning');
         });
     }, 300);
@@ -1037,6 +1107,7 @@ async function saveToSQLite() {
         method: 'POST',
         body: JSON.stringify({ state: makeBackupSnapshot() }),
     });
+    setSaveStatus('saved', payload.savedToSQLiteAt || new Date().toISOString());
     if (storageSafetyMessage && currentTab === 'admintest') {
         showMessage(storageSafetyMessage, `Saved to SQLite at ${formatTimestamp(payload.savedToSQLiteAt)}.`, 'success');
     }
@@ -1045,6 +1116,7 @@ async function saveToSQLite() {
 async function loadFromSQLiteIfAvailable() {
     if (!isLocalServerMode()) {
         sqliteLoadComplete = true;
+        renderSaveStatus();
         return;
     }
     try {
@@ -1052,13 +1124,42 @@ async function loadFromSQLiteIfAvailable() {
         sqliteModeAvailable = true;
         if (payload.state) {
             applyBackupSnapshot(payload.state);
+            lastSQLiteSaveAt = payload.state.savedToSQLiteAt || payload.state.exportedAt || '';
+            saveStatusState = 'saved';
         } else if (trials.length > 0 || masterHounds.length > 0 || masterJudges.length > 0 || masterWorkers.length > 0) {
             await saveToSQLite();
+        } else {
+            saveStatusState = 'saved';
         }
     } catch {
         sqliteModeAvailable = false;
+        setSaveStatus('error');
     } finally {
         sqliteLoadComplete = true;
+        renderSaveStatus();
+    }
+}
+
+function flushSQLiteSaveBeforeClose() {
+    if (!sqliteModeAvailable || !sqliteLoadComplete || !isLocalServerMode()) {
+        return;
+    }
+    clearTimeout(sqliteSaveTimer);
+    const body = JSON.stringify({ state: makeBackupSnapshot() });
+    try {
+        if (navigator.sendBeacon) {
+            const blob = new Blob([body], { type: 'application/json' });
+            navigator.sendBeacon('/api/state', blob);
+            return;
+        }
+        fetch('/api/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: true,
+        }).catch(() => {});
+    } catch {
+        // Browser close flush is best-effort; normal saves and backups still protect prior changes.
     }
 }
 
@@ -1193,8 +1294,234 @@ async function createSQLiteBackup() {
         await saveToSQLite();
         const payload = await apiRequest('/api/backup', { method: 'POST', body: '{}' });
         showMessage(storageSafetyMessage, `SQLite backup created: ${payload.backupPath}`, 'success');
+        await refreshSQLiteBackupList();
     } catch (error) {
         showMessage(storageSafetyMessage, `SQLite backup failed: ${error.message}`, 'warning');
+    }
+}
+
+function formatBytes(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return '0 KB';
+    }
+    if (bytes < 1024 * 1024) {
+        return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderSQLiteBackupList() {
+    if (!sqliteBackupSelect) {
+        return;
+    }
+    const current = sqliteBackupSelect.value;
+    sqliteBackupSelect.innerHTML = '';
+    if (!sqliteModeAvailable) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Start server mode to view backups';
+        sqliteBackupSelect.appendChild(option);
+        if (sqliteBackupDetails) {
+            sqliteBackupDetails.textContent = 'SQLite backups are available only when the app is running from http://127.0.0.1:8765/.';
+        }
+        return;
+    }
+    if (!sqliteBackupRows.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No SQLite backups found';
+        sqliteBackupSelect.appendChild(option);
+        if (sqliteBackupDetails) {
+            sqliteBackupDetails.textContent = 'Create a SQLite backup to make a restore point.';
+        }
+        return;
+    }
+    sqliteBackupRows.forEach((backup) => {
+        const option = document.createElement('option');
+        option.value = backup.fileName;
+        option.textContent = `${formatTimestamp(backup.modifiedAt)} - ${formatBytes(backup.size)}`;
+        sqliteBackupSelect.appendChild(option);
+    });
+    sqliteBackupSelect.value = sqliteBackupRows.some((backup) => backup.fileName === current) ? current : sqliteBackupRows[0].fileName;
+    updateSQLiteBackupDetails();
+}
+
+function updateSQLiteBackupDetails() {
+    if (!sqliteBackupDetails || !sqliteBackupSelect) {
+        return;
+    }
+    const backup = sqliteBackupRows.find((row) => row.fileName === sqliteBackupSelect.value);
+    sqliteBackupDetails.textContent = backup
+        ? `${backup.fileName} | ${backup.path}`
+        : 'Select a SQLite backup to restore.';
+}
+
+function renderPortableStatus(status = null) {
+    if (!portablePackageStatus) {
+        return;
+    }
+    if (!sqliteModeAvailable) {
+        portablePackageStatus.textContent = 'Portable status requires SQLite/server mode.';
+        portablePackageStatus.className = 'backup-restore-note portable-status-note warning';
+        return;
+    }
+    if (!status) {
+        portablePackageStatus.textContent = 'Portable status has not been checked yet.';
+        portablePackageStatus.className = 'backup-restore-note portable-status-note';
+        return;
+    }
+    const parts = [status.message || 'Portable status checked.'];
+    if (status.zipPath) {
+        parts.push(`Zip: ${status.zipPath}`);
+    }
+    if (status.zipModifiedAt) {
+        parts.push(`Built: ${formatTimestamp(status.zipModifiedAt)}`);
+    }
+    if (!status.current && status.newestAppFile) {
+        parts.push(`Newest app file: ${status.newestAppFile}`);
+    }
+    portablePackageStatus.textContent = parts.join(' ');
+    portablePackageStatus.className = `backup-restore-note portable-status-note ${status.current ? 'success' : 'warning'}`;
+}
+
+async function refreshPortableStatus(showResult = false) {
+    if (!sqliteModeAvailable) {
+        renderPortableStatus(null);
+        return;
+    }
+    try {
+        const payload = await apiRequest('/api/portable-status');
+        portableStatusLoaded = true;
+        portableStatusPayload = payload.portable || null;
+        renderPortableStatus(portableStatusPayload);
+        if (showResult && storageSafetyMessage) {
+            showMessage(storageSafetyMessage, payload.portable?.message || 'Portable status refreshed.', payload.portable?.current ? 'success' : 'warning');
+        }
+    } catch (error) {
+        portablePackageStatus.textContent = `Portable status failed: ${error.message}`;
+        portablePackageStatus.className = 'backup-restore-note portable-status-note warning';
+    }
+}
+
+async function buildPortablePackage() {
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'Portable builds require SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
+        return;
+    }
+    const proceed = await showTrialConfirm({
+        title: 'Build Portable Package',
+        eyebrow: 'Update EXE',
+        message: 'Build a fresh portable EXE and zip from the current program files? This can take a few minutes. The current SQLite data will be saved first.',
+        primaryText: 'Build Portable',
+    });
+    if (!proceed) {
+        return;
+    }
+    showMessage(storageSafetyMessage, 'Building portable package. This can take a few minutes; leave the app open.', 'warning');
+    try {
+        await saveToSQLite();
+        const payload = await apiRequest('/api/build-portable', { method: 'POST', body: '{}' });
+        portableStatusLoaded = true;
+        portableStatusPayload = payload.status || null;
+        renderPortableStatus(portableStatusPayload);
+        showMessage(storageSafetyMessage, `Portable package built: ${payload.zipPath}`, 'success');
+    } catch (error) {
+        showMessage(storageSafetyMessage, `Portable build failed: ${error.message}`, 'warning');
+        refreshPortableStatus().catch(() => {});
+    }
+}
+
+async function refreshSQLiteBackupList() {
+    if (!sqliteModeAvailable || !sqliteBackupSelect) {
+        renderSQLiteBackupList();
+        return;
+    }
+    try {
+        const payload = await apiRequest('/api/database-backups');
+        sqliteBackupRows = Array.isArray(payload.backups) ? payload.backups : [];
+        renderSQLiteBackupList();
+    } catch (error) {
+        sqliteBackupRows = [];
+        renderSQLiteBackupList();
+        showMessage(storageSafetyMessage, `Could not load SQLite backups: ${error.message}`, 'warning');
+    }
+}
+
+async function restoreSQLiteBackup() {
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'SQLite mode is not active. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
+        return;
+    }
+    const fileName = sqliteBackupSelect?.value || '';
+    const backup = sqliteBackupRows.find((row) => row.fileName === fileName);
+    if (!backup) {
+        showMessage(storageSafetyMessage, 'Choose a SQLite backup to restore.', 'warning');
+        return;
+    }
+    const restore = await showTrialConfirm({
+        title: 'Restore SQLite Backup',
+        eyebrow: 'Replace Current Trial Data',
+        message: `Restore the SQLite database from ${formatTimestamp(backup.modifiedAt)}? The app will first create a safety backup of the current database.`,
+        primaryText: 'Restore SQLite',
+    });
+    if (!restore) {
+        return;
+    }
+    try {
+        const payload = await apiRequest('/api/restore-sqlite-backup', {
+            method: 'POST',
+            body: JSON.stringify({ fileName: backup.fileName }),
+        });
+        if (payload.state) {
+            applyBackupSnapshot(payload.state);
+            lastSQLiteSaveAt = payload.state.savedToSQLiteAt || new Date().toISOString();
+        }
+        await writeBrowserSafetyBackup();
+        await refreshSQLiteBackupList();
+        showMessage(storageSafetyMessage, `SQLite restored. Current database safety copy: ${payload.preRestoreBackup}`, 'success');
+        render();
+    } catch (error) {
+        showMessage(storageSafetyMessage, `SQLite restore failed: ${error.message}`, 'warning');
+    }
+}
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '');
+        reader.onerror = () => reject(reader.error || new Error('File could not be read.'));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function restoreTransferAppFiles(file) {
+    if (!file) {
+        return;
+    }
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'App file restore requires SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
+        return;
+    }
+    const restore = await showTrialConfirm({
+        title: 'Restore App Files',
+        eyebrow: 'Program Repair',
+        message: 'Restore app files and templates from this transfer package? Trial data in the current SQLite database will not be replaced. The app will first create an app-file safety backup.',
+        primaryText: 'Restore App Files',
+    });
+    if (!restore) {
+        return;
+    }
+    try {
+        await saveToSQLite();
+        const contentBase64 = await fileToBase64(file);
+        const payload = await apiRequest('/api/restore-transfer-app-files', {
+            method: 'POST',
+            body: JSON.stringify({ fileName: file.name, contentBase64 }),
+        });
+        showMessage(storageSafetyMessage, `Restored ${payload.restoredCount} app files. Safety backup: ${payload.preRestoreBackup}. Restart the app server, then refresh.`, 'success');
+    } catch (error) {
+        showMessage(storageSafetyMessage, `App file restore failed: ${error.message}`, 'warning');
     }
 }
 
@@ -1341,6 +1668,7 @@ function readForm() {
     data.judges = getSelectedArray('judges');
     data.workers = getSelectedArray('workers');
     data.runPlan = getSelectedArray('runPlan');
+    data.runPlanEntriesFingerprint = existing && existing.runPlanEntriesFingerprint ? existing.runPlanEntriesFingerprint : '';
     data.preliminaryDraw = existing && existing.preliminaryDraw ? existing.preliminaryDraw : null;
     data.scorebook = existing && existing.scorebook ? existing.scorebook : { prelimComplete: false };
     data.runoffOrder = existing && Array.isArray(existing.runoffOrder) ? existing.runoffOrder : [];
@@ -1348,6 +1676,7 @@ function readForm() {
     data.bobRunoffOutcomes = existing && existing.bobRunoffOutcomes ? existing.bobRunoffOutcomes : {};
     data.resultState = existing && existing.resultState ? existing.resultState : {};
     data.printStatus = existing && existing.printStatus ? existing.printStatus : {};
+    data.printStatusFingerprints = existing && existing.printStatusFingerprints ? existing.printStatusFingerprints : {};
     data.ownerSeparationReviewedAt = existing && existing.ownerSeparationReviewedAt ? existing.ownerSeparationReviewedAt : '';
     data.premiumJudgeAssignments = existing && existing.premiumJudgeAssignments ? existing.premiumJudgeAssignments : null;
     data.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
@@ -1488,6 +1817,15 @@ function renderAdminTools() {
     renderAdminBreedPlan();
     renderAdminDeleteTrials();
     renderDeletedTrials();
+    renderSQLiteBackupList();
+    if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && sqliteBackupRows.length === 0) {
+        refreshSQLiteBackupList();
+    }
+    if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !portableStatusLoaded) {
+        refreshPortableStatus();
+    } else {
+        renderPortableStatus(portableStatusPayload);
+    }
 }
 
 function populateAdminPlanBreedSelect() {
@@ -2030,6 +2368,53 @@ function stepStatus(done, ready) {
     return ready ? 'ready' : 'blocked';
 }
 
+function attentionStatus(done, ready, attention) {
+    if (attention) {
+        return 'attention';
+    }
+    return stepStatus(done, ready);
+}
+
+function entrySetupFingerprint(entries = []) {
+    return JSON.stringify((entries || [])
+        .map((entry) => ({
+            id: entry.id || '',
+            houndId: entry.houndId || '',
+            callName: entry.callName || '',
+            breed: runGroupBreedForEntry(entry),
+            className: entry.className || entry.stake || '',
+            registrationNumber: entry.registrationNumber || '',
+        }))
+        .sort((a, b) => `${a.id}|${a.houndId}|${a.callName}`.localeCompare(`${b.id}|${b.houndId}|${b.callName}`, undefined, { numeric: true, sensitivity: 'base' })));
+}
+
+function entryDrawFingerprint(entries = []) {
+    return JSON.stringify((entries || [])
+        .map((entry) => ({
+            id: entry.id || '',
+            houndId: entry.houndId || '',
+            breed: runGroupBreedForEntry(entry),
+            className: entry.className || entry.stake || '',
+            rollCallStatus: entry.rollCallStatus || '',
+            ownerSeparationRequested: Boolean(entry.ownerSeparationRequested || entry.separateOwnerHounds),
+            ownerSeparationGroup: entry.ownerSeparationGroup || '',
+        }))
+        .sort((a, b) => `${a.id}|${a.houndId}`.localeCompare(`${b.id}|${b.houndId}`, undefined, { numeric: true, sensitivity: 'base' })));
+}
+
+function entriesChangedAfterRunPlan(trial) {
+    return Boolean(trial && trial.runPlanEntriesFingerprint && entrySetupFingerprint(trial.entries || []) !== trial.runPlanEntriesFingerprint);
+}
+
+function entriesChangedAfterPreliminaryDraw(trial) {
+    return Boolean(trial && trial.preliminaryDraw && trial.preliminaryDraw.entriesFingerprint && entryDrawFingerprint(trial.entries || []) !== trial.preliminaryDraw.entriesFingerprint);
+}
+
+function entriesChangedAfterPrinted(trial, key) {
+    const printedFingerprint = trial && trial.printStatusFingerprints && trial.printStatusFingerprints[key];
+    return Boolean(printedFingerprint && entrySetupFingerprint((trial || {}).entries || []) !== printedFingerprint);
+}
+
 function printStatus(trial, key) {
     return Boolean(trial && trial.printStatus && trial.printStatus[key]);
 }
@@ -2109,7 +2494,7 @@ function bifScoringComplete(trial) {
     }
     const rows = ((bif.draw || {}).courses || []).flatMap((course) => course.hounds || []);
     return rows.length > 0 && rows.every((hound) => {
-        const outcome = normalizedBobOutcome((bif.outcomes || {})[hound.entryId]);
+        const outcome = normalizedBobOutcome((bif.outcomes || {})[bifEntryKey(hound.entryId)]);
         return hasScoreValue(outcome.value) || hasScoreValue(outcome.score);
     });
 }
@@ -2151,8 +2536,13 @@ function trialGuideSteps(trial) {
     const entriesDone = Boolean(hasTrial && (trial.entries || []).length > 0);
     const rollDone = rollCallComplete(trial);
     const runDone = runPlanComplete(trial);
+    const entriesStaleForRunPlan = entriesChangedAfterRunPlan(trial);
     const ownerStatus = ownerSeparationStatus(trial);
     const prelimDrawDone = preliminaryDrawComplete(trial);
+    const entriesStaleForPrelimDraw = entriesChangedAfterPreliminaryDraw(trial);
+    const workerSheetStale = printStatus(trial, 'workerSheet') && entriesChangedAfterPrinted(trial, 'workerSheet');
+    const rollCallSheetStale = printStatus(trial, 'rollCallSheet') && entriesChangedAfterPrinted(trial, 'rollCallSheet');
+    const prelimDrawSheetStale = printStatus(trial, 'prelimDrawSheet') && entriesChangedAfterPrinted(trial, 'prelimDrawSheet');
     const prelimDone = prelimScoringComplete(trial);
     const finalsDrawDone = finalsDrawComplete(trial);
     const finalsDone = finalsScoringComplete(trial);
@@ -2166,16 +2556,17 @@ function trialGuideSteps(trial) {
     const steps = [
         { id: 'trial-set', label: 'Trial Set', tab: 'setup', sectionTitle: 'Event', status: stepStatus(trialBasicsComplete(trial), hasTrial), detail: 'Enter the trial name, club, association, and dates.', action: 'Go To Setup' },
         { id: 'entries-set', label: 'Entries Set', tab: 'entries', sectionTitle: 'Trial Entries', status: stepStatus(entriesDone, trialBasicsComplete(trial)), detail: entriesDone ? `${(trial.entries || []).length} entries are in this trial.` : 'Add or import the hounds running in this trial.', action: 'Go To Entries' },
-        { id: 'running-order-assignments', label: 'Running Order & Assignments', tab: 'runplan', sectionTitle: 'Running Order & Assignments', status: stepStatus(runDone, entriesDone), detail: runDone ? 'Running order and assignment rows are set.' : 'Set breed running order, judges, lure operators, and huntmasters.', action: 'Go To Running Order' },
-        { id: 'worker-sheet', label: 'Worker Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', status: stepStatus(printStatus(trial, 'workerSheet'), runDone), detail: printStatus(trial, 'workerSheet') ? 'Worker sheet has been printed or marked printed.' : 'Print the worker sheet after running order and assignments are ready.', action: 'Go To Worker Sheet' },
-        { id: 'roll-call', label: 'Roll Call', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: stepStatus(rollDone, entriesDone), detail: rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.', action: 'Go To Roll Call' },
-        { id: 'separate-hounds', label: 'Separate Hounds', tab: 'rollcall', sectionTitle: 'Owner Separation', status: stepStatus(entriesDone && ownerStatus.done, entriesDone), detail: ownerStatus.detail, action: 'Go To Separation' },
-        { id: 'prelim-draw', label: 'Preliminary Draw', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: stepStatus(prelimDrawDone, rollDone && runDone), detail: prelimDrawDone ? 'Preliminary courses and blanket colors are built.' : 'Build the randomized preliminary draw after roll call and running order are ready.', action: 'Go To Draw' },
-        { id: 'print-draw', label: 'Print Draw Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: stepStatus(printStatus(trial, 'prelimDrawSheet'), prelimDrawDone), detail: printStatus(trial, 'prelimDrawSheet') ? 'Preliminary draw sheets have been printed or marked printed.' : 'Print the posted draw order sheet for the fancy.', action: 'Go To Draw Sheets' },
-        { id: 'print-judge-prelim', label: 'Print Judges Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: stepStatus(allReadyPrelimJudgeSheetsPrinted(trial), prelimDrawDone), detail: allReadyPrelimJudgeSheetsPrinted(trial) ? 'All currently ready preliminary judge sheets have been printed.' : 'Print preliminary judge sheets from the judge sheet queue.', action: 'Go To Judge Sheets' },
-        { id: 'prelim-scoring', label: 'Prelim Scoring', tab: 'scoring', scoringPage: 'Prelim Scoring', sectionTitle: 'Prelim Scoring', status: stepStatus(prelimDone, prelimDrawDone), detail: prelimDone ? 'All preliminary rows have a score or outcome.' : 'Enter preliminary judge scores and outcomes.', action: 'Go To Prelims' },
+        { id: 'running-order-assignments', label: 'Running Order & Assignments', tab: 'runplan', sectionTitle: 'Running Order & Assignments', status: attentionStatus(runDone, entriesDone, runDone && entriesStaleForRunPlan), detail: runDone && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Build from entries again before printing or drawing.' : (runDone ? 'Running order and assignment rows are set.' : 'Set breed running order, judges, lure operators, and huntmasters.'), action: 'Go To Running Order' },
+        { id: 'worker-sheet', label: 'Worker Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', status: attentionStatus(printStatus(trial, 'workerSheet'), runDone && !entriesStaleForRunPlan, workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan)), detail: workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan) ? 'Entries changed after the worker sheet was printed. Rebuild Running Order if needed, then print the worker sheet again.' : (printStatus(trial, 'workerSheet') ? 'Worker sheet has been printed or marked printed.' : 'Print the worker sheet after running order and assignments are ready.'), action: 'Go To Worker Sheet' },
+        { id: 'roll-call', label: 'Roll Call', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: attentionStatus(rollDone, entriesDone, rollDone && (entriesStaleForRunPlan || rollCallSheetStale)), detail: rollDone && (entriesStaleForRunPlan || rollCallSheetStale) ? 'Entries changed after setup was built. Review roll call for the current entry list.' : (rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.'), action: 'Go To Roll Call' },
+        { id: 'separate-hounds', label: 'Separate Hounds', tab: 'rollcall', sectionTitle: 'Owner Separation', status: attentionStatus(entriesDone && ownerStatus.done, entriesDone, entriesDone && ownerStatus.done && entriesStaleForRunPlan), detail: entriesDone && ownerStatus.done && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Review owner separation again before drawing.' : ownerStatus.detail, action: 'Go To Separation' },
+        { id: 'prelim-draw', label: 'Preliminary Draw', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(prelimDrawDone, rollDone && runDone && !entriesStaleForRunPlan, prelimDrawDone && (entriesStaleForRunPlan || entriesStaleForPrelimDraw)), detail: prelimDrawDone && (entriesStaleForRunPlan || entriesStaleForPrelimDraw) ? 'Entries or roll call changed after the preliminary draw was built. Rebuild before scoring starts.' : (prelimDrawDone ? 'Preliminary courses and blanket colors are built.' : 'Build the randomized preliminary draw after roll call and running order are ready.'), action: 'Go To Draw' },
+        { id: 'print-draw', label: 'Print Draw Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(printStatus(trial, 'prelimDrawSheet'), prelimDrawDone && !entriesStaleForPrelimDraw, prelimDrawSheetStale || (printStatus(trial, 'prelimDrawSheet') && entriesStaleForPrelimDraw)), detail: prelimDrawSheetStale || (printStatus(trial, 'prelimDrawSheet') && entriesStaleForPrelimDraw) ? 'Entries changed after draw sheets were printed. Rebuild/reprint the draw sheets.' : (printStatus(trial, 'prelimDrawSheet') ? 'Preliminary draw sheets have been printed or marked printed.' : 'Print the posted draw order sheet for the fancy.'), action: 'Go To Draw Sheets' },
+        { id: 'print-judge-prelim', label: 'Print Judges Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(allReadyPrelimJudgeSheetsPrinted(trial), prelimDrawDone && !entriesStaleForPrelimDraw, allReadyPrelimJudgeSheetsPrinted(trial) && entriesStaleForPrelimDraw), detail: allReadyPrelimJudgeSheetsPrinted(trial) && entriesStaleForPrelimDraw ? 'Entries changed after preliminary judge sheets were queued/printed. Rebuild the draw, then print judge sheets again.' : (allReadyPrelimJudgeSheetsPrinted(trial) ? 'All currently ready preliminary judge sheets have been printed.' : 'Print preliminary judge sheets from the judge sheet queue.'), action: 'Go To Judge Sheets' },
+        { id: 'prelim-scoring', label: 'Prelim Scoring', tab: 'scoring', scoringPage: 'Prelim Scoring', sectionTitle: 'Prelim Scoring', status: stepStatus(prelimDone, prelimDrawDone && !entriesStaleForPrelimDraw), detail: prelimDone ? 'All preliminary rows have a score or outcome.' : 'Enter preliminary judge scores and outcomes.', action: 'Go To Prelims' },
         { id: 'finals-draw', label: 'Draw Finals Stake/Breed', tab: 'scoring', scoringPage: 'Prelim Scoring', sectionTitle: 'Prelim Scoring', status: stepStatus(finalsDrawDone, prelimDone), detail: finalsDrawDone ? 'Finals draws are built for all preliminary groups.' : 'Draw finals stake by stake or breed by breed after prelims are complete.', action: 'Go To Prelims' },
         { id: 'print-stake-breed', label: 'Print Stake/Breed', tab: 'scoring', scoringPage: 'Finals Scoring', sectionTitle: 'Finals Scoring', status: stepStatus(printStatus(trial, 'stakeBreedSheets'), finalsDrawDone), detail: printStatus(trial, 'stakeBreedSheets') ? 'At least one stake or breed sheet has been printed.' : 'Print the ASFA stake or breed score sheets for posting.', action: 'Go To Finals' },
+        { id: 'print-finals-huntmaster', label: 'Print Finals Huntmaster Sheet', tab: 'scoring', scoringPage: 'Finals Scoring', sectionTitle: 'Finals Scoring', status: stepStatus(printStatus(trial, 'finalHuntmasterSheet'), finalsDrawDone), detail: printStatus(trial, 'finalHuntmasterSheet') ? 'The finals huntmaster sheet has been printed or marked printed.' : 'Print the finals draw order sheet for the huntmaster from the finals judge sheet queue.', action: 'Go To Finals' },
         { id: 'print-final-judges', label: 'Print Final Judges Sheets', tab: 'scoring', scoringPage: 'Finals Scoring', sectionTitle: 'Finals Scoring', status: stepStatus(allReadyFinalsJudgeSheetsPrinted(trial), finalsDrawDone), detail: allReadyFinalsJudgeSheetsPrinted(trial) ? 'All currently ready finals judge sheets have been printed.' : 'Print finals judge sheets from the finals draw queue.', action: 'Go To Finals' },
         { id: 'final-scoring', label: 'Enter Final Scoring', tab: 'scoring', scoringPage: 'Finals Scoring', sectionTitle: 'Finals Scoring', status: stepStatus(finalsDone, finalsDrawDone), detail: finalsDone ? 'All finals rows have a score or outcome.' : 'Enter finals scores and outcomes, then resolve placements.', action: 'Go To Finals' },
         { id: 'runoff-draw', label: 'Draw Runoffs', tab: 'scoring', scoringPage: 'Run Offs Scoring', sectionTitle: 'Run Offs Scoring', status: !runoffsExist && finalsDone ? 'done' : stepStatus(runoffDrawDone, finalsDone && runoffsExist), detail: runoffsExist ? 'Build or redraw tie and BOB runoff colors from the Run Offs page.' : 'No runoff or BOB draw is currently needed.', action: 'Go To Run Offs' },
@@ -2266,12 +2657,14 @@ function applyTabGuideStatuses(steps) {
         byTab.get(step.tab).push(step.status);
     });
     document.querySelectorAll('.tab-button').forEach((button) => {
-        button.classList.remove('guide-done', 'guide-ready', 'guide-blocked');
+        button.classList.remove('guide-done', 'guide-ready', 'guide-attention', 'guide-blocked');
         const statuses = byTab.get(button.dataset.tabTarget) || [];
         if (statuses.length === 0) {
             return;
         }
-        if (statuses.some((status) => status === 'ready' || status === 'attention')) {
+        if (statuses.some((status) => status === 'attention')) {
+            button.classList.add('guide-attention');
+        } else if (statuses.some((status) => status === 'ready')) {
             button.classList.add('guide-ready');
         } else if (statuses.every((status) => status === 'done')) {
             button.classList.add('guide-done');
@@ -2292,7 +2685,13 @@ function markTrialGuidePrinted(key) {
         ...(trial.printStatus || {}),
         [key]: new Date().toISOString(),
     };
+    trial.printStatusFingerprints = {
+        ...((existing && existing.printStatusFingerprints) || {}),
+        ...(trial.printStatusFingerprints || {}),
+        [key]: entrySetupFingerprint(trial.entries || []),
+    };
     upsertTrial(trial);
+    saveTrials();
     render();
 }
 
@@ -3722,9 +4121,7 @@ function renderAlignmentControls(container, reportKey, layout, controls) {
         range.disabled = locked;
         const number = document.createElement('input');
         number.type = 'number';
-        number.min = min;
-        number.max = max;
-        number.step = step;
+        number.step = 'any';
         number.value = layout[key];
         number.disabled = locked;
         const update = (value) => {
@@ -4334,6 +4731,8 @@ function rollCallReasonCell(entry) {
         ['absent', 'Absent'],
         ['lame', 'Lame'],
         ['in_season', 'In season'],
+        ['breed_dq', 'Breed DQ'],
+        ['scratched', 'Scratched'],
         ['excused', 'Excused'],
     ].forEach(([value, label]) => {
         const option = document.createElement('option');
@@ -4605,7 +5004,7 @@ function setAllRollCallPresent(isPresent) {
     showMessage(
         rollCallMessage,
         isPresent
-            ? `Marked ${entries.length} hound${entries.length === 1 ? '' : 's'} present. Uncheck any hound that is absent, lame, or excused.`
+            ? `Marked ${entries.length} hound${entries.length === 1 ? '' : 's'} present. Uncheck any hound that is absent, lame, in season, breed DQ, scratched, or excused.`
             : 'Cleared roll call present checks.',
         isPresent ? 'success' : 'warning'
     );
@@ -4616,7 +5015,7 @@ function renderInitialCourseGroups(entries, ownerLetters) {
     const container = document.getElementById('initialCourseGroups');
     const eligible = entries.filter((entry) => entry.rollCallStatus === 'present');
     const pending = entries.filter((entry) => !entry.rollCallStatus || entry.rollCallStatus === 'not_checked');
-    const unavailable = entries.filter((entry) => ['absent', 'lame', 'in_season', 'excused'].includes(entry.rollCallStatus));
+    const unavailable = entries.filter((entry) => ['absent', 'lame', 'in_season', 'breed_dq', 'scratched', 'excused'].includes(entry.rollCallStatus));
     const groups = new Map();
 
     eligible.forEach((entry) => {
@@ -4774,6 +5173,7 @@ function buildPreliminaryDraw() {
         id: crypto.randomUUID(),
         phase: 'preliminary',
         createdAt: new Date().toISOString(),
+        entriesFingerprint: entryDrawFingerprint(trial.entries || []),
         groups: groups.map((group) => buildDrawGroup(group)),
     };
 
@@ -5844,6 +6244,13 @@ function renderFinalsJudgeSheetQueue(trial) {
         printGroups: printFinalsJudgeSheetsForGroups,
         selectedHelp: 'Creates one PDF packet for the checked finals judge sheets so you can avoid wasting a blank back side.',
         allHelp: 'Prints every finals judge sheet that has not been printed yet, plus any sheet whose finals draw changed.',
+        extraActions: [{
+            text: 'Print Huntmaster Sheet',
+            className: 'secondary small report-button',
+            help: 'Creates the official finals draw order sheet for the huntmaster from all ready finals draws.',
+            disabled: finalsJudgeSheetReadyGroups(trial).length === 0,
+            onClick: () => printFinalsHuntmasterSheet(),
+        }],
     });
 }
 
@@ -5861,6 +6268,7 @@ function renderJudgeSheetQueue({
     printGroups,
     selectedHelp,
     allHelp,
+    extraActions = [],
 }) {
     const panel = document.getElementById(panelId);
     if (!panel) {
@@ -5882,7 +6290,7 @@ function renderJudgeSheetQueue({
     toggle.dataset.help = 'Shows or hides the detailed judge sheet queue.';
     toggle.addEventListener('click', () => {
         sheetQueueCollapseState[kind] = !sheetQueueCollapseState[kind];
-        renderJudgeSheetQueue({ trial, panelId, kind, title: titleText, description, emptyText, checkboxClass, readyGroups, statusForGroup, coursesForGroup, printGroups, selectedHelp, allHelp });
+        renderJudgeSheetQueue({ trial, panelId, kind, title: titleText, description, emptyText, checkboxClass, readyGroups, statusForGroup, coursesForGroup, printGroups, selectedHelp, allHelp, extraActions });
     });
 
     const printSelected = document.createElement('button');
@@ -5923,6 +6331,18 @@ function renderJudgeSheetQueue({
     });
 
     actions.append(toggle, printSelected, printUnprinted);
+    extraActions.forEach((action) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = action.className || 'secondary small';
+        button.textContent = action.text || 'Action';
+        if (action.help) {
+            button.dataset.help = action.help;
+        }
+        button.disabled = Boolean(action.disabled);
+        button.addEventListener('click', () => action.onClick && action.onClick());
+        actions.appendChild(button);
+    });
     heading.append(title, actions);
     panel.appendChild(heading);
 
@@ -6244,7 +6664,7 @@ function renderScorebookSection(containerId, trial, mode) {
             if (judgeCount > 1) {
                 headers.push('Prelim J2');
             }
-            headers.push('Prelim Total', 'Outcome');
+            headers.push('Prelim Total', 'Outcome', 'Signed Sheets');
             headers.forEach((label) => {
                 const th = document.createElement('th');
                 th.textContent = label;
@@ -6567,7 +6987,7 @@ function finalsScoreEntryPanel(group, finalsLocked = false) {
     if (judgeCount > 1) {
         headers.push('Final J2');
     }
-    headers.push('Final Total', 'Outcome', 'Result');
+    headers.push('Final Total', 'Outcome', 'Signed Sheets', 'Result');
     headers.forEach((text) => {
         const th = document.createElement('th');
         th.textContent = text;
@@ -6618,6 +7038,7 @@ function finalsScoreEntryPanel(group, finalsLocked = false) {
         outcome.addEventListener('change', () => updateFinalResult(group.id, row.hound.entryId, { outcome: outcome.value }));
         outcomeCell.appendChild(outcome);
         tr.appendChild(outcomeCell);
+        tr.appendChild(signedJudgeSheetCell(group, row.hound, 'final', judgeCount));
         tr.appendChild(textCell(row.hound.placement ? `${row.hound.placement} (${row.hound.combinedScore || ''})` : ''));
         if (row.hound.finalOutcome) {
             tr.classList.add('score-row-outcome');
@@ -6775,22 +7196,29 @@ function tieBreakPanel(group) {
 
 function tieBreakGroups(group) {
     const groups = new Map();
-    finalsRowsForGroup(group).forEach((row) => {
-        const label = String(row.hound.placement || '');
-        if (!label.includes('Tie') || !row.hound.combinedScore) {
+    const addRow = (row, label, combinedScore) => {
+        if (!label || !String(label).includes('Tie') || !combinedScore) {
             return;
         }
         const stakeKey = group.mixedStake ? clean(row.hound.stake || group.stake || '') : '';
-        const key = `${label}|${row.hound.combinedScore}|${stakeKey}`;
+        const key = `${label}|${combinedScore}|${stakeKey}`;
         if (!groups.has(key)) {
             groups.set(key, {
                 label,
-                combinedScore: row.hound.combinedScore,
+                combinedScore,
                 stake: row.hound.stake || group.stake || '',
                 rows: [],
             });
         }
-        groups.get(key).rows.push(row);
+        const bucket = groups.get(key);
+        if (!bucket.rows.some((existing) => existing.hound.entryId === row.hound.entryId)) {
+            bucket.rows.push(row);
+        }
+    };
+    finalsRowsForGroup(group).forEach((row) => {
+        const label = String(row.hound.placement || '');
+        addRow(row, label, row.hound.combinedScore);
+        addRow(row, String(row.hound.tieBreakLabel || ''), row.hound.tieBreakCombinedScore || row.hound.combinedScore);
     });
     return [...groups.values()]
         .filter((tie) => tieNeedsRunoffAction(tie))
@@ -6798,11 +7226,7 @@ function tieBreakGroups(group) {
 }
 
 function tieNeedsRunoffAction(tie) {
-    const activeRows = (tie.rows || []).filter((row) => !row.hound.tieBreakOutcome);
-    if (activeRows.length < 2 && (tie.rows || []).some((row) => row.hound.tieBreakOutcome)) {
-        return false;
-    }
-    return true;
+    return (tie.rows || []).length >= 2;
 }
 
 function runoffKeyForTie(tie) {
@@ -7043,8 +7467,12 @@ function renderRunoffBoard(trial) {
         drawButton.type = 'button';
         const runoffDrawn = Boolean(drawnRunoffForItem(trial, item));
         drawButton.className = `secondary small ${runoffDrawn ? 'draw-complete-button' : 'draw-needed-button'}`;
-        drawButton.textContent = runoffDrawn ? 'ReDraw This Runoff' : 'Draw This Runoff';
-        drawButton.dataset.help = 'Randomly assigns this runoff only to course numbers and blanket colors without changing the other runoff draws.';
+        drawButton.textContent = item.repeatTie && runoffDrawn
+            ? 'Draw Additional Tie'
+            : (runoffDrawn ? 'ReDraw This Runoff' : 'Draw This Runoff');
+        drawButton.dataset.help = item.repeatTie && runoffDrawn
+            ? 'Keeps the scored tied runoff on screen, archives it, and opens a new blank runoff for the still-tied hounds.'
+            : 'Randomly assigns this runoff only to course numbers and blanket colors without changing the other runoff draws.';
         drawButton.addEventListener('click', () => drawSingleRunoff(item.id));
         cardActions.appendChild(drawButton);
         const currentRunoffDraw = drawnRunoffForItem(trial, item);
@@ -7263,14 +7691,30 @@ function renderBifBieCheck(trial) {
 }
 
 function bifState(trial) {
+    const stored = ((trial.scorebook || {}).bif || {});
     return {
         selectedEntryIds: [],
         statusByEntryId: {},
         judge1: '',
         judge2: '',
         draw: null,
-        ...((trial.scorebook || {}).bif || {}),
+        ...stored,
+        outcomes: normalizeOutcomeKeyMap(stored.outcomes || {}),
+        tieRunoff: stored.tieRunoff ? {
+            ...stored.tieRunoff,
+            outcomes: normalizeOutcomeKeyMap(stored.tieRunoff.outcomes || {}),
+        } : stored.tieRunoff,
+        tieRunoffs: Array.isArray(stored.tieRunoffs)
+            ? stored.tieRunoffs.map((runoff) => ({ ...runoff, outcomes: normalizeOutcomeKeyMap(runoff.outcomes || {}) }))
+            : stored.tieRunoffs,
     };
+}
+
+function normalizeOutcomeKeyMap(outcomes = {}) {
+    return Object.entries(outcomes || {}).reduce((map, [entryId, outcome]) => {
+        map[bifEntryKey(entryId)] = outcome;
+        return map;
+    }, {});
 }
 
 function updateBifDrawButton(bif, winners) {
@@ -7278,7 +7722,7 @@ function updateBifDrawButton(bif, winners) {
     if (!button) {
         return;
     }
-    const hasCurrentBifDraw = bif && bif.draw && !bif.drawNeedsRefresh;
+    const hasCurrentBifDraw = bif && bif.draw;
     const visibleRunning = currentBifRunningEntryIds(bif || {});
     const runningCount = winners.filter((winner) => visibleRunning.has(bifEntryKey(winner.entryId))).length;
     const hasJudge = Boolean((bif.judge1 || '').trim() || (bif.judge2 || '').trim());
@@ -7325,33 +7769,54 @@ function bobWinnersForTrial(trial) {
 function bifCandidateHoundsForTrial(trial) {
     const entriesById = new Map((trial.entries || []).map((entry) => [bifEntryKey(entry.id), entry]));
     const bifEligible = new Set(((trial.resultState || {}).bifEligibleEntryIds || []).map(bifEntryKey));
-    const candidates = sortDrawGroupsForPrint(((trial.preliminaryDraw || {}).groups || []), trial)
+    const candidatesByEntry = new Map();
+    sortDrawGroupsForPrint(((trial.preliminaryDraw || {}).groups || []), trial)
         .flatMap((group) => finalsRowsForGroup(group).map((row) => ({ group, hound: row.hound })))
         .filter((row) => bifEligible.has(bifEntryKey(row.hound.entryId)) || bobResultForEntry(trial, row.hound.entryId) === 'BOB')
-        .filter((row) => !isAsfaProvisionalBifEntry(row.hound, entriesById.get(bifEntryKey(row.hound.entryId)) || {}, row.group))
-        .map((row) => {
-            const entry = entriesById.get(bifEntryKey(row.hound.entryId)) || {};
-            return {
+        .forEach((row) => {
+            const key = bifEntryKey(row.hound.entryId);
+            const entry = entriesById.get(key) || {};
+            if (isAsfaProvisionalBifEntry(row.hound, entry, row.group)) {
+                return;
+            }
+            candidatesByEntry.set(key, {
                 entryId: row.hound.entryId,
-                breed: row.group.breed || row.hound.breed || '',
-                stake: row.group.stake || row.hound.stake || '',
+                breed: row.group.breed || row.hound.breed || entry.breed || '',
+                stake: row.group.stake || row.hound.stake || entry.className || '',
                 name: row.hound.callName || row.hound.registeredName || entry.callName || entry.registeredName || 'Unnamed hound',
                 registrationNumber: entry.registrationNumber || row.hound.registrationNumber || '',
                 hound: {
                     ...row.hound,
-                    breed: row.group.breed || row.hound.breed || '',
-                    stake: row.group.stake || row.hound.stake || '',
+                    breed: row.group.breed || row.hound.breed || entry.breed || '',
+                    stake: row.group.stake || row.hound.stake || entry.className || '',
                 },
-            };
+            });
         });
-    const unique = new Map();
-    candidates.forEach((candidate) => {
-        const key = bifEntryKey(candidate.entryId);
-        if (key && !unique.has(key)) {
-            unique.set(key, candidate);
+    bifEligible.forEach((entryId) => {
+        const key = bifEntryKey(entryId);
+        if (candidatesByEntry.has(key)) {
+            return;
         }
+        const entry = entriesById.get(key) || {};
+        const breed = runGroupBreedForEntry(entry);
+        if (!entry.id || isAsfaProvisionalBifEntry(entry, entry, { breed })) {
+            return;
+        }
+        candidatesByEntry.set(key, {
+            entryId: entry.id,
+            breed,
+            stake: runGroupStakeForEntry(entry),
+            name: entry.callName || entry.registeredName || 'Unnamed hound',
+            registrationNumber: entry.registrationNumber || '',
+            hound: {
+                ...entry,
+                entryId: entry.id,
+                breed,
+                stake: runGroupStakeForEntry(entry),
+            },
+        });
     });
-    return [...unique.values()];
+    return [...candidatesByEntry.values()];
 }
 
 function isAsfaProvisionalBreed(value) {
@@ -7380,7 +7845,7 @@ function updateBifStatus(entryId, status) {
         statuses[key] = 'not_running';
     } else {
         selected.delete(key);
-        delete statuses[key];
+        statuses[key] = '';
     }
     trial.scorebook = {
         ...(trial.scorebook || {}),
@@ -7577,7 +8042,8 @@ function bifDrawTable(trial, winners) {
             body.appendChild(courseHeaderRow(courseNumber, header.length));
             lastBifCourse = courseNumber;
         }
-        const outcome = normalizedBobOutcome(bifOutcomes[row.hound.entryId]);
+        const entryKey = bifEntryKey(row.hound.entryId);
+        const outcome = normalizedBobOutcome(bifOutcomes[entryKey]);
         const tr = document.createElement('tr');
         const code = document.createElement('td');
         const bifColor = row.hound.bifBlanketColor || row.hound.blanketColor || '';
@@ -7596,11 +8062,11 @@ function bifDrawTable(trial, winners) {
         tr.appendChild(textCell(displayBreedCode(row.hound.breed || row.winner?.breed || '')));
         tr.appendChild(textCell(row.hound.bobStake || row.hound.stake || row.winner?.stake || ''));
         const judge1 = document.createElement('td');
-        judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value) || !bif.draw, (value) => updateBifScore(row.hound.entryId, { judge1: value })));
+        judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value) || !bif.draw, (value) => updateBifScore(entryKey, { judge1: value })));
         tr.appendChild(judge1);
         if (judgeCount > 1) {
             const judge2 = document.createElement('td');
-            judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value) || !bif.draw, (value) => updateBifScore(row.hound.entryId, { judge2: value })));
+            judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value) || !bif.draw, (value) => updateBifScore(entryKey, { judge2: value })));
             tr.appendChild(judge2);
         }
         tr.appendChild(textCell(computedScoreDisplay(outcome.score, outcome.value)));
@@ -7615,10 +8081,10 @@ function bifDrawTable(trial, winners) {
         });
         status.value = outcome.value || '';
         status.disabled = !bif.draw;
-        status.addEventListener('change', () => updateBifScore(row.hound.entryId, { outcome: status.value }));
+        status.addEventListener('change', () => updateBifScore(entryKey, { outcome: status.value }));
         statusCell.appendChild(status);
         tr.appendChild(statusCell);
-        tr.appendChild(textCell(bifResultForEntry(bif, row.hound.entryId)));
+        tr.appendChild(textCell(bifResultForEntry(bif, entryKey)));
         body.appendChild(tr);
     });
     table.appendChild(body);
@@ -7698,7 +8164,7 @@ function renderPendingBifTieRows(bif, tiedIds) {
         if (!hound) {
             return;
         }
-        const outcome = normalizedBobOutcome(outcomes[hound.entryId]);
+        const outcome = normalizedBobOutcome(outcomes[bifEntryKey(hound.entryId)]);
         const tr = document.createElement('tr');
         tr.appendChild(textCell(hound.callName || hound.registeredName || 'Unnamed hound'));
         tr.appendChild(textCell(displayBreedCode(hound.breed)));
@@ -7733,7 +8199,8 @@ function renderBifTieRunoffTable(bif, tieRunoff, readOnly, label, roundIndex = -
     table.innerHTML = `<thead><tr>${headers.map((label) => `<th>${label}</th>`).join('')}</tr></thead>`;
     const body = document.createElement('tbody');
     rows.forEach((row) => {
-        const outcome = normalizedBobOutcome(outcomes[row.hound.entryId]);
+        const entryKey = bifEntryKey(row.hound.entryId);
+        const outcome = normalizedBobOutcome(outcomes[entryKey]);
         const tr = document.createElement('tr');
         const code = document.createElement('td');
         const color = row.hound.bifBlanketColor || row.hound.blanketColor || '';
@@ -7756,7 +8223,7 @@ function renderBifTieRunoffTable(bif, tieRunoff, readOnly, label, roundIndex = -
             judge1.textContent = outcome.judge1 || '';
             judge1.className = 'muted-cell';
         } else {
-            judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value), (value) => updateBifTieScore(row.hound.entryId, { judge1: value }, roundIndex)));
+            judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value), (value) => updateBifTieScore(entryKey, { judge1: value }, roundIndex)));
         }
         tr.appendChild(judge1);
         if (judgeCount > 1) {
@@ -7765,7 +8232,7 @@ function renderBifTieRunoffTable(bif, tieRunoff, readOnly, label, roundIndex = -
                 judge2.textContent = outcome.judge2 || '';
                 judge2.className = 'muted-cell';
             } else {
-                judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value), (value) => updateBifTieScore(row.hound.entryId, { judge2: value }, roundIndex)));
+                judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value), (value) => updateBifTieScore(entryKey, { judge2: value }, roundIndex)));
             }
             tr.appendChild(judge2);
         }
@@ -7784,7 +8251,7 @@ function renderBifTieRunoffTable(bif, tieRunoff, readOnly, label, roundIndex = -
                 status.appendChild(option);
             });
             status.value = outcome.value || '';
-            status.addEventListener('change', () => updateBifTieScore(row.hound.entryId, { outcome: status.value }, roundIndex));
+            status.addEventListener('change', () => updateBifTieScore(entryKey, { outcome: status.value }, roundIndex));
             statusCell.appendChild(status);
         }
         tr.appendChild(statusCell);
@@ -7853,8 +8320,9 @@ function updateManualBifDrawBlanket(entryId, color) {
 function updateBifScore(entryId, changes) {
     const trial = readForm();
     const bif = bifState(trial);
+    const entryKey = bifEntryKey(entryId);
     const outcomes = { ...(bif.outcomes || {}) };
-    const current = normalizedBobOutcome(outcomes[entryId]);
+    const current = normalizedBobOutcome(outcomes[entryKey]);
     const next = { ...current };
     const judgeCount = bif.judge2 ? 2 : 1;
     if ('judge1' in changes) {
@@ -7876,7 +8344,7 @@ function updateBifScore(entryId, changes) {
             next.value = '';
         }
     }
-    outcomes[entryId] = next;
+    outcomes[entryKey] = next;
     trial.scorebook = {
         ...(trial.scorebook || {}),
         bif: {
@@ -7978,11 +8446,12 @@ async function buildBifTieRunoff() {
 function updateBifTieScore(entryId, changes, roundIndex = -1) {
     const trial = readForm();
     const bif = bifState(trial);
+    const entryKey = bifEntryKey(entryId);
     const tieRunoffs = bifTieRunoffList(bif);
     const targetIndex = roundIndex >= 0 ? roundIndex : Math.max(0, tieRunoffs.length - 1);
     const tieRunoff = tieRunoffs[targetIndex] || currentBifTieRunoff(bif);
     const outcomes = { ...(tieRunoff.outcomes || {}) };
-    const current = normalizedBobOutcome(outcomes[entryId]);
+    const current = normalizedBobOutcome(outcomes[entryKey]);
     const next = { ...current };
     const judgeCount = bif.judge2 ? 2 : 1;
     if ('judge1' in changes) {
@@ -8004,7 +8473,7 @@ function updateBifTieScore(entryId, changes, roundIndex = -1) {
             next.value = '';
         }
     }
-    outcomes[entryId] = next;
+    outcomes[entryKey] = next;
     trial.scorebook = {
         ...(trial.scorebook || {}),
         bif: {
@@ -8020,6 +8489,7 @@ function updateBifTieScore(entryId, changes, roundIndex = -1) {
 }
 
 function bifResultForEntry(bif, entryId) {
+    const targetKey = bifEntryKey(entryId);
     const tieResult = bifTieResultForEntry(bif, entryId);
     if (bifTieRunoffIncludesEntry(bif, entryId) && bifTieRunoffIsComplete(bif)) {
         return tieResult;
@@ -8031,28 +8501,29 @@ function bifResultForEntry(bif, entryId) {
     const rows = ((bif.draw || {}).courses || [])
         .flatMap((course) => course.hounds || [])
         .map((hound) => {
-            const outcome = normalizedBobOutcome(outcomes[hound.entryId]);
+            const key = bifEntryKey(hound.entryId);
+            const outcome = normalizedBobOutcome(outcomes[key]);
             return {
-                entryId: hound.entryId,
+                entryId: key,
                 score: Number(outcome.score),
                 outcome: outcome.value,
             };
         });
-    if (rows.length === 0 || rows.some((row) => !Number.isFinite(row.score) && !row.outcome)) {
+    if (rows.length === 0) {
         return '';
     }
     const scored = rows
         .filter((row) => Number.isFinite(row.score) && !row.outcome)
         .sort((a, b) => b.score - a.score);
     if (scored.length === 0) {
-        return scoreOutcomeLabel((outcomes[entryId] || {}).value);
+        return scoreOutcomeLabel(normalizedBobOutcome(outcomes[targetKey]).value);
     }
     const topScore = scored[0].score;
     const top = scored.filter((row) => row.score === topScore).map((row) => row.entryId);
-    if (top.includes(entryId)) {
+    if (top.includes(targetKey)) {
         return top.length > 1 ? 'BIF Tie' : 'BIF';
     }
-    return scoreOutcomeLabel((outcomes[entryId] || {}).value);
+    return scoreOutcomeLabel(normalizedBobOutcome(outcomes[targetKey]).value);
 }
 
 function bifMainTieEntryIds(bif) {
@@ -8060,9 +8531,10 @@ function bifMainTieEntryIds(bif) {
     const rows = ((bif.draw || {}).courses || [])
         .flatMap((course) => course.hounds || [])
         .map((hound) => {
-            const outcome = normalizedBobOutcome(outcomes[hound.entryId]);
+            const key = bifEntryKey(hound.entryId);
+            const outcome = normalizedBobOutcome(outcomes[key]);
             return {
-                entryId: hound.entryId,
+                entryId: key,
                 score: Number(outcome.score),
                 outcome: outcome.value,
             };
@@ -8081,19 +8553,21 @@ function bifMainTieEntryIds(bif) {
 }
 
 function bifTieResultForEntry(bif, entryId, tieRunoffOverride = null) {
+    const targetKey = bifEntryKey(entryId);
     const tieRunoff = tieRunoffOverride || currentBifTieRunoff(bif);
     const outcomes = tieRunoff.outcomes || {};
     const rows = ((tieRunoff.draw || {}).courses || [])
         .flatMap((course) => course.hounds || [])
         .map((hound) => {
-            const outcome = normalizedBobOutcome(outcomes[hound.entryId]);
+            const key = bifEntryKey(hound.entryId);
+            const outcome = normalizedBobOutcome(outcomes[key]);
             return {
-                entryId: hound.entryId,
+                entryId: key,
                 score: Number(outcome.score),
                 outcome: outcome.value,
             };
         });
-    if (rows.length === 0 || !rows.some((row) => bifEntryKey(row.entryId) === bifEntryKey(entryId))) {
+    if (rows.length === 0 || !rows.some((row) => row.entryId === targetKey)) {
         return '';
     }
     if (rows.some((row) => !Number.isFinite(row.score) && !row.outcome)) {
@@ -8103,14 +8577,18 @@ function bifTieResultForEntry(bif, entryId, tieRunoffOverride = null) {
         .filter((row) => Number.isFinite(row.score) && !row.outcome)
         .sort((a, b) => b.score - a.score);
     if (scored.length === 0) {
-        return scoreOutcomeLabel((outcomes[entryId] || {}).value);
+        return scoreOutcomeLabel(normalizedBobOutcome(outcomes[targetKey]).value);
     }
     const topScore = scored[0].score;
     const top = scored.filter((row) => row.score === topScore).map((row) => bifEntryKey(row.entryId));
-    if (top.includes(bifEntryKey(entryId))) {
+    if (top.includes(targetKey)) {
         return top.length > 1 ? 'BIF Tie' : 'BIF';
     }
-    return scoreOutcomeLabel((outcomes[entryId] || {}).value);
+    return scoreOutcomeLabel(normalizedBobOutcome(outcomes[targetKey]).value);
+}
+
+function bifQualifyingMinimum(bif) {
+    return placementQualifyingMinimum((bif && bif.judge2) ? 2 : 1);
 }
 
 function bifTieRunoffIncludesEntry(bif, entryId) {
@@ -8126,7 +8604,7 @@ function bifTieRunoffIsComplete(bif) {
     const outcomes = tieRunoff.outcomes || {};
     const rows = ((tieRunoff.draw || {}).courses || [])
         .flatMap((course) => course.hounds || [])
-        .map((hound) => normalizedBobOutcome(outcomes[hound.entryId]));
+        .map((hound) => normalizedBobOutcome(outcomes[bifEntryKey(hound.entryId)]));
     return rows.length > 0 && rows.every((outcome) => hasScoreValue(outcome.score) || outcome.value);
 }
 
@@ -8170,8 +8648,10 @@ function recalculateTrialResults(trial) {
 }
 
 function reconcileBifStateWithBobWinners(trial) {
-    const bif = (trial.scorebook || {}).bif;
-    if (!bif) {
+    const existingScorebook = trial.scorebook || {};
+    const hasExistingBifState = Boolean(existingScorebook.bif);
+    const bif = existingScorebook.bif || {};
+    if (!trial.resultState || !Array.isArray(trial.resultState.bifEligibleEntryIds)) {
         return;
     }
 
@@ -8179,8 +8659,9 @@ function reconcileBifStateWithBobWinners(trial) {
         ...((trial.resultState || {}).bifEligibleEntryIds || []).map(bifEntryKey),
         ...bifCandidateHoundsForTrial(trial).map((candidate) => bifEntryKey(candidate.entryId)),
     ]);
-    const selected = [...selectedBifEntryIds(bif)].filter((entryId) => eligible.has(bifEntryKey(entryId)));
-    const selectedSet = new Set(selected);
+    if (eligible.size === 0 && !hasExistingBifState) {
+        return;
+    }
     const statuses = {};
     Object.entries(bif.statusByEntryId || {}).forEach(([entryId, status]) => {
         const key = bifEntryKey(entryId);
@@ -8188,6 +8669,13 @@ function reconcileBifStateWithBobWinners(trial) {
             statuses[key] = status;
         }
     });
+    (bif.selectedEntryIds || []).map(bifEntryKey).forEach((key) => {
+        if (eligible.has(key) && !(key in statuses)) {
+            statuses[key] = 'running';
+        }
+    });
+    const selected = [...eligible].filter((entryId) => statuses[bifEntryKey(entryId)] === 'running');
+    const selectedSet = new Set(selected);
 
     const currentDrawEntryIds = ((bif.draw || {}).courses || [])
         .flatMap((course) => course.hounds || [])
@@ -8196,11 +8684,13 @@ function reconcileBifStateWithBobWinners(trial) {
     const drawMatchesSelected = bif.draw
         && currentDrawEntryIds.length === selected.length
         && currentDrawEntryIds.every((entryId) => selectedSet.has(entryId));
-    const draw = !bif.draw || drawMatchesSelected ? normalizeBifDrawColors(bif.draw) || null : null;
+    const draw = bif.draw ? normalizeBifDrawColors(bif.draw) || bif.draw : null;
+    const drawEntrySet = new Set(currentDrawEntryIds);
     const outcomes = {};
     Object.entries(bif.outcomes || {}).forEach(([entryId, outcome]) => {
-        if (draw && selectedSet.has(entryId)) {
-            outcomes[entryId] = outcome;
+        const key = bifEntryKey(entryId);
+        if (selectedSet.has(key) || drawEntrySet.has(key)) {
+            outcomes[key] = outcome;
         }
     });
 
@@ -8684,13 +9174,7 @@ function bobStakeCandidatesByBreed(groups) {
         if (isQuasiBreedGroup(group)) {
             return;
         }
-        const rows = finalsRowsForGroup(group);
-        if (rows.length === 0 || rows.some((row) => !hasScoreValue(row.hound.finalScore) && !row.hound.finalOutcome)) {
-            return;
-        }
-        const winnerRows = group.mixedStake
-            ? mixedStakeWinnerRows(group, rows)
-            : rows.filter((row) => row.hound.placement === '1').slice(0, 1);
+        const winnerRows = bobStakeWinnerRowsForGroup(group);
         if (winnerRows.length === 0) {
             return;
         }
@@ -8711,6 +9195,29 @@ function bobStakeCandidatesByBreed(groups) {
         });
     });
     return breeds;
+}
+
+function bobStakeWinnerRowsForGroup(group) {
+    const rows = finalsRowsForGroup(group);
+    if (rows.length === 0) {
+        return [];
+    }
+    if (group.mixedStake) {
+        return mixedStakeWinnerRows(group, rows);
+    }
+
+    const placedWinner = rows.find((row) => row.hound.placement === '1');
+    if (placedWinner) {
+        return [placedWinner];
+    }
+
+    const activeRows = rows.filter((row) => !row.hound.finalOutcome);
+    const hasFirstPlaceTie = tieBreakGroups(group).some((tie) => isFirstPlaceTie(tie));
+    if (activeRows.length === 1 && !hasFirstPlaceTie) {
+        return [activeRows[0]];
+    }
+
+    return [];
 }
 
 function mixedStakeWinnerRows(group, rows) {
@@ -8763,6 +9270,9 @@ function firstPlaceTiePlaceholdersByBreed(groups) {
         }
         const tie = tieBreakGroups(group).find((candidate) => isFirstPlaceTie(candidate));
         if (!tie) {
+            return;
+        }
+        if (resolvedTieWinnerForPlaceholder(group, null, tie.label)) {
             return;
         }
         const breed = group.breed || 'Unknown';
@@ -8837,11 +9347,11 @@ function runoffDisplayRows(trial, item) {
             stake: item.group.stake,
             reason: archivedRunoffs.length ? `${item.tie.label} Run ${archivedRunoffs.length + 1}` : item.tie.label,
             result: runoffTieResultForEntry(trial, row.hound.entryId, row.hound.tieBreakResolvedPlacement || ''),
-            outcome: item.repeatTie ? '' : (row.hound.tieBreakOutcome || ''),
-            judge1: item.repeatTie ? '' : (row.hound.tieBreakJudge1Score || ''),
-            judge2: item.repeatTie ? '' : (row.hound.tieBreakJudge2Score || ''),
-            score: item.repeatTie ? '' : (row.hound.tieBreakScore || ''),
-            forfeitOrder: !item.repeatTie && row.hound.tieBreakOutcome === 'forfeit' ? row.hound.tieBreakForfeitOrder : '',
+            outcome: row.hound.tieBreakOutcome || '',
+            judge1: row.hound.tieBreakJudge1Score || '',
+            judge2: row.hound.tieBreakJudge2Score || '',
+            score: row.hound.tieBreakScore || '',
+            forfeitOrder: row.hound.tieBreakOutcome === 'forfeit' ? row.hound.tieBreakForfeitOrder : '',
         }));
         return [...historyRows, ...activeRows];
     }
@@ -8917,9 +9427,6 @@ function bobRunoffForItem(trial, item) {
 
 function drawnRunoffForItem(trial, item) {
     if (item.type === 'tie') {
-        if (item.repeatTie) {
-            return null;
-        }
         return runoffForTie(item.group, item.tie);
     }
     return bobRunoffForItem(trial, item);
@@ -10091,6 +10598,7 @@ async function printAsfaRecordPacket() {
         layout: getAsfaRecordLayout(),
         entryLayout: getAsfaEntryLayout(),
         lciEntryLayout: getAsfaLciEntryLayout(),
+        secretaryLayout: getAsfaSecretaryLayout(),
     }, message, 'ASFA record packet PDF created.', 'ASFA record packet could not be created.');
 }
 
@@ -10858,6 +11366,7 @@ function scoreOutcomeLabel(value) {
         dismissed: 'DIS',
         disqualified: 'DQ',
         forfeit: 'FOR',
+        pull: 'PUL',
         no_score: 'NS',
     };
     return labels[value] || '';
@@ -10870,8 +11379,125 @@ function scoreOutcomeOptions() {
         ['dismissed', 'DIS'],
         ['disqualified', 'DQ'],
         ['forfeit', 'FOR'],
+        ['pull', 'PUL'],
         ['no_score', 'NS'],
     ];
+}
+
+function outcomeNeedsSignedJudgeSheets(outcome) {
+    return ['excused', 'dismissed', 'disqualified'].includes(String(outcome || ''));
+}
+
+function signedJudgeSheetsForHound(hound, phase) {
+    const key = phase === 'final' ? 'finalSignedJudgeSheets' : 'prelimSignedJudgeSheets';
+    return Array.isArray((hound || {})[key]) ? (hound || {})[key] : [];
+}
+
+function signedJudgeSheetCell(group, hound, phase, judgeCount) {
+    const td = document.createElement('td');
+    td.className = 'signed-sheet-cell';
+    const outcome = phase === 'final' ? hound.finalOutcome : hound.prelimOutcome;
+    if (!outcomeNeedsSignedJudgeSheets(outcome)) {
+        td.textContent = '-';
+        return td;
+    }
+
+    const expected = Math.max(1, Number(judgeCount || 1));
+    const documents = signedJudgeSheetsForHound(hound, phase);
+    const status = document.createElement('div');
+    status.className = documents.length >= expected ? 'signed-sheet-status complete' : 'signed-sheet-status needed';
+    status.textContent = `${documents.length}/${expected} signed`;
+    td.appendChild(status);
+
+    const links = document.createElement('div');
+    links.className = 'signed-sheet-links';
+    documents.forEach((documentInfo, index) => {
+        const link = documentViewLink(documentInfo);
+        link.textContent = `View ${index + 1}`;
+        links.appendChild(link);
+    });
+    if (documents.length) {
+        td.appendChild(links);
+    }
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,image/*';
+    input.multiple = expected > 1;
+    input.hidden = true;
+    input.addEventListener('change', async () => {
+        const files = [...(input.files || [])];
+        input.value = '';
+        if (!files.length) {
+            return;
+        }
+        if (documents.length + files.length > expected) {
+            showMessage(document.getElementById('scoringMessage'), `This result needs ${expected} signed judge sheet${expected === 1 ? '' : 's'}. Remove is not built yet, so do not attach extras.`, 'warning');
+            return;
+        }
+        try {
+            const uploaded = [];
+            for (const file of files) {
+                uploaded.push(await uploadEntryDocumentFile(file, `${phase === 'final' ? 'Final' : 'Prelim'} signed judge sheet`));
+            }
+            applySignedJudgeSheets(group.id, hound.entryId, phase, [...documents, ...uploaded]);
+            showMessage(document.getElementById('scoringMessage'), `Attached ${uploaded.length} signed judge sheet${uploaded.length === 1 ? '' : 's'}.`, 'success');
+        } catch (error) {
+            showMessage(document.getElementById('scoringMessage'), error.message || 'Could not attach the signed judge sheet.', 'error');
+        }
+    });
+    td.appendChild(input);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = documents.length >= expected ? 'secondary small' : 'primary small';
+    button.textContent = documents.length ? 'Add' : 'Insert';
+    button.dataset.help = `Attach the signed judge sheet${expected === 1 ? '' : 's'} for this ${scoreOutcomeLabel(outcome)} result.`;
+    button.addEventListener('click', () => input.click());
+    td.appendChild(button);
+    return td;
+}
+
+function applySignedJudgeSheets(groupId, entryId, phase, documents) {
+    const trial = readForm();
+    if (!trial.preliminaryDraw || !Array.isArray(trial.preliminaryDraw.groups)) {
+        return;
+    }
+    const documentIds = documents.map((documentInfo) => documentInfo.id).filter(Boolean);
+    trial.preliminaryDraw = {
+        ...trial.preliminaryDraw,
+        groups: trial.preliminaryDraw.groups.map((group) => {
+            if (phase === 'final') {
+                if (group.id !== groupId || !group.finalDraw || !Array.isArray(group.finalDraw.courses)) {
+                    return group;
+                }
+                return {
+                    ...group,
+                    finalDraw: {
+                        ...group.finalDraw,
+                        courses: group.finalDraw.courses.map((course) => ({
+                            ...course,
+                            hounds: (course.hounds || []).map((hound) => hound.entryId === entryId
+                                ? { ...hound, finalSignedJudgeSheets: documents, finalSignedJudgeSheetIds: documentIds }
+                                : hound),
+                        })),
+                    },
+                };
+            }
+            return {
+                ...group,
+                courses: (group.courses || []).map((course) => ({
+                    ...course,
+                    hounds: (course.hounds || []).map((hound) => hound.entryId === entryId
+                        ? { ...hound, prelimSignedJudgeSheets: documents, prelimSignedJudgeSheetIds: documentIds }
+                        : hound),
+                })),
+            };
+        }),
+    };
+    upsertTrial(trial);
+    saveTrials();
+    render();
 }
 
 function prelimScorebookRow(group, course, hound, prelimsLocked, entry = {}, judgeCount = 2) {
@@ -10912,6 +11538,7 @@ function prelimScorebookRow(group, course, hound, prelimsLocked, entry = {}, jud
     outcome.addEventListener('change', () => updatePrelimScore(hound.entryId, { outcome: outcome.value }));
     outcomeCell.appendChild(outcome);
     tr.appendChild(outcomeCell);
+    tr.appendChild(signedJudgeSheetCell(group, hound, 'prelim', judgeCount));
 
     if (hound.prelimOutcome) {
         tr.classList.add('score-row-outcome');
@@ -11122,6 +11749,9 @@ function computedTwoJudgeTotal(judge1, judge2) {
     const hasJudge1 = hasScoreValue(judge1);
     const hasJudge2 = hasScoreValue(judge2);
     if (!hasJudge1 && !hasJudge2) {
+        return '';
+    }
+    if (!hasJudge1 || !hasJudge2) {
         return '';
     }
     const first = Number(judge1 || 0);
@@ -11669,8 +12299,9 @@ function recomputeFinalPlacements(group) {
         .sort((a, b) => b.total - a.total);
 
     const placementByEntry = new Map();
+    const qualifyingMinimum = placementQualifyingMinimum(judgeCountForGroup(readForm(), group));
     finalPlacementPartitions(finals, group).forEach((partition) => {
-        assignFinalPlacementLabels(partition, placementByEntry);
+        assignFinalPlacementLabels(partition, placementByEntry, qualifyingMinimum);
     });
     resolveCompletedTieBreaks(finals, placementByEntry);
 
@@ -11710,16 +12341,21 @@ function finalPlacementPartitions(finals, group) {
     return [...partitions.values()];
 }
 
-function assignFinalPlacementLabels(finals, placementByEntry) {
+function placementQualifyingMinimum(judgeCount = 1) {
+    return Math.max(1, Number(judgeCount || 1)) * 100;
+}
+
+function assignFinalPlacementLabels(finals, placementByEntry, qualifyingMinimum = 100) {
+    const qualifyingFinals = finals.filter((row) => Number(row.total) >= qualifyingMinimum);
     const totalPositions = new Map();
-    finals.forEach((row, index) => {
+    qualifyingFinals.forEach((row, index) => {
         if (!totalPositions.has(row.total)) {
             totalPositions.set(row.total, []);
         }
         totalPositions.get(row.total).push(index + 1);
     });
 
-    finals.forEach((row, index) => {
+    qualifyingFinals.forEach((row, index) => {
         const positions = totalPositions.get(row.total) || [];
         if (positions.length > 1 && positions[0] <= 5) {
             placementByEntry.set(row.entryId, placementTieLabel(positions[0], positions[positions.length - 1]));
@@ -12291,6 +12927,9 @@ function randomAdminScoreOutcome() {
     if (roll < 5) {
         return { value: 'forfeit', note: 'Admin test forfeit' };
     }
+    if (roll < 6) {
+        return { value: 'pull', note: 'Admin test pull' };
+    }
     return null;
 }
 
@@ -12345,6 +12984,7 @@ function buildRunPlanFromEntries() {
     }
 
     trial.runPlan = buildRunPlanRowsForTrial(trial);
+    trial.runPlanEntriesFingerprint = entrySetupFingerprint(trial.entries || []);
 
     upsertTrial(trial);
     showMessage(runPlanMessage, `Built ${trial.runPlan.length} worker sheet row${trial.runPlan.length === 1 ? '' : 's'} from entries.`, 'success');
@@ -12562,6 +13202,7 @@ function refreshRunPlanFromPremiumIfLoaded(trial) {
     return {
         ...trial,
         runPlan: buildRunPlanRowsForTrial(trial),
+        runPlanEntriesFingerprint: entrySetupFingerprint(trial.entries || []),
     };
 }
 
@@ -12591,6 +13232,7 @@ function importPremiumJudgeAssignments() {
         assignmentsByDay: parsed.assignmentsByDay,
     };
     trial.runPlan = buildRunPlanRowsForTrial(trial);
+    trial.runPlanEntriesFingerprint = entrySetupFingerprint(trial.entries || []);
     parsed.judges.forEach((judgeName) => ensureJudgeInDatabaseAndTrial(judgeName, trial));
     upsertTrial(trial);
     saveTrials();
@@ -12612,6 +13254,7 @@ function applySavedPremiumJudgeAssignments() {
         return;
     }
     trial.runPlan = buildRunPlanRowsForTrial(trial);
+    trial.runPlanEntriesFingerprint = entrySetupFingerprint(trial.entries || []);
     (trial.premiumJudgeAssignments.judges || []).forEach((judgeName) => ensureJudgeInDatabaseAndTrial(judgeName, trial));
     upsertTrial(trial);
     saveTrials();
@@ -12810,7 +13453,7 @@ function contextualMoveControls({ upDisabled = false, downDisabled = false, onUp
     const up = document.createElement('button');
     up.type = 'button';
     up.className = 'secondary small icon-button';
-    up.textContent = '↑';
+    up.textContent = 'â†‘';
     up.title = 'Move up';
     up.dataset.help = 'Moves the selected item earlier in the running order.';
     up.disabled = upDisabled;
@@ -12822,7 +13465,7 @@ function contextualMoveControls({ upDisabled = false, downDisabled = false, onUp
     const down = document.createElement('button');
     down.type = 'button';
     down.className = 'secondary small icon-button';
-    down.textContent = '↓';
+    down.textContent = 'â†“';
     down.title = 'Move down';
     down.dataset.help = 'Moves the selected item later in the running order.';
     down.disabled = downDisabled;
@@ -13666,6 +14309,94 @@ async function printBifDrawSheet() {
     }
 }
 
+function finalsHuntmasterPrintTrial(trial) {
+    const readyGroups = finalsJudgeSheetReadyGroups(trial);
+    const groups = readyGroups.map((group) => {
+        const finalDraw = group.finalDraw || {};
+        return {
+            ...group,
+            phase: 'final',
+            courses: (finalDraw.courses || []).map((course) => ({
+                ...course,
+                hounds: (course.hounds || []).map((hound) => ({
+                    ...hound,
+                    blanketColor: hound.finalBlanketColor || hound.blanketColor,
+                    stake: hound.stake || group.stake,
+                })),
+            })),
+        };
+    }).filter(groupHasPrelimHounds);
+
+    if (groups.length === 0) {
+        return null;
+    }
+
+    return {
+        ...trial,
+        preliminaryDraw: {
+            ...((trial || {}).preliminaryDraw || {}),
+            id: `finals-huntmaster-${trial.id || ''}`,
+            phase: 'final',
+            groups,
+        },
+    };
+}
+
+async function printFinalsHuntmasterSheet() {
+    const trial = readForm();
+    const printTrial = finalsHuntmasterPrintTrial(trial);
+    if (!printTrial) {
+        showMessage(document.getElementById('scoringMessage'), 'Draw finals before printing the finals huntmaster sheet.', 'warning');
+        return;
+    }
+    if (!isLocalServerMode()) {
+        showMessage(document.getElementById('scoringMessage'), 'Finals huntmaster PDFs require SQLite/server mode.', 'warning');
+        return;
+    }
+    const copies = await askDrawSheetCopies('finals huntmaster sheets');
+    if (!copies) {
+        return;
+    }
+
+    const pdfWindow = window.open('', '_blank');
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/draw-sheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial: printTrial, layout: getAsfaDrawLayout(), copies }),
+        });
+        if (!response.ok) {
+            let message = 'Finals huntmaster sheet could not be created.';
+            try {
+                const payload = await response.json();
+                message = payload.error || message;
+            } catch {
+                // Keep generic message.
+            }
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        if (pdfWindow) {
+            pdfWindow.location = url;
+        } else {
+            const link = document.createElement('a');
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.click();
+        }
+        showMessage(document.getElementById('scoringMessage'), `Finals huntmaster sheet created (${copies} cop${copies === 1 ? 'y' : 'ies'}).`, 'success');
+        markTrialGuidePrinted('finalHuntmasterSheet');
+    } catch (error) {
+        if (pdfWindow) {
+            pdfWindow.close();
+        }
+        showMessage(document.getElementById('scoringMessage'), error.message || 'Finals huntmaster sheet could not be created.', 'warning');
+    }
+}
+
 function markFinalsJudgeSheetGroupsPrinted(groupIds) {
     const trial = readForm();
     const ids = new Set(groupIds || []);
@@ -13947,6 +14678,7 @@ function createAdminTestTrial() {
     };
 
     trial.runPlan = buildAdminRunPlan(trial);
+    trial.runPlanEntriesFingerprint = entrySetupFingerprint(trial.entries || []);
     trials.unshift(trial);
     selectedTrialId = trial.id;
     saveTrials();
@@ -14523,7 +15255,7 @@ function setupSortableHeaders(tableId, keys, options = {}) {
 
     headers.forEach((header, index) => {
         const key = sortableKeys[index];
-        header.textContent = header.textContent.replace(/\s+[▲▼]$/, '');
+        header.textContent = header.textContent.replace(/\s+[â–²â–¼]$/, '');
 
         if (!key) {
             header.classList.remove('sortable');
@@ -14537,7 +15269,7 @@ function setupSortableHeaders(tableId, keys, options = {}) {
 
         const sort = tableSort[tableId];
         if (sort && sort.key === key) {
-            header.textContent = `${header.textContent} ${sort.direction === 'asc' ? '▲' : '▼'}`;
+            header.textContent = `${header.textContent} ${sort.direction === 'asc' ? 'â–²' : 'â–¼'}`;
         }
 
         header.onclick = () => {
@@ -15461,7 +16193,7 @@ function applySelectedEntryImportTemplate() {
 
 function saveCurrentEntryImportTemplate() {
     if (currentImportHeaders.length === 0) {
-        showMessage(entryMessage, 'Preview a CSV or mapped import before saving a mapping template.', 'warning');
+        showMessage(entryImportMessageElement(), 'Preview a CSV or mapped import before saving a mapping template.', 'warning');
         return;
     }
     const name = document.getElementById('entryImportTemplateName')?.value.trim() || `Import Template ${entryImportTemplates.length + 1}`;
@@ -15479,7 +16211,11 @@ function saveCurrentEntryImportTemplate() {
     saveEntryImportTemplates();
     renderEntryImportTemplateOptions();
     document.getElementById('entryImportTemplateSelect').value = template.id;
-    showMessage(entryMessage, `Saved import mapping template "${name}".`, 'success');
+    showMessage(entryImportMessageElement(), `Saved import mapping template "${name}".`, 'success');
+}
+
+function entryImportMessageElement() {
+    return document.getElementById('jotformImportSummary') || entryMessage;
 }
 
 function renderJotformImportPreview() {
@@ -15571,7 +16307,7 @@ function buildJotformHoundChoice(index) {
 
     const divider = document.createElement('option');
     divider.disabled = true;
-    divider.textContent = '──────────';
+    divider.textContent = 'â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€';
     select.appendChild(divider);
 
     masterHounds
@@ -15736,7 +16472,7 @@ async function previewMappedEntryImport(text, files, csvFiles, textLooksCsv) {
 
 function applyEntryImportMapping() {
     if (currentImportRows.length === 0) {
-        showMessage(entryMessage, 'Preview a CSV import before applying a mapping.', 'warning');
+        showMessage(entryImportMessageElement(), 'Preview a CSV import before applying a mapping.', 'warning');
         return;
     }
 
@@ -16041,7 +16777,7 @@ function extractInlineJotformPair(line) {
 }
 
 function isKnownJotformLabel(label) {
-    return /^date\b|call name|registered name|full name of dog|breed|registration|reg #|stake|class|owner|handler|phone|email|first time|certificate|attachment|document|entry number/i.test(label);
+    return /^date\b|date of birth|dob\b|call name|registered name|full name of dog|breed|registration|reg #|stake|class|owner|actual owner|handler|address|city|state|zip|postal|country|phone|email|sex\b|sire\b|dam\b|breeder\b|signature|first time|certificate|attachment|document|entry number/i.test(label);
 }
 
 function normalizeJotformPairs(pairs, raw) {
@@ -16062,19 +16798,33 @@ function normalizeJotformPairs(pairs, raw) {
     const rawClassName = value(/sighthound\s*stakes/i, /stake/i, /^class$/i, /stake\s*\/\s*class/i);
     const lciParts = normalizeImportedLciParts(rawBreed, rawClassName);
 
+    const callName = cleanImportedEntryField(value(/call\s*name/i, /dog\s*name/i, /hound\s*name/i));
+    const registeredName = cleanImportedRegisteredName(value(/registered\s*name/i, /registration\s*name/i, /full\s*name\s*of\s*dog/i), callName);
+    const owner = cleanImportedEntryField(value(/^owner$/i, /owner\s*name/i, /actual\s*owner/i));
+
     return {
-        callName: value(/call\s*name/i, /dog\s*name/i, /hound\s*name/i),
-        registeredName: value(/registered\s*name/i, /registration\s*name/i, /full\s*name\s*of\s*dog/i),
+        callName,
+        registeredName,
         breed: lciParts ? lciParts.breed : normalizeImportedBreed(rawBreed),
         trialDates: value(/^date$/i, /trial\s*date/i),
         registrationNumber,
         registry,
         registrationType,
         className: lciParts ? lciParts.className : normalizeImportedClass(rawClassName),
-        handler: value(/handler/i),
-        owner: value(/^owner$/i, /owner\s*name/i, /actual\s*owner/i),
-        ownerEmail: value(/owner.*email/i, /^email$/i),
-        ownerPhone: value(/owner.*phone/i, /^phone$/i),
+        handler: cleanImportedEntryField(value(/handler/i)),
+        owner,
+        ownerEmail: cleanImportedEntryField(value(/owner.*email/i, /^email$/i)),
+        ownerPhone: cleanImportedEntryField(value(/owner.*phone/i, /^phone$/i)),
+        ownerAddress: cleanImportedEntryField(value(/^address$/i, /owner.*address/i, /actual.*address/i)),
+        ownerCity: cleanImportedEntryField(value(/^city$/i, /owner.*city/i)),
+        ownerState: cleanImportedEntryField(value(/^state$/i, /owner.*state/i)),
+        ownerPostalCode: cleanImportedEntryField(value(/^zip$/i, /postal/i, /zip.*code/i)),
+        ownerCountry: cleanImportedEntryField(value(/^country$/i)),
+        sex: cleanImportedEntryField(value(/^sex$/i)),
+        dob: cleanImportedEntryField(value(/date\s*of\s*birth/i, /^dob$/i, /^birth\s*date$/i)),
+        breeder: cleanImportedEntryField(value(/^breeder$/i)),
+        sire: cleanImportedEntryField(value(/^sire$/i)),
+        dam: cleanImportedEntryField(value(/^dam$/i)),
         entryNumber: value(/entry\s*(number|#)/i),
         firstTime,
         certRequired: certRequired || firstTime,
@@ -16084,12 +16834,40 @@ function normalizeJotformPairs(pairs, raw) {
     };
 }
 
+function cleanImportedRegisteredName(value, callName = '') {
+    let text = cleanImportedEntryField(value);
+    return text;
+}
+
+function cleanImportedEntryField(value) {
+    let text = String(value || '').replace(/\s+/g, ' ').trim();
+    text = text.replace(/\s+\b(?:Address|Add\.?|Phone|Email|E-mail|City|State|Zip|Postal)\b\.?:?\s*$/i, '').trim();
+    return dedupeImportedRepeatedPhrase(text);
+}
+
+function dedupeImportedRepeatedPhrase(value) {
+    const words = String(value || '').trim().split(/\s+/).filter(Boolean);
+    if (words.length && words.length % 2 === 0) {
+        const midpoint = words.length / 2;
+        const first = words.slice(0, midpoint).join(' ').toLowerCase();
+        const second = words.slice(midpoint).join(' ').toLowerCase();
+        if (first === second) {
+            return words.slice(0, midpoint).join(' ');
+        }
+    }
+    return String(value || '').trim();
+}
+
+function escapeRegExp(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parseImportedEntryDates(value) {
     const text = String(value || '').replace(/\s+/g, ' ').trim();
     if (!text) {
         return [];
     }
-    const monthRange = text.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})\s*(?:-|–|&|and|,)\s*(\d{1,2}),?\s+(\d{4})\b/i);
+    const monthRange = text.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})\s*(?:-|â€“|&|and|,)\s*(\d{1,2}),?\s+(\d{4})\b/i);
     if (monthRange) {
         const month = monthRange[1];
         const startDay = Number(monthRange[2]);
@@ -16414,16 +17192,16 @@ async function importStagedJotformEntries() {
     const target = trials.find((trial) => trial.id === targetId);
     const selected = stagedJotformEntries.filter((item) => item.selected !== false);
     if (!target) {
-        showMessage(entryMessage, 'Choose a target trial before importing Jotform entries.', 'warning');
+        showMessage(entryImportMessageElement(), 'Choose a target trial before importing Jotform entries.', 'warning');
         return;
     }
     if (selected.length === 0) {
-        showMessage(entryMessage, 'Preview and select at least one Jotform entry to import.', 'warning');
+        showMessage(entryImportMessageElement(), 'Preview and select at least one Jotform entry to import.', 'warning');
         return;
     }
     const incomplete = selected.filter((item) => !item.breed || (!item.callName && !item.registeredName && !item.registrationNumber));
     if (incomplete.length > 0) {
-        showMessage(entryMessage, `Fix or uncheck ${incomplete.length} import row${incomplete.length === 1 ? '' : 's'} missing breed or hound identification before importing.`, 'warning');
+        showMessage(entryImportMessageElement(), `Fix or uncheck ${incomplete.length} import row${incomplete.length === 1 ? '' : 's'} missing breed or hound identification before importing.`, 'warning');
         return;
     }
 
@@ -16441,7 +17219,7 @@ async function importStagedJotformEntries() {
         try {
             uploadedDocuments = await uploadJotformDocuments(sourceFiles);
         } catch (error) {
-            showMessage(entryMessage, `Document upload failed for ${item.sourceName || item.callName || 'one import row'}, so the import was stopped before changing trial entries: ${error.message}`, 'warning');
+            showMessage(entryImportMessageElement(), `Document upload failed for ${item.sourceName || item.callName || 'one import row'}, so the import was stopped before changing trial entries: ${error.message}`, 'warning');
             return;
         }
         item.uploadedDocuments = uploadedDocuments;
@@ -16493,7 +17271,7 @@ async function importStagedJotformEntries() {
     saveTrials();
     render();
     showMessage(
-        entryMessage,
+        entryImportMessageElement(),
         `Imported ${addedEntries} entr${addedEntries === 1 ? 'y' : 'ies'} to ${targetNames.size ? [...targetNames].join(', ') : target.trialName || 'the trial'}. Created ${createdHounds} hound${createdHounds === 1 ? '' : 's'}. ${skipped ? `${skipped} duplicate skipped. ` : ''}${needsDocs ? `${needsDocs} first-time entr${needsDocs === 1 ? 'y needs' : 'ies need'} documentation uploaded/tracked.` : ''}`,
         addedEntries ? 'success' : 'warning'
     );
@@ -17404,8 +18182,12 @@ function render() {
     normalizeSelectedTrialForArchiveFilter();
     renderTrialList();
     renderActiveBadge();
+    renderSaveStatus();
 
     const selected = trials.find((trial) => trial.id === selectedTrialId);
+    if (selected && recalculateTrialResults(selected)) {
+        saveTrials();
+    }
     renderTrialGuide(selected || null);
     renderWorkflowStrip(selected || null);
     writeForm(selected || null);
@@ -17579,7 +18361,7 @@ document.getElementById('houndDatabaseSearch').addEventListener('input', render)
 document.getElementById('addEntryButton').addEventListener('click', addTrialEntry);
 document.getElementById('parseJotformImportButton')?.addEventListener('click', () => {
     previewJotformImport().catch((error) => {
-        showMessage(entryMessage, `Jotform preview failed: ${error.message}`, 'warning');
+        showMessage(entryImportMessageElement(), `Jotform preview failed: ${error.message}`, 'warning');
     });
 });
 document.getElementById('applyEntryImportMappingButton')?.addEventListener('click', () => {
@@ -17592,7 +18374,7 @@ document.getElementById('saveEntryImportTemplateButton')?.addEventListener('clic
 document.getElementById('entryImportTemplateSelect')?.addEventListener('change', applySelectedEntryImportTemplate);
 document.getElementById('importJotformEntriesButton')?.addEventListener('click', () => {
     importStagedJotformEntries().catch((error) => {
-        showMessage(entryMessage, `Jotform import failed: ${error.message}`, 'warning');
+        showMessage(entryImportMessageElement(), `Jotform import failed: ${error.message}`, 'warning');
     });
 });
 document.getElementById('cancelEntryEditButton').addEventListener('click', () => {
@@ -17671,7 +18453,16 @@ document.getElementById('deleteSelectedTrialButton').addEventListener('click', d
 document.getElementById('enablePersistentStorageButton').addEventListener('click', enablePersistentStorage);
 document.getElementById('restoreBrowserBackupButton').addEventListener('click', restoreBrowserSafetyBackup);
 document.getElementById('createSQLiteBackupButton').addEventListener('click', createSQLiteBackup);
+document.getElementById('restoreSQLiteBackupButton')?.addEventListener('click', restoreSQLiteBackup);
+sqliteBackupSelect?.addEventListener('change', updateSQLiteBackupDetails);
+document.getElementById('buildPortablePackageButton')?.addEventListener('click', buildPortablePackage);
+document.getElementById('refreshPortableStatusButton')?.addEventListener('click', () => refreshPortableStatus(true));
 document.getElementById('createTransferPackageButton')?.addEventListener('click', createTransferPackage);
+document.getElementById('restoreTransferAppFilesButton')?.addEventListener('click', () => document.getElementById('restoreTransferAppFilesInput')?.click());
+document.getElementById('restoreTransferAppFilesInput')?.addEventListener('change', (event) => {
+    restoreTransferAppFiles(event.target.files?.[0] || null);
+    event.target.value = '';
+});
 document.getElementById('restartServerButton')?.addEventListener('click', restartAppServer);
 document.getElementById('exportDataBackupButton').addEventListener('click', exportDataBackup);
 document.getElementById('importDataBackupButton').addEventListener('click', () => document.getElementById('importDataBackupFile').click());
@@ -17700,10 +18491,15 @@ document.getElementById('addWorkerButton').addEventListener('click', addTrialWor
 
 async function startApp() {
     populateBreedSelects();
+    renderSaveStatus();
     await loadFromSQLiteIfAvailable();
     render();
     updateReturnTopButton();
     initializeResilientStorage();
 }
 
+window.addEventListener('pagehide', flushSQLiteSaveBeforeClose);
+window.addEventListener('beforeunload', flushSQLiteSaveBeforeClose);
+
 startApp();
+

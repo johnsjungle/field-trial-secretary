@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Field Trial Secretary</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260629-entry-stale-guide">
 </head>
 <body>
     <header class="topbar">
@@ -23,6 +23,7 @@
         <div class="active-trial" id="activeTrialBadge">
             <span class="label">Active Trial</span>
             <strong>No trial selected</strong>
+            <span class="save-status checking" id="saveStatusBadge">Checking storage...</span>
         </div>
         <details class="trial-guide-card" id="trialGuideCard" open>
             <summary>
@@ -575,7 +576,7 @@
                     <div class="section-heading with-action">
                         <div>
                             <h2>Roll Call Check In</h2>
-                            <p>Check which hounds are present, lame, absent, or excused before building the course draw.</p>
+                            <p>Check which hounds are present, lame, absent, in season, breed DQ, scratched, or excused before building the course draw.</p>
                         </div>
                         <label class="switch compact-switch">
                             <input id="rollCallAllPresent" type="checkbox">
@@ -1373,13 +1374,26 @@
                         <button type="button" class="secondary small" id="enablePersistentStorageButton">Enable Protected Browser Storage</button>
                         <button type="button" class="secondary small" id="restoreBrowserBackupButton">Restore Browser Safety Backup</button>
                         <button type="button" class="secondary small" id="createSQLiteBackupButton">Create SQLite Backup</button>
+                        <button type="button" class="secondary small danger-button" id="restoreSQLiteBackupButton">Restore SQLite Backup</button>
+                        <button type="button" class="secondary small" id="buildPortablePackageButton">Build/Update Portable Package</button>
                         <button type="button" class="secondary small" id="createTransferPackageButton">Create Transfer Package</button>
+                        <button type="button" class="secondary small danger-button" id="restoreTransferAppFilesButton">Restore App Files From Transfer Package</button>
                         <button type="button" class="secondary small" id="restartServerButton">Restart App Server</button>
                         <button type="button" class="secondary small" id="exportDataBackupButton">Export Data Backup</button>
                         <button type="button" class="secondary small" id="importDataBackupButton">Import Data Backup</button>
                     </div>
+                    <div class="grid two backup-restore-grid">
+                        <div class="backup-restore-note portable-status-note" id="portablePackageStatus">Portable package status will appear here in server mode.</div>
+                        <button type="button" class="secondary small" id="refreshPortableStatusButton">Refresh Portable Status</button>
+                        <label>
+                            SQLite backup to restore
+                            <select id="sqliteBackupSelect"></select>
+                        </label>
+                        <div class="backup-restore-note" id="sqliteBackupDetails">SQLite backups appear here when server mode is active.</div>
+                    </div>
                     <div class="form-message compact" id="storageSafetyMessage"></div>
                     <input id="importDataBackupFile" type="file" accept="application/json,.json" hidden>
+                    <input id="restoreTransferAppFilesInput" type="file" accept="application/zip,.zip" hidden>
                     <p class="field-note">Create Transfer Package builds a zip with the portable program, current SQLite data, templates, and restore notes for moving to another computer.</p>
                 </section>
 
@@ -1399,6 +1413,6 @@
     </main>
 
     <script src="asfa_recent_hounds.js"></script>
-    <script src="script.js?v=20260628-record-alignment-runoff-handles"></script>
+    <script src="script.js?v=20260629-entry-stale-guide"></script>
 </body>
 </html>

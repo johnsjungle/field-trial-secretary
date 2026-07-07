@@ -7,8 +7,9 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $pythonCandidates = @(
-    "C:\Users\johns\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe",
+    "C:\Users\johns\AppData\Local\Programs\Python\Python313\python.exe",
     "C:\Users\johns\AppData\Local\Programs\Python\Python314\python.exe",
+    "C:\Users\johns\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe",
     "python"
 )
 
