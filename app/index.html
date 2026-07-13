@@ -4,9 +4,19 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Field Trial Secretary</title>
-    <link rel="stylesheet" href="styles.css?v=20260629-entry-stale-guide">
+    <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
+    <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
+    <link rel="stylesheet" href="styles.css?v=20260712-exit-button">
 </head>
 <body>
+    <div class="startup-splash" id="startupSplash" aria-hidden="true">
+        <div class="splash-track">
+            <img class="splash-frame" id="startupSplashFrame" src="assets/startup/startup-01.jpg" alt="">
+            <div class="splash-vignette"></div>
+            <div class="splash-caption">Lure coursing trial day is loading</div>
+        </div>
+        <div class="splash-title">Field Trial Secretary</div>
+    </div>
     <header class="topbar">
         <div>
             <h1>Field Trial Secretary</h1>
@@ -23,7 +33,10 @@
         <div class="active-trial" id="activeTrialBadge">
             <span class="label">Active Trial</span>
             <strong>No trial selected</strong>
+            <span class="app-version" id="appVersionBadge">Version ...</span>
             <span class="save-status checking" id="saveStatusBadge">Checking storage...</span>
+            <span class="database-integrity-status checking" id="databaseIntegrityStatusBadge">Checking database...</span>
+            <button type="button" class="text-button danger app-exit-button" id="exitAppButton">Exit</button>
         </div>
         <details class="trial-guide-card" id="trialGuideCard" open>
             <summary>
@@ -750,23 +763,6 @@
                 <section class="form-section" data-tab="wrapup">
                     <div class="section-heading with-action">
                         <div>
-                            <h2>ASFA Record Packet</h2>
-                            <p>Create the complete end-of-trial ASFA record packet with all record sheets in order.</p>
-                        </div>
-                        <div class="button-row">
-                            <button type="button" class="secondary small report-button" id="printAsfaEntryFormsButton">Print First-Time Entry Forms</button>
-                            <button type="button" class="secondary small report-button" id="printAsfaRecordPacketButton">Print ASFA Record Packet</button>
-                        </div>
-                    </div>
-                    <div class="form-message compact" id="wrapUpMessage"></div>
-                    <div class="info-panel">
-                        <p>The record packet uses completed results, ASFA record and entry-form alignment settings, splits large stakes across multiple record sheets, includes refund/per-capita handling, and inserts first-time entry forms before uploaded certificates.</p>
-                    </div>
-                </section>
-
-                <section class="form-section" data-tab="wrapup">
-                    <div class="section-heading with-action">
-                        <div>
                             <h2>ASFA Secretary Report</h2>
                             <p>Build the ASFA Field Trial Secretary report for trial submission.</p>
                         </div>
@@ -869,6 +865,38 @@
                 <section class="form-section" data-tab="wrapup">
                     <div class="section-heading with-action">
                         <div>
+                            <h2>ASFA Record Packet</h2>
+                            <p>Create the complete end-of-trial ASFA record packet with all record sheets in order.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small report-button" id="printAsfaEntryFormsButton">Print First-Time Entry Forms</button>
+                            <button type="button" class="secondary small report-button" id="printAsfaRecordPacketButton">Print ASFA Record Packet</button>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="wrapUpMessage"></div>
+                    <div class="info-panel">
+                        <p>The record packet uses completed results, ASFA record and entry-form alignment settings, splits large stakes across multiple record sheets, includes refund/per-capita handling, and inserts first-time entry forms before uploaded certificates.</p>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="wrapup">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Submit Paperwork</h2>
+                            <p>Send the completed trial paperwork to records@asfa.org after reviewing the record packet.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary small report-button" id="markPaperworkSubmittedButton">Mark Paperwork Submitted</button>
+                        </div>
+                    </div>
+                    <div class="info-panel" id="paperworkSubmittedStatus">
+                        <p>Print and review the ASFA record packet, then submit paperwork to records@asfa.org.</p>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="wrapup">
+                    <div class="section-heading with-action">
+                        <div>
                             <h2>Archive Trial</h2>
                             <p>Create the final archive package, then lock the trial against accidental edits.</p>
                         </div>
@@ -889,7 +917,7 @@
                             <h2>Running Order & Assignments</h2>
                             <p>One row per breed. If there is only one breed, the running order is 1.</p>
                         </div>
-                        <button type="button" class="secondary small" id="buildRunPlanButton">Build From Entries</button>
+                        <button type="button" class="secondary small" id="buildRunPlanButton" data-help="Adds any late entries to the trial">Update Hound Entries</button>
                     </div>
                     <div class="form-message compact" id="runPlanMessage"></div>
                     <details class="inline-tool-panel">
@@ -941,6 +969,7 @@
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small report-button" id="printWorkerSheetButton">Print Worker Sheet</button>
+                            <button type="button" class="secondary small report-button" id="printJudgesMapButton">Judges Map</button>
                             <button type="button" class="secondary small report-button" id="printRollCallButton">Print Roll Call</button>
                         </div>
                     </div>
@@ -966,6 +995,7 @@
                                         <th>Order</th>
                                         <th>Breed</th>
                                         <th>Entries</th>
+                                        <th>Mixed</th>
                                         <th>Open</th>
                                         <th>Fch/Exc</th>
                                         <th>Vet</th>
@@ -975,6 +1005,25 @@
                                     </tr>
                                 </thead>
                                 <tbody id="workerSheetTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="print-area sheet-preview" id="judgesMapPrint">
+                        <h2>Judges Map</h2>
+                        <p id="judgesMapTitle"></p>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Order</th>
+                                        <th>Breed</th>
+                                        <th>Stake</th>
+                                        <th>Entries</th>
+                                        <th>Courses</th>
+                                        <th>Judges</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="judgesMapTable"></tbody>
                             </table>
                         </div>
                     </div>
@@ -1021,6 +1070,7 @@
                                     <th>Number</th>
                                     <th>Email</th>
                                     <th>Phone</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="masterJudgesTable"></tbody>
@@ -1050,6 +1100,7 @@
                                     <th>Name</th>
                                     <th>Number</th>
                                     <th>Assignment</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="judgesTable"></tbody>
@@ -1080,6 +1131,7 @@
                                     <th>Email</th>
                                     <th>Phone</th>
                                     <th>Notes</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="masterWorkersTable"></tbody>
@@ -1120,6 +1172,7 @@
                                     <th>Name</th>
                                     <th>Role</th>
                                     <th>Phone</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="workersTable"></tbody>
@@ -1277,6 +1330,7 @@
                             <button type="button" class="secondary small" id="createAdminTestTrialButton">Create Test Trial</button>
                             <button type="button" class="secondary small" id="populateAdminScoresButton">Populate Preliminary Scores</button>
                             <button type="button" class="secondary small" id="populateAdminFinalsScoresButton">Populate Finals Scores</button>
+                            <button type="button" class="secondary small danger-button" id="removeAdminTestRecordsButton">Remove Test Database Records</button>
                         </div>
                     </div>
                     <div class="form-message compact" id="adminTestMessage"></div>
@@ -1368,33 +1422,92 @@
                 <section class="form-section" data-tab="admin" data-admin-page="Tools">
                     <div class="section-heading">
                         <h2>Backup & Transfer</h2>
-                        <p>Export browser-stored trial data, then import it on another computer after copying the program folder.</p>
+                        <p>Protect trial data, restore from backups, and build packages for another computer.</p>
                     </div>
-                    <div class="button-row">
-                        <button type="button" class="secondary small" id="enablePersistentStorageButton">Enable Protected Browser Storage</button>
-                        <button type="button" class="secondary small" id="restoreBrowserBackupButton">Restore Browser Safety Backup</button>
-                        <button type="button" class="secondary small" id="createSQLiteBackupButton">Create SQLite Backup</button>
-                        <button type="button" class="secondary small danger-button" id="restoreSQLiteBackupButton">Restore SQLite Backup</button>
-                        <button type="button" class="secondary small" id="buildPortablePackageButton">Build/Update Portable Package</button>
-                        <button type="button" class="secondary small" id="createTransferPackageButton">Create Transfer Package</button>
-                        <button type="button" class="secondary small danger-button" id="restoreTransferAppFilesButton">Restore App Files From Transfer Package</button>
-                        <button type="button" class="secondary small" id="restartServerButton">Restart App Server</button>
-                        <button type="button" class="secondary small" id="exportDataBackupButton">Export Data Backup</button>
-                        <button type="button" class="secondary small" id="importDataBackupButton">Import Data Backup</button>
-                    </div>
-                    <div class="grid two backup-restore-grid">
-                        <div class="backup-restore-note portable-status-note" id="portablePackageStatus">Portable package status will appear here in server mode.</div>
-                        <button type="button" class="secondary small" id="refreshPortableStatusButton">Refresh Portable Status</button>
-                        <label>
-                            SQLite backup to restore
-                            <select id="sqliteBackupSelect"></select>
-                        </label>
-                        <div class="backup-restore-note" id="sqliteBackupDetails">SQLite backups appear here when server mode is active.</div>
+                    <div class="backup-tool-grid">
+                        <div class="backup-tool-card primary">
+                            <h3>Recommended Backup</h3>
+                            <p>Create a SQLite restore point for the active database. This is the normal safety button before trial day, before restores, and before major edits.</p>
+                            <div class="backup-setting-row">
+                                <label>
+                                    SQLite backups to keep
+                                    <input type="number" id="backupRetentionInput" min="5" max="250" step="1" value="30">
+                                </label>
+                                <button type="button" class="secondary small" id="saveBackupRetentionButton">Save Limit</button>
+                            </div>
+                            <div class="backup-restore-note compact" id="backupRetentionNote">Newest backups are kept; older automatic backups are pruned.</div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="createSQLiteBackupButton">Create SQLite Backup</button>
+                                <button type="button" class="secondary small" id="exportDataBackupButton">Export JSON Data Backup</button>
+                            </div>
+                        </div>
+
+                        <div class="backup-tool-card">
+                            <h3>Restore Data</h3>
+                            <p>Use only when data needs recovered. SQLite restore replaces the current database after making a safety copy.</p>
+                            <div class="grid two backup-restore-grid compact">
+                                <label>
+                                    SQLite backup to restore
+                                    <select id="sqliteBackupSelect"></select>
+                                </label>
+                                <div class="backup-restore-note" id="sqliteBackupDetails">SQLite backups appear here when server mode is active.</div>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="refreshSQLiteBackupsButton">Refresh SQLite Backups</button>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small danger-button" id="restoreSQLiteBackupButton">Restore SQLite Backup</button>
+                                <button type="button" class="secondary small" id="restoreBrowserBackupButton">Restore Browser Backup</button>
+                                <button type="button" class="secondary small" id="importDataBackupButton">Import JSON Data Backup</button>
+                            </div>
+                        </div>
+
+                        <div class="backup-tool-card">
+                            <h3>Move To A New Computer</h3>
+                            <p>Build one installer zip that includes the app, current SQLite database, and a blank starter database.</p>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="createTransferPackageButton">Create Transfer Installer</button>
+                            </div>
+                        </div>
+
+                        <div class="backup-tool-card">
+                            <h3>Update Existing Install</h3>
+                            <p>Build a smaller update zip for a computer that already has Field Trial Secretary installed. It updates app files and leaves that computer's SQLite database alone.</p>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="createProgramUpdatePackageButton">Create Program Update</button>
+                                <button type="button" class="secondary small danger-button" id="restoreTransferAppFilesButton">Restore App Files</button>
+                            </div>
+                        </div>
+
+                        <div class="backup-tool-card">
+                            <h3>Portable Build Status</h3>
+                            <p>Advanced tools for rebuilding the portable executable and checking whether the bundled app is current.</p>
+                            <div class="backup-restore-note portable-status-note" id="portablePackageStatus">Portable package status will appear here in server mode.</div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="refreshPortableStatusButton">Refresh Portable Status</button>
+                                <button type="button" class="secondary small" id="buildPortablePackageButton">Build Portable EXE</button>
+                            </div>
+                        </div>
+
+                        <div class="backup-tool-card">
+                            <h3>Browser & Server Tools</h3>
+                            <p>Restart after app-file restores, or exit cleanly when trial work is done.</p>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="restartServerButton">Restart App Server</button>
+                                <button type="button" class="secondary small danger-button" id="exitAppToolsButton">Exit Application</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="form-message compact" id="storageSafetyMessage"></div>
                     <input id="importDataBackupFile" type="file" accept="application/json,.json" hidden>
                     <input id="restoreTransferAppFilesInput" type="file" accept="application/zip,.zip" hidden>
-                    <p class="field-note">Create Transfer Package builds a zip with the portable program, current SQLite data, templates, and restore notes for moving to another computer.</p>
+                    <div class="section-heading table-heading">
+                        <h2>Archive Trial</h2>
+                        <p>Final trial archiving is under Trial Wrap Up. Use this shortcut to open the archive controls for the selected trial.</p>
+                    </div>
+                    <div class="button-row">
+                        <button type="button" class="secondary small report-button" id="goToArchiveTrialButton">Go To Archive Trial</button>
+                    </div>
                 </section>
 
                 <section class="status-panel" data-tab="admin" data-admin-page="Paperwork">
@@ -1413,6 +1526,6 @@
     </main>
 
     <script src="asfa_recent_hounds.js"></script>
-    <script src="script.js?v=20260629-entry-stale-guide"></script>
+    <script src="script.js?v=20260712-exit-button"></script>
 </body>
 </html>

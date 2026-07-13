@@ -17,9 +17,11 @@ const buttonHelpText = {
     markSeparationReviewedButton: 'Marks owner separation as reviewed for this trial. Use this after auto-marking or manually checking same-owner hounds before the preliminary draw.',
     printDrawSheetButton: 'Creates the official posted draw order sheet for the current preliminary draw.',
     printJudgeSheetsButton: 'Creates preliminary judge sheets for the courses and judges assigned in the run plan.',
+    printJudgesMapButton: 'Prints a breed and stake map showing course breakdowns and judge assignments in running order.',
     createAdminTestTrialButton: 'Creates a realistic test trial with hounds, judges, workers, and a starter run plan.',
     populateAdminScoresButton: 'Fills preliminary Judge 1 and Judge 2 scores for testing, following the judges assigned in the run plan.',
     populateAdminFinalsScoresButton: 'Fills finals Judge 1 and Judge 2 scores for testing, then recomputes combined scores and placements.',
+    removeAdminTestRecordsButton: 'Removes generated test hounds, judges, and workers from the reusable databases without deleting any trials.',
     redrawAllRunoffsButton: 'Builds or redraws all current tie runoff and BOB draws, assigning course numbers and blanket colors.',
     printRunoffDrawSheetButton: 'Prints the runoff running order sheet after colors have been drawn.',
     printAllRunoffJudgeSheetsButton: 'Prints judge sheets for the current runoff order after colors have been drawn.',
@@ -29,6 +31,21 @@ const buttonHelpText = {
     setSelectedActiveButton: 'Locks the selected trial as the working trial. Unlock it before switching to a different trial.',
     newTrialButton: 'Starts a new trial setup record.',
     saveTrialButton: 'Saves the current trial details.',
+    createSQLiteBackupButton: 'Creates a restore point of the current SQLite database. Use this before trial day, before restoring, and before major changes.',
+    saveBackupRetentionButton: 'Saves how many automatic SQLite backups are kept before older backups are pruned.',
+    exportDataBackupButton: 'Exports a JSON copy of the trial data for an extra portable backup. SQLite backup is preferred when server mode is available.',
+    refreshSQLiteBackupsButton: 'Reloads the SQLite backup list from the backups folder.',
+    restoreSQLiteBackupButton: 'Restores the selected SQLite backup after making a safety copy of the current database.',
+    restoreBrowserBackupButton: 'Restores the latest protected browser safety backup. Use only if SQLite data is missing or unavailable.',
+    importDataBackupButton: 'Imports a JSON data backup and replaces the current browser/app data after confirmation.',
+    createTransferPackageButton: 'Builds one installer zip for a new computer, including the app, current SQLite database, and a blank starter database.',
+    createProgramUpdatePackageButton: 'Builds a smaller update zip for a computer that already has Field Trial Secretary installed. It leaves that computer’s database alone.',
+    restoreTransferAppFilesButton: 'Restores program files and templates from a transfer package without replacing the current SQLite database.',
+    refreshPortableStatusButton: 'Checks whether the portable executable package is current.',
+    buildPortablePackageButton: 'Rebuilds the portable executable only. Most users should use Create Transfer Installer or Create Program Update instead.',
+    restartServerButton: 'Restarts the local app server. Use after restoring app files or rebuilding portable packages.',
+    exitAppButton: 'Saves the current data, stops the local app server, and tells you when it is safe to close the browser tab.',
+    exitAppToolsButton: 'Saves the current data, stops the local app server, and tells you when it is safe to close the browser tab.',
 };
 
 const form = document.getElementById('trialForm');
@@ -63,7 +80,11 @@ const archiveTrialStatus = document.getElementById('archiveTrialStatus');
 const adminTestMessage = document.getElementById('adminTestMessage');
 const officialFormsMessage = document.getElementById('officialFormsMessage');
 const storageSafetyMessage = document.getElementById('storageSafetyMessage');
+const appVersionBadge = document.getElementById('appVersionBadge');
 const saveStatusBadge = document.getElementById('saveStatusBadge');
+const databaseIntegrityStatusBadge = document.getElementById('databaseIntegrityStatusBadge');
+const startupSplash = document.getElementById('startupSplash');
+const startupSplashFrame = document.getElementById('startupSplashFrame');
 const sqliteBackupSelect = document.getElementById('sqliteBackupSelect');
 const sqliteBackupDetails = document.getElementById('sqliteBackupDetails');
 const portablePackageStatus = document.getElementById('portablePackageStatus');
@@ -98,6 +119,22 @@ const breedOptions = [
     ['WH', 'Whippet'],
     ['OTHER', 'Other'],
 ];
+
+const startupSplashFrames = [
+    'assets/startup/startup-01.jpg',
+    'assets/startup/startup-02.jpg',
+    'assets/startup/startup-03.jpg',
+    'assets/startup/startup-04.jpg',
+    'assets/startup/startup-05.jpg',
+    'assets/startup/startup-06.jpg',
+    'assets/startup/startup-07.jpg',
+    'assets/startup/startup-08.jpg',
+    'assets/startup/startup-09.jpg',
+    'assets/startup/startup-10.jpg',
+];
+let startupSplashTimer = null;
+let startupSplashStartedAt = 0;
+const startupSplashMinimumMs = 2600;
 
 const lciDivisions = ['LCI Small', 'LCI Large', 'LCI Sighthound Mix'];
 const lciStakes = ['Open', 'Excellent', 'Veteran'];
@@ -376,6 +413,10 @@ const defaultFormAlignment = {
         stakesRunoffLabelY: 159,
         stakesRunoffCodeX: 640,
         stakesRunoffCodeY: 169,
+        secondRunoffLabelX: 682,
+        secondRunoffLabelY: 159,
+        secondRunoffCodeX: 682,
+        secondRunoffCodeY: 169,
         bobRunoffLabelX: 724,
         bobRunoffLabelY: 159,
         bobRunoffCodeX: 724,
@@ -541,6 +582,14 @@ const defaultFormAlignment = {
         circleWeight: 1.4,
         globalYAdjust: 0,
         copyOffsetX: 396,
+        trialClubX: 30,
+        trialClubY: 58,
+        trialDateX: 30,
+        trialDateY: 72,
+        trialSecretaryX: 205,
+        trialSecretaryY: 58,
+        trialSecretaryEmailX: 205,
+        trialSecretaryEmailY: 72,
         breedX: 54,
         breedY: 82,
         callNameX: 78,
@@ -602,6 +651,14 @@ const defaultFormAlignment = {
         circleWeight: 1.4,
         globalYAdjust: 0,
         copyOffsetX: 396,
+        trialClubX: 30,
+        trialClubY: 64,
+        trialDateX: 30,
+        trialDateY: 78,
+        trialSecretaryX: 205,
+        trialSecretaryY: 64,
+        trialSecretaryEmailX: 205,
+        trialSecretaryEmailY: 78,
         breedX: 54,
         breedY: 88,
         callNameX: 78,
@@ -732,7 +789,7 @@ let deletedTrials = loadJson(deletedTrialsKey);
 let selectedTrialId = localStorage.getItem(activeKey) || (trials[0] && trials[0].id) || '';
 let currentTab = 'setup';
 let currentScoringPage = 'Prelim Scoring';
-let currentWrapUpPage = 'ASFA Record Packet';
+let currentWrapUpPage = 'ASFA Secretary Report';
 let currentAdminPage = 'Judges & Workers';
 let editingHoundId = '';
 let editingEntryId = '';
@@ -747,9 +804,16 @@ let sqliteLoadComplete = false;
 let lastSQLiteSaveAt = '';
 let lastBrowserSaveAt = '';
 let saveStatusState = 'checking';
+let databaseIntegrityStatus = { status: 'checking', checkedAt: '', messages: [] };
+let appVersionInfo = { version: '0.0.0', channel: 'local', releaseDate: '' };
 let sqliteBackupRows = [];
+let sqliteBackupListLoaded = false;
+let sqliteBackupDirectory = '';
+let backupSettingsLoaded = false;
+let backupSettings = { maxDbBackups: 30 };
 let portableStatusLoaded = false;
 let portableStatusPayload = null;
+let serverRuntimeInfo = { root: '', isPortableExe: false, canBuildPortable: false };
 let adminBreedPlan = [];
 let stagedJotformEntries = [];
 let stagedJotformFiles = [];
@@ -998,6 +1062,8 @@ function makeBackupSnapshot() {
     return {
         app: 'Field Trial Secretary',
         version: 1,
+        appVersion: appVersionInfo.version || '0.0.0',
+        appVersionInfo,
         exportedAt: new Date().toISOString(),
         data: {
             trials,
@@ -1030,6 +1096,65 @@ async function apiRequest(path, options = {}) {
         throw new Error(payload.error || `Request failed: ${path}`);
     }
     return payload;
+}
+
+function renderAppVersion() {
+    if (!appVersionBadge) {
+        return;
+    }
+    const version = appVersionInfo.version || '0.0.0';
+    const channel = appVersionInfo.channel && appVersionInfo.channel !== 'local' ? ` ${appVersionInfo.channel}` : '';
+    appVersionBadge.textContent = `v${version}${channel}`;
+    const releaseDate = appVersionInfo.releaseDate ? ` | ${appVersionInfo.releaseDate}` : '';
+    appVersionBadge.title = `${appVersionInfo.name || 'Field Trial Secretary'} ${version}${releaseDate}`;
+}
+
+async function loadAppVersion() {
+    try {
+        const response = await fetch(isLocalServerMode() ? '/api/version' : 'version.json', { cache: 'no-store' });
+        const payload = await response.json();
+        const info = payload.appVersion || payload;
+        if (info && typeof info === 'object') {
+            appVersionInfo = { ...appVersionInfo, ...info };
+        }
+    } catch {
+        // Keep fallback version when running from an older package or blocked file access.
+    }
+    renderAppVersion();
+}
+
+function hideStartupSplash() {
+    if (!startupSplash) {
+        return;
+    }
+    const elapsed = startupSplashStartedAt ? Date.now() - startupSplashStartedAt : startupSplashMinimumMs;
+    const waitForMinimum = Math.max(0, startupSplashMinimumMs - elapsed);
+    window.setTimeout(() => {
+        if (startupSplashTimer) {
+            window.clearInterval(startupSplashTimer);
+            startupSplashTimer = null;
+        }
+        startupSplash.classList.add('hidden');
+        window.setTimeout(() => {
+            startupSplash.remove();
+        }, 360);
+    }, waitForMinimum);
+}
+
+function startStartupSplashAnimation() {
+    if (!startupSplash || !startupSplashFrame || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return;
+    }
+    startupSplashStartedAt = Date.now();
+    startupSplashFrames.forEach((src) => {
+        const image = new Image();
+        image.src = src;
+    });
+    let frameIndex = 0;
+    startupSplashTimer = window.setInterval(() => {
+        frameIndex = (frameIndex + 1) % startupSplashFrames.length;
+        startupSplashFrame.src = startupSplashFrames[frameIndex];
+    }, 145);
 }
 
 function setSaveStatus(state, detail = '') {
@@ -1083,6 +1208,33 @@ function renderSaveStatus() {
     saveStatusBadge.textContent = 'SQLite protected';
 }
 
+function renderDatabaseIntegrityStatus() {
+    if (!databaseIntegrityStatusBadge) {
+        return;
+    }
+    const status = databaseIntegrityStatus.status || 'checking';
+    databaseIntegrityStatusBadge.className = `database-integrity-status ${status}`;
+    if (status === 'ok') {
+        databaseIntegrityStatusBadge.textContent = 'Database OK';
+        databaseIntegrityStatusBadge.title = `SQLite integrity check passed${databaseIntegrityStatus.checkedAt ? ` at ${formatTimestamp(databaseIntegrityStatus.checkedAt)}` : ''}.`;
+        return;
+    }
+    if (status === 'error') {
+        databaseIntegrityStatusBadge.textContent = 'Database check failed';
+        databaseIntegrityStatusBadge.title = Array.isArray(databaseIntegrityStatus.messages) && databaseIntegrityStatus.messages.length
+            ? databaseIntegrityStatus.messages.join(' | ')
+            : 'SQLite integrity check failed.';
+        return;
+    }
+    if (status === 'warning') {
+        databaseIntegrityStatusBadge.textContent = 'Database check unavailable';
+        databaseIntegrityStatusBadge.title = 'The SQLite integrity check could not run. Use Admin Tools backups if needed.';
+        return;
+    }
+    databaseIntegrityStatusBadge.textContent = 'Checking database...';
+    databaseIntegrityStatusBadge.title = 'Running SQLite integrity check.';
+}
+
 function queueSQLiteSave() {
     lastBrowserSaveAt = new Date().toISOString();
     if (!sqliteModeAvailable || !sqliteLoadComplete) {
@@ -1121,6 +1273,12 @@ async function loadFromSQLiteIfAvailable() {
     }
     try {
         const payload = await apiRequest('/api/state');
+        try {
+            const status = await apiRequest('/api/status');
+            serverRuntimeInfo = { ...serverRuntimeInfo, ...(status.runtime || {}) };
+        } catch {
+            serverRuntimeInfo = { root: '', isPortableExe: false, canBuildPortable: false };
+        }
         sqliteModeAvailable = true;
         if (payload.state) {
             applyBackupSnapshot(payload.state);
@@ -1245,23 +1403,6 @@ function applyBackupSnapshot(backup) {
     queueSQLiteSave();
 }
 
-async function enablePersistentStorage() {
-    if (!navigator.storage || !navigator.storage.persist) {
-        showMessage(storageSafetyMessage, 'This browser does not support persistent storage requests. Use Export Data Backup during the trial.', 'warning');
-        return;
-    }
-
-    const persisted = await navigator.storage.persist();
-    await writeBrowserSafetyBackup();
-    showMessage(
-        storageSafetyMessage,
-        persisted
-            ? 'Protected browser storage is enabled and a safety backup was written.'
-            : 'A browser safety backup was written, but this browser did not grant protected storage. Use Export Data Backup often.',
-        persisted ? 'success' : 'warning'
-    );
-}
-
 async function restoreBrowserSafetyBackup() {
     const backup = await readBrowserSafetyBackup();
     if (!backup) {
@@ -1333,7 +1474,9 @@ function renderSQLiteBackupList() {
         option.textContent = 'No SQLite backups found';
         sqliteBackupSelect.appendChild(option);
         if (sqliteBackupDetails) {
-            sqliteBackupDetails.textContent = 'Create a SQLite backup to make a restore point.';
+            sqliteBackupDetails.textContent = sqliteBackupDirectory
+                ? `No SQLite backups found in ${sqliteBackupDirectory}. Create a backup to make a restore point.`
+                : 'Create a SQLite backup to make a restore point.';
         }
         return;
     }
@@ -1361,8 +1504,20 @@ function renderPortableStatus(status = null) {
     if (!portablePackageStatus) {
         return;
     }
+    const buildButton = document.getElementById('buildPortablePackageButton');
+    if (buildButton) {
+        buildButton.disabled = Boolean(serverRuntimeInfo.isPortableExe) || (sqliteModeAvailable && serverRuntimeInfo.canBuildPortable === false);
+        buildButton.title = buildButton.disabled
+            ? 'Build portable packages from the source folder, not from inside the portable EXE.'
+            : '';
+    }
     if (!sqliteModeAvailable) {
         portablePackageStatus.textContent = 'Portable status requires SQLite/server mode.';
+        portablePackageStatus.className = 'backup-restore-note portable-status-note warning';
+        return;
+    }
+    if (serverRuntimeInfo.isPortableExe) {
+        portablePackageStatus.textContent = 'Running from the portable EXE. Portable EXE builds must be created from the source folder on the build computer, not from inside this portable copy.';
         portablePackageStatus.className = 'backup-restore-note portable-status-note warning';
         return;
     }
@@ -1372,6 +1527,9 @@ function renderPortableStatus(status = null) {
         return;
     }
     const parts = [status.message || 'Portable status checked.'];
+    if (status.appVersion?.version) {
+        parts.push(`Version: ${status.appVersion.version}.`);
+    }
     if (status.zipPath) {
         parts.push(`Zip: ${status.zipPath}`);
     }
@@ -1409,11 +1567,16 @@ async function buildPortablePackage() {
         showMessage(storageSafetyMessage, 'Portable builds require SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
         return;
     }
+    if (serverRuntimeInfo.isPortableExe || !serverRuntimeInfo.canBuildPortable) {
+        showMessage(storageSafetyMessage, 'This copy is running from the portable EXE. To build a new portable package, close this app and run the source-folder app from C:\\Users\\johns\\Documents\\Field Trial Secretary, then use Build Portable EXE there.', 'warning');
+        renderPortableStatus(portableStatusPayload);
+        return;
+    }
     const proceed = await showTrialConfirm({
         title: 'Build Portable Package',
         eyebrow: 'Update EXE',
-        message: 'Build a fresh portable EXE and zip from the current program files? This can take a few minutes. The current SQLite data will be saved first.',
-        primaryText: 'Build Portable',
+        message: 'Build only the portable EXE folder and zip from the current program files? Use Build Transfer Installer for the simpler package to move to another computer.',
+        primaryText: 'Build EXE Only',
     });
     if (!proceed) {
         return;
@@ -1434,17 +1597,103 @@ async function buildPortablePackage() {
 
 async function refreshSQLiteBackupList() {
     if (!sqliteModeAvailable || !sqliteBackupSelect) {
+        sqliteBackupListLoaded = true;
         renderSQLiteBackupList();
         return;
     }
     try {
         const payload = await apiRequest('/api/database-backups');
         sqliteBackupRows = Array.isArray(payload.backups) ? payload.backups : [];
+        sqliteBackupDirectory = payload.backupDir || '';
+        if (payload.settings) {
+            backupSettings = { ...backupSettings, ...payload.settings };
+            backupSettingsLoaded = true;
+            renderBackupSettings();
+        }
+        sqliteBackupListLoaded = true;
         renderSQLiteBackupList();
     } catch (error) {
         sqliteBackupRows = [];
+        sqliteBackupListLoaded = true;
         renderSQLiteBackupList();
         showMessage(storageSafetyMessage, `Could not load SQLite backups: ${error.message}`, 'warning');
+    }
+}
+
+function renderBackupSettings() {
+    const input = document.getElementById('backupRetentionInput');
+    const note = document.getElementById('backupRetentionNote');
+    if (input) {
+        input.value = String(backupSettings.maxDbBackups || 30);
+    }
+    if (note) {
+        note.textContent = `${sqliteBackupRows.length} SQLite backup${sqliteBackupRows.length === 1 ? '' : 's'} found. Keeping the newest ${backupSettings.maxDbBackups || 30}.`;
+    }
+}
+
+async function refreshBackupSettings() {
+    if (!sqliteModeAvailable) {
+        renderBackupSettings();
+        return;
+    }
+    try {
+        const payload = await apiRequest('/api/backup-settings');
+        backupSettings = { ...backupSettings, ...(payload.settings || {}) };
+        backupSettingsLoaded = true;
+        renderBackupSettings();
+    } catch (error) {
+        showMessage(storageSafetyMessage, `Could not load backup settings: ${error.message}`, 'warning');
+    }
+}
+
+async function refreshDatabaseIntegrityStatus(showResult = false) {
+    if (!sqliteModeAvailable) {
+        databaseIntegrityStatus = { status: 'warning', checkedAt: '', messages: ['SQLite/server mode is not active.'] };
+        renderDatabaseIntegrityStatus();
+        return;
+    }
+    databaseIntegrityStatus = { status: 'checking', checkedAt: '', messages: [] };
+    renderDatabaseIntegrityStatus();
+    try {
+        const payload = await apiRequest('/api/database-integrity');
+        databaseIntegrityStatus = payload.integrity || { status: 'warning', checkedAt: '', messages: ['No integrity status returned.'] };
+        renderDatabaseIntegrityStatus();
+        if (showResult) {
+            showMessage(
+                storageSafetyMessage,
+                databaseIntegrityStatus.status === 'ok' ? 'SQLite integrity check passed.' : 'SQLite integrity check needs attention.',
+                databaseIntegrityStatus.status === 'ok' ? 'success' : 'warning'
+            );
+        }
+    } catch (error) {
+        databaseIntegrityStatus = { status: 'warning', checkedAt: '', messages: [error.message] };
+        renderDatabaseIntegrityStatus();
+        if (showResult) {
+            showMessage(storageSafetyMessage, `SQLite integrity check failed: ${error.message}`, 'warning');
+        }
+    }
+}
+
+async function saveBackupRetention() {
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'SQLite mode is not active. Start the app server to save backup settings.', 'warning');
+        return;
+    }
+    const input = document.getElementById('backupRetentionInput');
+    const maxDbBackups = Number(input?.value || 30);
+    try {
+        const payload = await apiRequest('/api/backup-settings', {
+            method: 'POST',
+            body: JSON.stringify({ maxDbBackups }),
+        });
+        backupSettings = { ...backupSettings, ...(payload.settings || {}) };
+        sqliteBackupRows = Array.isArray(payload.backups) ? payload.backups : sqliteBackupRows;
+        backupSettingsLoaded = true;
+        renderBackupSettings();
+        renderSQLiteBackupList();
+        showMessage(storageSafetyMessage, `SQLite backup limit saved. Keeping newest ${backupSettings.maxDbBackups}.`, 'success');
+    } catch (error) {
+        showMessage(storageSafetyMessage, `Backup limit could not be saved: ${error.message}`, 'warning');
     }
 }
 
@@ -1527,10 +1776,19 @@ async function restoreTransferAppFiles(file) {
 
 async function createTransferPackage() {
     if (!sqliteModeAvailable) {
-        showMessage(storageSafetyMessage, 'Transfer packages require SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
+        showMessage(storageSafetyMessage, 'Transfer installers require SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
         return;
     }
-    showMessage(storageSafetyMessage, 'Creating transfer package. This may take a moment if the portable program is included.', 'warning');
+    const proceed = await showTrialConfirm({
+        title: 'Build Transfer Installer',
+        eyebrow: 'Move To Another Computer',
+        message: 'Build one installer zip with the current program, current SQLite database, and a blank starter database? The new computer will not need Python.',
+        primaryText: 'Build Installer',
+    });
+    if (!proceed) {
+        return;
+    }
+    showMessage(storageSafetyMessage, 'Building transfer installer. This can take a few minutes because it may rebuild the portable EXE.', 'warning');
     try {
         await saveToSQLite();
         const response = await fetch('/api/transfer-package', {
@@ -1539,9 +1797,9 @@ async function createTransferPackage() {
             body: JSON.stringify({ state: makeBackupSnapshot() }),
         });
         if (!response.ok) {
-            let message = 'Transfer package could not be created.';
+            let message = 'Transfer installer could not be created.';
             if (response.status === 404) {
-                message = 'Transfer package support is not loaded yet. Restart the app server, refresh the page, then try again.';
+                message = 'Transfer installer support is not loaded yet. Restart the app server, refresh the page, then try again.';
                 throw new Error(message);
             }
             try {
@@ -1555,7 +1813,7 @@ async function createTransferPackage() {
         const blob = await response.blob();
         const disposition = response.headers.get('Content-Disposition') || '';
         const match = disposition.match(/filename="([^"]+)"/);
-        const filename = match ? match[1] : `field-trial-secretary-transfer-${new Date().toISOString().slice(0, 10)}.zip`;
+        const filename = match ? match[1] : `field-trial-secretary-installer-${new Date().toISOString().slice(0, 10)}.zip`;
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -1565,9 +1823,60 @@ async function createTransferPackage() {
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         const archivePath = response.headers.get('X-Archive-Path');
-        showMessage(storageSafetyMessage, archivePath ? `Transfer package created: ${archivePath}` : 'Transfer package created and downloaded.', 'success');
+        showMessage(storageSafetyMessage, archivePath ? `Transfer installer created: ${archivePath}` : 'Transfer installer created and downloaded.', 'success');
     } catch (error) {
-        showMessage(storageSafetyMessage, error.message || 'Transfer package could not be created.', 'warning');
+        showMessage(storageSafetyMessage, error.message || 'Transfer installer could not be created.', 'warning');
+    }
+}
+
+async function createProgramUpdatePackage() {
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'Program update packages require SQLite/server mode. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
+        return;
+    }
+    const proceed = await showTrialConfirm({
+        title: 'Create Program Update Package',
+        eyebrow: 'Update Existing Computer',
+        message: 'Build a smaller update zip for a computer that already has Field Trial Secretary installed? This package updates program files only and does not include the live SQLite database.',
+        primaryText: 'Build Update',
+    });
+    if (!proceed) {
+        return;
+    }
+    showMessage(storageSafetyMessage, 'Building program update package. This may rebuild the portable EXE first.', 'warning');
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/program-update-package', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+        if (!response.ok) {
+            let message = 'Program update package could not be created.';
+            try {
+                const payload = await response.json();
+                message = payload.error || message;
+            } catch {
+                // Keep generic message.
+            }
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : `field-trial-secretary-program-update-${new Date().toISOString().slice(0, 10)}.zip`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const archivePath = response.headers.get('X-Archive-Path');
+        showMessage(storageSafetyMessage, archivePath ? `Program update package created: ${archivePath}` : 'Program update package created and downloaded.', 'success');
+    } catch (error) {
+        showMessage(storageSafetyMessage, error.message || 'Program update package could not be created.', 'warning');
     }
 }
 
@@ -1595,6 +1904,61 @@ async function restartAppServer() {
     } catch (error) {
         showMessage(storageSafetyMessage, `Restart failed: ${error.message}`, 'warning');
     }
+}
+
+function showAppClosedScreen(message) {
+    const existing = document.getElementById('appClosedScreen');
+    if (existing) {
+        existing.querySelector('p').textContent = message;
+        return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'app-closed-screen';
+    overlay.id = 'appClosedScreen';
+    overlay.innerHTML = `
+        <div>
+            <h2>Field Trial Secretary Is Closed</h2>
+            <p></p>
+            <strong>You can close this browser tab.</strong>
+        </div>
+    `;
+    overlay.querySelector('p').textContent = message;
+    document.body.appendChild(overlay);
+}
+
+async function exitAppServer() {
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage || adminTestMessage, 'This browser view is not connected to the local app server, so the app cannot close itself here. Close this browser tab when you are finished.', 'warning');
+        return;
+    }
+    const exit = await showTrialConfirm({
+        title: 'Exit Field Trial Secretary',
+        eyebrow: 'Local Server',
+        message: 'Save your current data and close the local Field Trial Secretary app server now?',
+        primaryText: 'Save and Exit',
+    });
+    if (!exit) {
+        return;
+    }
+    try {
+        await saveToSQLite();
+        const payload = await apiRequest('/api/shutdown', { method: 'POST', body: '{}' });
+        showAppClosedScreen(payload.message || 'Field Trial Secretary has stopped.');
+    } catch (error) {
+        showMessage(storageSafetyMessage || adminTestMessage, `Exit failed: ${error.message}`, 'warning');
+    }
+}
+
+function goToArchiveTrialSection() {
+    currentWrapUpPage = 'Archive Trial';
+    switchTab('wrapup');
+    requestAnimationFrame(() => {
+        const section = [...document.querySelectorAll('.form-section[data-tab="wrapup"]')]
+            .find((candidate) => candidate.querySelector('h2, h3')?.textContent === 'Archive Trial');
+        if (section) {
+            scrollToElement(section, { offset: scrollOffset() + 10 });
+        }
+    });
 }
 
 function exportDataBackup() {
@@ -1678,12 +2042,14 @@ function readForm() {
     data.printStatus = existing && existing.printStatus ? existing.printStatus : {};
     data.printStatusFingerprints = existing && existing.printStatusFingerprints ? existing.printStatusFingerprints : {};
     data.ownerSeparationReviewedAt = existing && existing.ownerSeparationReviewedAt ? existing.ownerSeparationReviewedAt : '';
+    data.mixedStakeBreeds = existing && Array.isArray(existing.mixedStakeBreeds) ? existing.mixedStakeBreeds : [];
     data.premiumJudgeAssignments = existing && existing.premiumJudgeAssignments ? existing.premiumJudgeAssignments : null;
     data.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
     data.archivedAt = existing && existing.archivedAt ? existing.archivedAt : '';
     data.archivePackageName = existing && existing.archivePackageName ? existing.archivePackageName : '';
     data.archivePackagePath = existing && existing.archivePackagePath ? existing.archivePackagePath : '';
     data.archiveUnlockedAt = existing && existing.archiveUnlockedAt ? existing.archiveUnlockedAt : '';
+    data.paperworkSubmittedAt = existing && existing.paperworkSubmittedAt ? existing.paperworkSubmittedAt : '';
 
     return data;
 }
@@ -1752,7 +2118,8 @@ function renderSecretaryFeeSummary(trial) {
 }
 
 function calculateSecretaryFees(trial) {
-    const breedEntries = (trial.entries || []).length;
+    const dismissedEntryIds = secretaryDismissedEntryIds(trial || {});
+    const breedEntries = (trial.entries || []).filter((entry) => secretaryEntryCountsForPerCapita(entry, dismissedEntryIds)).length;
     const rate = Number(trial.secretaryPerCapitaRate || 4);
     const specialTotal = positiveNumber(trial.secretarySpecialBreederCount)
         + positiveNumber(trial.secretarySpecialKennelCount)
@@ -1772,6 +2139,74 @@ function calculateSecretaryFees(trial) {
         paid,
         remaining: Math.max(0, totalDue - paid),
     };
+}
+
+function secretaryPaymentStatus(trial) {
+    const summary = calculateSecretaryFees(trial || {});
+    const checkPaid = positiveNumber((trial || {}).secretaryCheckAmount);
+    const paypalPaid = positiveNumber((trial || {}).secretaryPaypalAmount);
+    const paypalId = String((trial || {}).secretaryPaypalTransactionId || '').trim();
+    const paidEnough = summary.totalDue > 0 && summary.remaining <= 0.005;
+    const hasPaymentMethod = checkPaid > 0 || paypalPaid > 0;
+    if (!hasPaymentMethod || !paidEnough) {
+        return {
+            done: false,
+            attention: true,
+            detail: `Pay trial fees to treasurer@asfa.org via PayPal or record a check payment. Remaining: ${currency(summary.remaining)}.`,
+        };
+    }
+    if (paypalPaid > 0 && !paypalId) {
+        return {
+            done: false,
+            attention: true,
+            detail: 'PayPal amount is entered. Add the PayPal transaction ID before the Secretary Report is complete.',
+        };
+    }
+    return {
+        done: true,
+        attention: false,
+        detail: checkPaid > 0
+            ? `Trial fees are marked paid by check: ${currency(checkPaid)}.`
+            : `Trial fees are marked paid by PayPal: ${currency(paypalPaid)}.`,
+    };
+}
+
+function secretaryEntryCountsForPerCapita(entry, dismissedEntryIds = new Set()) {
+    const status = clean(entry.rollCallStatus);
+    const notes = clean(entry.rollCallNotes);
+    if (['LAME', 'INSEASON', 'SEASON', 'BREEDDQ', 'BREEDDISQUALIFIED', 'SCRATCHED', 'SCRATCH'].includes(status)) {
+        return false;
+    }
+    if (['LAME', 'INSEASON', 'SEASON', 'BREEDDQ', 'BREEDDISQUALIFIED', 'SCRATCHED', 'SCRATCH'].some((value) => notes.includes(value))) {
+        return false;
+    }
+    return !dismissedEntryIds.has(String(entry.id || ''));
+}
+
+function secretaryDismissedEntryIds(trial) {
+    const dismissed = new Set();
+    (((trial.preliminaryDraw || {}).groups || [])).forEach((group) => {
+        (group.courses || []).forEach((course) => {
+            (course.hounds || []).forEach((hound) => {
+                if (rowOutcomeIsDismissed(hound.prelimOutcome)) {
+                    dismissed.add(String(hound.entryId || ''));
+                }
+            });
+        });
+        (((group.finalDraw || {}).courses || [])).forEach((course) => {
+            (course.hounds || []).forEach((hound) => {
+                if (rowOutcomeIsDismissed(hound.finalOutcome)) {
+                    dismissed.add(String(hound.entryId || ''));
+                }
+            });
+        });
+    });
+    dismissed.delete('');
+    return dismissed;
+}
+
+function rowOutcomeIsDismissed(outcome) {
+    return clean(outcome) === 'DIS' || clean(outcome) === 'DISMISSED';
 }
 
 function positiveNumber(value) {
@@ -1817,8 +2252,12 @@ function renderAdminTools() {
     renderAdminBreedPlan();
     renderAdminDeleteTrials();
     renderDeletedTrials();
+    renderBackupSettings();
     renderSQLiteBackupList();
-    if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && sqliteBackupRows.length === 0) {
+    if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !backupSettingsLoaded) {
+        refreshBackupSettings();
+    }
+    if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !sqliteBackupListLoaded) {
         refreshSQLiteBackupList();
     }
     if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !portableStatusLoaded) {
@@ -2359,6 +2798,17 @@ function scrollToWorkflowSection(step) {
         });
     }
     scrollToElement(section, { offset: scrollOffset() + 10 });
+    if (step.targetSelector) {
+        requestAnimationFrame(() => {
+            const target = document.querySelector(step.targetSelector);
+            if (target) {
+                scrollToElement(target, { offset: scrollOffset() + 18 });
+                if (typeof target.focus === 'function') {
+                    target.focus({ preventScroll: true });
+                }
+            }
+        });
+    }
 }
 
 function stepStatus(done, ready) {
@@ -2554,11 +3004,12 @@ function trialGuideSteps(trial) {
     const bifDone = bifScoringComplete(trial);
 
     const steps = [
-        { id: 'trial-set', label: 'Trial Set', tab: 'setup', sectionTitle: 'Event', status: stepStatus(trialBasicsComplete(trial), hasTrial), detail: 'Enter the trial name, club, association, and dates.', action: 'Go To Setup' },
-        { id: 'entries-set', label: 'Entries Set', tab: 'entries', sectionTitle: 'Trial Entries', status: stepStatus(entriesDone, trialBasicsComplete(trial)), detail: entriesDone ? `${(trial.entries || []).length} entries are in this trial.` : 'Add or import the hounds running in this trial.', action: 'Go To Entries' },
+        { id: 'trial-set', label: 'Trial Info', tab: 'setup', sectionTitle: 'Event', status: stepStatus(trialBasicsComplete(trial), hasTrial), detail: 'Enter the trial name, club, association, and dates.', action: 'Go To Setup' },
+        { id: 'entries-set', label: 'Hound Entry', tab: 'entries', sectionTitle: 'Trial Entries', status: stepStatus(entriesDone, trialBasicsComplete(trial)), detail: entriesDone ? `${(trial.entries || []).length} entries are in this trial.` : 'Add or import the hounds running in this trial.', action: 'Go To Entries' },
         { id: 'running-order-assignments', label: 'Running Order & Assignments', tab: 'runplan', sectionTitle: 'Running Order & Assignments', status: attentionStatus(runDone, entriesDone, runDone && entriesStaleForRunPlan), detail: runDone && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Build from entries again before printing or drawing.' : (runDone ? 'Running order and assignment rows are set.' : 'Set breed running order, judges, lure operators, and huntmasters.'), action: 'Go To Running Order' },
+        { id: 'print-roll-call-sheet', label: 'Print Roll Call Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', targetSelector: '#printRollCallButton', status: attentionStatus(printStatus(trial, 'rollCallSheet'), entriesDone, rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan)), detail: rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan) ? 'Entries changed after the roll call sheet was printed. Reprint the roll call sheet for the current entry list.' : (printStatus(trial, 'rollCallSheet') ? 'Roll call sheet has been printed or marked printed.' : 'Print the roll call sheet before checking in hounds at roll call.'), action: 'Go To Roll Call Sheet' },
         { id: 'worker-sheet', label: 'Worker Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', status: attentionStatus(printStatus(trial, 'workerSheet'), runDone && !entriesStaleForRunPlan, workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan)), detail: workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan) ? 'Entries changed after the worker sheet was printed. Rebuild Running Order if needed, then print the worker sheet again.' : (printStatus(trial, 'workerSheet') ? 'Worker sheet has been printed or marked printed.' : 'Print the worker sheet after running order and assignments are ready.'), action: 'Go To Worker Sheet' },
-        { id: 'roll-call', label: 'Roll Call', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: attentionStatus(rollDone, entriesDone, rollDone && (entriesStaleForRunPlan || rollCallSheetStale)), detail: rollDone && (entriesStaleForRunPlan || rollCallSheetStale) ? 'Entries changed after setup was built. Review roll call for the current entry list.' : (rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.'), action: 'Go To Roll Call' },
+        { id: 'roll-call', label: 'Roll Call Check In', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: attentionStatus(rollDone, entriesDone, rollDone && (entriesStaleForRunPlan || rollCallSheetStale)), detail: rollDone && (entriesStaleForRunPlan || rollCallSheetStale) ? 'Entries changed after setup was built. Review roll call for the current entry list.' : (rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.'), action: 'Go To Roll Call' },
         { id: 'separate-hounds', label: 'Separate Hounds', tab: 'rollcall', sectionTitle: 'Owner Separation', status: attentionStatus(entriesDone && ownerStatus.done, entriesDone, entriesDone && ownerStatus.done && entriesStaleForRunPlan), detail: entriesDone && ownerStatus.done && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Review owner separation again before drawing.' : ownerStatus.detail, action: 'Go To Separation' },
         { id: 'prelim-draw', label: 'Preliminary Draw', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(prelimDrawDone, rollDone && runDone && !entriesStaleForRunPlan, prelimDrawDone && (entriesStaleForRunPlan || entriesStaleForPrelimDraw)), detail: prelimDrawDone && (entriesStaleForRunPlan || entriesStaleForPrelimDraw) ? 'Entries or roll call changed after the preliminary draw was built. Rebuild before scoring starts.' : (prelimDrawDone ? 'Preliminary courses and blanket colors are built.' : 'Build the randomized preliminary draw after roll call and running order are ready.'), action: 'Go To Draw' },
         { id: 'print-draw', label: 'Print Draw Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(printStatus(trial, 'prelimDrawSheet'), prelimDrawDone && !entriesStaleForPrelimDraw, prelimDrawSheetStale || (printStatus(trial, 'prelimDrawSheet') && entriesStaleForPrelimDraw)), detail: prelimDrawSheetStale || (printStatus(trial, 'prelimDrawSheet') && entriesStaleForPrelimDraw) ? 'Entries changed after draw sheets were printed. Rebuild/reprint the draw sheets.' : (printStatus(trial, 'prelimDrawSheet') ? 'Preliminary draw sheets have been printed or marked printed.' : 'Print the posted draw order sheet for the fancy.'), action: 'Go To Draw Sheets' },
@@ -2580,10 +3031,78 @@ function trialGuideSteps(trial) {
         { id: 'bif-scores', label: 'Enter BIF Scores', tab: 'scoring', scoringPage: 'BIF / BIE', sectionTitle: 'BIF / BIE', status: stepStatus(bifDone, bifDrawn), detail: bifDone ? 'BIF scores are complete.' : 'Enter BIF scores and resolve any BIF ties.', action: 'Go To BIF / BIE' },
         { id: 'ribbon-report', label: 'Print Ribbon Report', tab: 'scoring', scoringPage: 'Main Results', sectionTitle: 'Main Results', status: stepStatus(printStatus(trial, 'ribbonReport'), finalsDone || bifDone), detail: printStatus(trial, 'ribbonReport') ? 'Ribbon report has been printed or marked printed.' : 'Print the final placements and BIF section for ribbons/prizes.', action: 'Go To Main Results' },
     ];
-    return steps.map((step) => ({
+    const normalizedSteps = steps.map((step) => ({
         ...step,
         status: hasTrial ? step.status : (step.id === 'trial-set' ? 'ready' : 'blocked'),
     }));
+    if (hasTrial && normalizedSteps.every((step) => step.status === 'done')) {
+        return [...normalizedSteps, ...trialWrapUpGuideSteps(trial)];
+    }
+    return normalizedSteps;
+}
+
+function trialWrapUpGuideSteps(trial) {
+    const secretaryPrinted = printStatus(trial, 'asfaSecretaryReport');
+    const payment = secretaryPaymentStatus(trial || {});
+    const secretaryReady = Boolean(trial);
+    const feesReady = Boolean(secretaryPrinted);
+    const secretaryDone = Boolean(secretaryPrinted && payment.done);
+    const recordPacketPrinted = printStatus(trial, 'asfaRecordPacket');
+    const paperworkSubmitted = Boolean(trial && trial.paperworkSubmittedAt);
+    const archived = Boolean(trial && trial.archivedAt);
+    return [
+        {
+            id: 'wrap-secretary-report',
+            label: 'ASFA Secretary Report',
+            tab: 'wrapup',
+            wrapUpPage: 'ASFA Secretary Report',
+            sectionTitle: 'ASFA Secretary Report',
+            status: stepStatus(secretaryPrinted, secretaryReady),
+            detail: secretaryPrinted ? 'ASFA Secretary Report has been printed or marked created.' : 'Fill out and print the ASFA Field Trial Secretary Report first.',
+            action: 'Go To Secretary Report',
+        },
+        {
+            id: 'wrap-pay-fees',
+            label: 'Pay Trial Fees',
+            tab: 'wrapup',
+            wrapUpPage: 'ASFA Secretary Report',
+            sectionTitle: 'ASFA Secretary Report',
+            targetSelector: '#secretaryPaypalTransactionId',
+            status: payment.done ? 'done' : (feesReady ? 'attention' : 'blocked'),
+            detail: payment.detail,
+            action: 'Go To Payment Fields',
+        },
+        {
+            id: 'wrap-record-packet',
+            label: 'Print & Review ASFA Record Packet',
+            tab: 'wrapup',
+            wrapUpPage: 'ASFA Record Packet',
+            sectionTitle: 'ASFA Record Packet',
+            status: stepStatus(recordPacketPrinted, secretaryDone),
+            detail: recordPacketPrinted ? 'ASFA record packet has been printed or marked created.' : 'Print and review the ASFA record packet after fees and the Secretary Report are complete.',
+            action: 'Go To Record Packet',
+        },
+        {
+            id: 'wrap-submit-paperwork',
+            label: 'Submit Paperwork',
+            tab: 'wrapup',
+            wrapUpPage: 'Submit Paperwork',
+            sectionTitle: 'Submit Paperwork',
+            status: stepStatus(paperworkSubmitted, recordPacketPrinted),
+            detail: paperworkSubmitted ? `Paperwork marked submitted ${formatTimestamp(trial.paperworkSubmittedAt)}.` : 'Submit paperwork to records@asfa.org, then mark it submitted.',
+            action: 'Go To Submission',
+        },
+        {
+            id: 'wrap-archive-trial',
+            label: 'Archive Trial',
+            tab: 'wrapup',
+            wrapUpPage: 'Archive Trial',
+            sectionTitle: 'Archive Trial',
+            status: stepStatus(archived, paperworkSubmitted),
+            detail: archived ? `Trial archived ${formatTimestamp(trial.archivedAt)}.` : 'Create the final archive package and lock the trial after submission.',
+            action: 'Go To Archive',
+        },
+    ];
 }
 
 function nextTrialGuideStep(steps) {
@@ -2662,14 +3181,9 @@ function applyTabGuideStatuses(steps) {
         if (statuses.length === 0) {
             return;
         }
-        if (statuses.some((status) => status === 'attention')) {
-            button.classList.add('guide-attention');
-        } else if (statuses.some((status) => status === 'ready')) {
-            button.classList.add('guide-ready');
-        } else if (statuses.every((status) => status === 'done')) {
-            button.classList.add('guide-done');
-        } else {
-            button.classList.add('guide-blocked');
+        const status = guideStatusFromList(statuses);
+        if (status) {
+            button.classList.add(`guide-${status}`);
         }
     });
 }
@@ -2864,6 +3378,10 @@ function renderAsfaRecordAlignmentTool(trial) {
         ['stakesRunoffLabelY', 'Stake runoff label Y offset', 135, 190, 1],
         ['stakesRunoffCodeX', 'Stake runoff color X', 610, 690, 1],
         ['stakesRunoffCodeY', 'Stake runoff color Y offset', 135, 190, 1],
+        ['secondRunoffLabelX', '2nd runoff label X', 650, 715, 1],
+        ['secondRunoffLabelY', '2nd runoff label Y offset', 135, 190, 1],
+        ['secondRunoffCodeX', '2nd runoff score X', 650, 715, 1],
+        ['secondRunoffCodeY', '2nd runoff score Y offset', 135, 190, 1],
         ['bobRunoffLabelX', 'BOB runoff label X', 690, 755, 1],
         ['bobRunoffLabelY', 'BOB runoff label Y offset', 135, 190, 1],
         ['bobRunoffCodeX', 'BOB runoff color X', 690, 755, 1],
@@ -3128,6 +3646,14 @@ function renderAsfaEntryAlignmentTool(trial) {
         ['smallFontSize', 'Small text font size', 4, 12, 0.5],
         ['circleWeight', 'Mark weight', 0.5, 4, 0.1],
         ['globalYAdjust', 'All entry text Y offset', -20, 20, 0.5],
+        ['trialClubX', 'Trial club X', 15, 180, 1],
+        ['trialClubY', 'Trial club Y', 45, 95, 1],
+        ['trialDateX', 'Trial date X', 15, 180, 1],
+        ['trialDateY', 'Trial date Y', 55, 105, 1],
+        ['trialSecretaryX', 'FTS name X', 170, 330, 1],
+        ['trialSecretaryY', 'FTS name Y', 45, 95, 1],
+        ['trialSecretaryEmailX', 'FTS email X', 170, 330, 1],
+        ['trialSecretaryEmailY', 'FTS email Y', 55, 105, 1],
         ['breedX', 'Breed X', 20, 150, 1],
         ['breedY', 'Breed Y', 55, 105, 1],
         ['callNameX', 'Call name X', 35, 160, 1],
@@ -3204,6 +3730,14 @@ function renderAsfaLciEntryAlignmentTool(trial) {
         ['smallFontSize', 'Small text font size', 4, 12, 0.5],
         ['circleWeight', 'Mark weight', 0.5, 4, 0.1],
         ['globalYAdjust', 'All LCI entry text Y offset', -20, 20, 0.5],
+        ['trialClubX', 'Trial club X', 15, 180, 1],
+        ['trialClubY', 'Trial club Y', 50, 100, 1],
+        ['trialDateX', 'Trial date X', 15, 180, 1],
+        ['trialDateY', 'Trial date Y', 60, 110, 1],
+        ['trialSecretaryX', 'FTS name X', 170, 330, 1],
+        ['trialSecretaryY', 'FTS name Y', 50, 100, 1],
+        ['trialSecretaryEmailX', 'FTS email X', 170, 330, 1],
+        ['trialSecretaryEmailY', 'FTS email Y', 60, 110, 1],
         ['breedX', 'Breed X', 20, 150, 1],
         ['breedY', 'Breed Y', 55, 110, 1],
         ['callNameX', 'Call name X', 35, 160, 1],
@@ -3266,6 +3800,10 @@ function renderAsfaLciEntryVisualEditor(layout) {
     const width = Number(layout.copyOffsetX || 396);
     const height = 612;
     const textItems = [
+        { label: 'Club', xKey: 'trialClubX', yKey: 'trialClubY', small: true },
+        { label: 'Trial Date', xKey: 'trialDateX', yKey: 'trialDateY', small: true },
+        { label: 'FTS Name', xKey: 'trialSecretaryX', yKey: 'trialSecretaryY', small: true },
+        { label: 'FTS Email', xKey: 'trialSecretaryEmailX', yKey: 'trialSecretaryEmailY', small: true },
         { label: 'Breed', xKey: 'breedX', yKey: 'breedY' },
         { label: 'Call Name', xKey: 'callNameX', yKey: 'callNameY' },
         { label: 'Registered Name', xKey: 'registeredNameX', yKey: 'registeredNameY' },
@@ -3319,6 +3857,10 @@ function renderAsfaEntryVisualEditor(layout) {
     const width = Number(layout.copyOffsetX || 396);
     const height = 612;
     const textItems = [
+        { label: 'Club', xKey: 'trialClubX', yKey: 'trialClubY', small: true },
+        { label: 'Trial Date', xKey: 'trialDateX', yKey: 'trialDateY', small: true },
+        { label: 'FTS Name', xKey: 'trialSecretaryX', yKey: 'trialSecretaryY', small: true },
+        { label: 'FTS Email', xKey: 'trialSecretaryEmailX', yKey: 'trialSecretaryEmailY', small: true },
         { label: 'Breed', xKey: 'breedX', yKey: 'breedY' },
         { label: 'Call Name', xKey: 'callNameX', yKey: 'callNameY' },
         { label: 'Registered Name', xKey: 'registeredNameX', yKey: 'registeredNameY' },
@@ -3510,6 +4052,8 @@ function renderAsfaRecordVisualEditor(layout) {
         { key: 'combined', label: 'Combined', xKey: 'combinedScoreX', yKey: 'combinedScoreY', fontKey: 'codeFontSize', centered: true },
         { key: 'stakeRunoffLabel', label: 'Stake RO label', xKey: 'stakesRunoffLabelX', yKey: 'stakesRunoffLabelY', fontKey: 'codeFontSize', centered: true },
         { key: 'stakeRunoffCode', label: 'Stake RO color', xKey: 'stakesRunoffCodeX', yKey: 'stakesRunoffCodeY', fontKey: 'codeFontSize', centered: true },
+        { key: 'secondRunoffLabel', label: '2nd RO label', xKey: 'secondRunoffLabelX', yKey: 'secondRunoffLabelY', fontKey: 'codeFontSize', centered: true },
+        { key: 'secondRunoffCode', label: '2nd RO score', xKey: 'secondRunoffCodeX', yKey: 'secondRunoffCodeY', fontKey: 'codeFontSize', centered: true },
         { key: 'bobRunoffLabel', label: 'BOB RO label', xKey: 'bobRunoffLabelX', yKey: 'bobRunoffLabelY', fontKey: 'codeFontSize', centered: true },
         { key: 'bobRunoffCode', label: 'BOB RO color', xKey: 'bobRunoffCodeX', yKey: 'bobRunoffCodeY', fontKey: 'codeFontSize', centered: true },
         { key: 'place', label: 'Place', xKey: 'placementX', yKey: 'placementY', fontKey: 'codeFontSize', centered: true },
@@ -3554,6 +4098,8 @@ function appendAsfaRecordRowSpacingGuides(svg, layout, textItems) {
         'combinedScoreY',
         'stakesRunoffLabelY',
         'stakesRunoffCodeY',
+        'secondRunoffLabelY',
+        'secondRunoffCodeY',
         'bobRunoffLabelY',
         'bobRunoffCodeY',
         'placementY',
@@ -4548,10 +5094,10 @@ function renderRosterTables(trial) {
         rowClass: entryNeedsDocuments(entry) ? 'entry-needs-documents' : '',
     }));
     renderRows('entriesTable', entryRows, ['callName', 'registeredName', 'breed', 'registrationNumber', 'registry', 'className', 'entryDatesLabel', 'trialMembershipLabel', 'handler', 'ownerSeparationLabel', 'documentLabel'], { actions: 'entries' });
-    renderRows('masterJudgesTable', masterJudges, ['name', 'number', 'email', 'phone']);
-    renderRows('judgesTable', trial.judges || [], ['name', 'number', 'assignment']);
-    renderRows('masterWorkersTable', masterWorkers, ['name', 'email', 'phone', 'notes']);
-    renderRows('workersTable', trial.workers || [], ['name', 'role', 'phone']);
+    renderRows('masterJudgesTable', masterJudges, ['name', 'number', 'email', 'phone'], { actions: 'masterJudges' });
+    renderRows('judgesTable', trial.judges || [], ['name', 'number', 'assignment'], { actions: 'trialJudges' });
+    renderRows('masterWorkersTable', masterWorkers, ['name', 'email', 'phone', 'notes'], { actions: 'masterWorkers' });
+    renderRows('workersTable', trial.workers || [], ['name', 'role', 'phone'], { actions: 'trialWorkers' });
     renderHoundSearchOptions();
     renderPeopleSearchOptions();
     renderEntryTrialTargets();
@@ -4795,6 +5341,15 @@ function renderOwnerSeparationQuickEditor(entries) {
         owners.get(ownerId).entries.push(entry);
     });
 
+    const separationGroupCounts = new Map();
+    entries.forEach((entry) => {
+        const group = String(entry.ownerSeparationGroup || '').trim().toUpperCase();
+        if (entry.ownerSeparationRequested && group) {
+            const key = `${clean(runGroupBreedForEntry(entry))}|${clean(runGroupStakeForEntry(entry))}|${group}`;
+            separationGroupCounts.set(key, (separationGroupCounts.get(key) || 0) + 1);
+        }
+    });
+
     [...breeds.entries()]
         .sort(([breedA], [breedB]) => breedA.localeCompare(breedB, undefined, { numeric: true, sensitivity: 'base' }))
         .forEach(([breed, owners]) => {
@@ -4805,6 +5360,34 @@ function renderOwnerSeparationQuickEditor(entries) {
             heading.textContent = `${displayBreedCode(breed)} (${houndCount} hound${houndCount === 1 ? '' : 's'})`;
             breedSection.appendChild(heading);
 
+            const breedEntries = [...owners.values()].flatMap((ownerGroup) => ownerGroup.entries);
+            const stakes = uniqueNames(breedEntries.map(runGroupStakeForEntry)).filter(Boolean);
+            if (!isQuasiBreedClass(breed) && stakes.length > 1) {
+                const mixedEligibility = mixedStakeEligibilityForEntries(breedEntries, breed);
+                const mixedPanel = document.createElement('div');
+                mixedPanel.className = 'owner-separation-mixed-panel';
+                if (!mixedEligibility.eligible) {
+                    mixedPanel.classList.add('is-disabled');
+                }
+                const mixedLabel = document.createElement('label');
+                mixedLabel.className = 'switch compact-switch';
+                const mixed = document.createElement('input');
+                mixed.type = 'checkbox';
+                mixed.checked = mixedStakeBreedEnabled(trial, breed) && mixedEligibility.eligible;
+                mixed.disabled = !mixedEligibility.eligible;
+                mixed.addEventListener('change', () => updateMixedStakeBreed(breed, mixed.checked));
+                const mixedText = document.createElement('span');
+                mixedText.textContent = 'Run these stakes as a mixed stake course before the draw';
+                mixedLabel.append(mixed, mixedText);
+                const mixedDetail = document.createElement('span');
+                mixedDetail.className = 'owner-separation-mixed-detail';
+                mixedDetail.textContent = mixedEligibility.eligible
+                    ? `Eligible: ${mixedEligibility.stakes.map(displayJudgeMapStake).join(' / ')} | ${mixedEligibility.total} hounds total`
+                    : `Not eligible: ${mixedEligibility.reason}`;
+                mixedPanel.append(mixedLabel, mixedDetail);
+                breedSection.appendChild(mixedPanel);
+            }
+
             [...owners.values()]
                 .sort((a, b) => a.owner.localeCompare(b.owner, undefined, { numeric: true, sensitivity: 'base' }))
                 .forEach((ownerGroup) => {
@@ -4814,6 +5397,15 @@ function renderOwnerSeparationQuickEditor(entries) {
                     ownerHeading.textContent = `${ownerGroup.owner} (${ownerGroup.entries.length})`;
                     ownerBlock.appendChild(ownerHeading);
 
+                    const rowHeader = document.createElement('div');
+                    rowHeader.className = 'owner-separation-row owner-separation-row-header';
+                    ['Separate', 'Group', 'Hound', 'Breed', 'Stake'].forEach((label) => {
+                        const cell = document.createElement('span');
+                        cell.textContent = label;
+                        rowHeader.appendChild(cell);
+                    });
+                    ownerBlock.appendChild(rowHeader);
+
                     ownerGroup.entries
                         .slice()
                         .sort((a, b) => String(runGroupStakeForEntry(a)).localeCompare(String(runGroupStakeForEntry(b)), undefined, { numeric: true, sensitivity: 'base' })
@@ -4821,6 +5413,12 @@ function renderOwnerSeparationQuickEditor(entries) {
                         .forEach((entry) => {
                             const row = document.createElement('div');
                             row.className = 'owner-separation-row';
+                            const separationGroup = String(entry.ownerSeparationGroup || '').trim().toUpperCase();
+                            const separationKey = `${clean(runGroupBreedForEntry(entry))}|${clean(runGroupStakeForEntry(entry))}|${separationGroup}`;
+                            if (entry.ownerSeparationRequested && separationGroup && separationGroupCounts.get(separationKey) > 1) {
+                                row.classList.add('owner-separation-row-linked');
+                                row.dataset.separationGroup = separationGroup;
+                            }
                             const checkLabel = document.createElement('label');
                             checkLabel.className = 'switch compact-switch';
             const checkbox = document.createElement('input');
@@ -4855,10 +5453,13 @@ function renderOwnerSeparationQuickEditor(entries) {
 
                             const hound = document.createElement('strong');
                             hound.textContent = entry.callName || entry.registeredName || 'Unnamed hound';
+                            const breedCell = document.createElement('span');
+                            breedCell.className = 'owner-separation-breed-cell';
+                            breedCell.textContent = displayBreedCode(runGroupBreedForEntry(entry));
                             const stake = document.createElement('span');
-                            stake.className = 'muted-text';
+                            stake.className = 'owner-separation-stake-cell';
                             stake.textContent = runGroupStakeForEntry(entry);
-                            row.append(checkLabel, groupInput, hound, stake);
+                            row.append(checkLabel, groupInput, hound, breedCell, stake);
                             ownerBlock.appendChild(row);
                         });
 
@@ -4886,6 +5487,90 @@ function suggestNextOwnerSeparationGroupForTrial(ignoreEntryId = '') {
 function updateOwnerSeparationForEntry(entryId, requested, groupValue) {
     const group = requested ? String(groupValue || '').trim().toUpperCase() : '';
     updateDrawSeparationGroup(entryId, group);
+}
+
+function mixedStakeBreedEnabled(trial, breed) {
+    const key = clean(breed);
+    return Boolean(trial && Array.isArray(trial.mixedStakeBreeds) && trial.mixedStakeBreeds.some((item) => clean(item) === key));
+}
+
+function entriesForRunGroupBreed(trial, breed) {
+    const key = clean(breed);
+    return (trial.entries || []).filter((entry) => clean(runGroupBreedForEntry(entry)) === key);
+}
+
+function stakeCountsForEntries(entries = []) {
+    const stakeMap = new Map();
+    entries.forEach((entry) => {
+        const stake = runGroupStakeForEntry(entry) || 'Unassigned';
+        const key = clean(stake) || 'UNASSIGNED';
+        if (!stakeMap.has(key)) {
+            stakeMap.set(key, { stake, count: 0 });
+        }
+        stakeMap.get(key).count += 1;
+    });
+    return Array.from(stakeMap.values());
+}
+
+function mixedStakeEligibilityForEntries(entries = [], breed = '') {
+    if (isQuasiBreedClass(breed)) {
+        return { eligible: false, reason: 'Mixed stakes are only for regular breed stakes.' };
+    }
+    const stakeCounts = stakeCountsForEntries(entries).filter((row) => row.count > 0);
+    const total = entries.length;
+    if (stakeCounts.length < 2) {
+        return { eligible: false, reason: 'Mixed stake needs hounds in at least two stakes.' };
+    }
+    if (total < 2 || total > 3) {
+        return { eligible: false, reason: 'Mixed stake must have 2 or 3 total hounds.' };
+    }
+    const largeStake = stakeCounts.find((row) => row.count >= 3);
+    if (largeStake) {
+        return { eligible: false, reason: `${displayJudgeMapStake(largeStake.stake)} already has ${largeStake.count} hounds.` };
+    }
+    return {
+        eligible: true,
+        total,
+        stakes: stakeCounts
+            .sort((a, b) => stakeSortOrder(a.stake) - stakeSortOrder(b.stake) || String(a.stake).localeCompare(String(b.stake)))
+            .map((row) => row.stake),
+        stakeCounts,
+    };
+}
+
+function mixedStakeBreedActive(trial, breed) {
+    const entries = entriesForRunGroupBreed(trial, breed);
+    const eligibility = mixedStakeEligibilityForEntries(entries, breed);
+    return mixedStakeBreedEnabled(trial, breed) && eligibility.eligible;
+}
+
+function updateMixedStakeBreed(breed, enabled) {
+    const trial = readForm();
+    if (isPreliminaryDrawLocked(trial)) {
+        showPreliminaryDrawLockedMessage('draw');
+        render();
+        return;
+    }
+    if (enabled) {
+        const eligibility = mixedStakeEligibilityForEntries(entriesForRunGroupBreed(trial, breed), breed);
+        if (!eligibility.eligible) {
+            showMessage(rollCallMessage, `${displayBreedCode(breed)} cannot be mixed: ${eligibility.reason}`, 'warning');
+            render();
+            return;
+        }
+    }
+    const key = clean(breed);
+    const existing = Array.isArray(trial.mixedStakeBreeds) ? trial.mixedStakeBreeds.filter((item) => clean(item) !== key) : [];
+    trial.mixedStakeBreeds = enabled ? [...existing, breed] : existing;
+    if (trial.preliminaryDraw) {
+        trial.preliminaryDraw = null;
+    }
+    upsertTrial(trial);
+    saveTrials();
+    showMessage(rollCallMessage, enabled
+        ? `${displayBreedCode(breed)} will draw as a mixed stake course.`
+        : `${displayBreedCode(breed)} will draw by separate stakes.`, 'success');
+    render();
 }
 
 function autoMarkOwnerSeparationGroups() {
@@ -5168,7 +5853,7 @@ function buildPreliminaryDraw() {
         return;
     }
 
-    const groups = groupEntriesByBreedAndStake(presentEntries);
+    const groups = groupEntriesByBreedAndStake(presentEntries, trial.mixedStakeBreeds || []);
     trial.preliminaryDraw = {
         id: crypto.randomUUID(),
         phase: 'preliminary',
@@ -5183,14 +5868,24 @@ function buildPreliminaryDraw() {
     render();
 }
 
-function groupEntriesByBreedAndStake(entries) {
+function groupEntriesByBreedAndStake(entries, mixedStakeBreeds = []) {
     const groups = new Map();
+    const mixedBreeds = new Set((mixedStakeBreeds || []).map(clean));
+    const eligibleMixedBreeds = new Set();
+    mixedBreeds.forEach((breedKey) => {
+        const breedEntries = entries.filter((entry) => clean(runGroupBreedForEntry(entry)) === breedKey);
+        const breed = breedEntries.length ? runGroupBreedForEntry(breedEntries[0]) : breedKey;
+        if (mixedStakeEligibilityForEntries(breedEntries, breed).eligible) {
+            eligibleMixedBreeds.add(breedKey);
+        }
+    });
     entries.forEach((entry) => {
         const breed = runGroupBreedForEntry(entry);
-        const stake = runGroupStakeForEntry(entry);
+        const mixedStake = eligibleMixedBreeds.has(clean(breed)) && !isQuasiBreedClass(breed);
+        const stake = mixedStake ? 'Mixed' : runGroupStakeForEntry(entry);
         const key = `${breed}|${stake}`;
         if (!groups.has(key)) {
-            groups.set(key, { key, breed, stake, entries: [] });
+            groups.set(key, { key, breed, stake, mixedStake, entries: [] });
         }
         groups.get(key).entries.push(entry);
     });
@@ -5243,6 +5938,7 @@ function buildDrawGroup(group) {
         id: crypto.randomUUID(),
         breed: group.breed,
         stake: group.stake,
+        mixedStake: Boolean(group.mixedStake),
         entryCount: group.entries.length,
         courses,
     };
@@ -6761,12 +7457,12 @@ function scorebookActionsForGroup(group, mode) {
         },
         {
             label: 'ASFA Stake Sheet',
-            handler: () => printAsfaRecordSheet({ groupId: group.id }),
+            handler: () => printAsfaRecordSheet({ groupId: group.id, combineMixedPosting: true }),
             className: 'secondary small report-button',
         },
         {
             label: groupSheetLabel,
-            handler: () => printAsfaRecordSheet({ breed: group.breed }),
+            handler: () => printAsfaRecordSheet({ breed: group.breed, combineMixedPosting: true }),
             className: 'secondary small report-button',
         },
         {
@@ -8505,7 +9201,7 @@ function bifResultForEntry(bif, entryId) {
             const outcome = normalizedBobOutcome(outcomes[key]);
             return {
                 entryId: key,
-                score: Number(outcome.score),
+                score: hasScoreValue(outcome.score) ? Number(outcome.score) : NaN,
                 outcome: outcome.value,
             };
         });
@@ -8535,7 +9231,7 @@ function bifMainTieEntryIds(bif) {
             const outcome = normalizedBobOutcome(outcomes[key]);
             return {
                 entryId: key,
-                score: Number(outcome.score),
+                score: hasScoreValue(outcome.score) ? Number(outcome.score) : NaN,
                 outcome: outcome.value,
             };
         });
@@ -8563,7 +9259,7 @@ function bifTieResultForEntry(bif, entryId, tieRunoffOverride = null) {
             const outcome = normalizedBobOutcome(outcomes[key]);
             return {
                 entryId: key,
-                score: Number(outcome.score),
+                score: hasScoreValue(outcome.score) ? Number(outcome.score) : NaN,
                 outcome: outcome.value,
             };
         });
@@ -9359,18 +10055,22 @@ function runoffDisplayRows(trial, item) {
     if (item.type === 'combinedTieBob') {
         const runoff = bobRunoffForItem(trial, item);
         const rows = runoff ? runoffRows(runoff) : item.rows.map((row) => ({ hound: row.hound, code: '', kind: row.kind }));
+        const combinedTieReason = `${String(item.tie.label || '').replace(/\s+Tie$/i, '')}-BOB`;
         return rows.map((row) => {
             const kind = row.kind || row.hound.runoffRole || 'bob';
+            const tieResult = runoffTieResultForEntry(trial, row.hound.entryId, row.hound.tieBreakResolvedPlacement || '');
+            const bobResult = row.hound.bobResult || bobResultForEntry(trial, row.hound.entryId);
+            const combinedTieBobWinner = kind === 'tie' && bobResult === 'BOB';
             return {
                 entryId: row.hound.entryId,
                 code: runoff ? (row.hound.tieBreakCode || row.hound.bobCode || row.code || '') : '',
                 color: runoff ? (row.hound.tieBreakBlanketColor || row.hound.bobBlanketColor || '') : '',
                 name: row.hound.callName || row.hound.registeredName || 'Unnamed hound',
                 stake: row.hound.bobStake || '',
-                reason: kind === 'tie' ? item.tie.label : 'BOB',
+                reason: kind === 'tie' ? combinedTieReason : 'BOB',
                 result: kind === 'tie'
-                    ? runoffTieResultForEntry(trial, row.hound.entryId, row.hound.tieBreakResolvedPlacement || '')
-                    : (row.hound.bobResult || bobResultForEntry(trial, row.hound.entryId)),
+                    ? (combinedTieBobWinner ? `${tieResult || '1'} BOB` : tieResult)
+                    : bobResult,
                 outcome: kind === 'tie' ? (row.hound.tieBreakOutcome || '') : bobOutcomeForItem(trial, item.id, row.hound.entryId),
                 judge1: kind === 'tie' ? (row.hound.tieBreakJudge1Score || '') : bobScoreForItem(trial, item.id, row.hound.entryId).judge1,
                 judge2: kind === 'tie' ? (row.hound.tieBreakJudge2Score || '') : bobScoreForItem(trial, item.id, row.hound.entryId).judge2,
@@ -9728,7 +10428,12 @@ function applyTieRunoffScoreChanges(hound, changes, judgeCount) {
 
 function resolveTieRunoffDrawResults(runoff) {
     const rows = runoffRows(runoff).map((row) => row.hound);
-    const complete = rows.length > 0 && rows.every((hound) => hasScoreValue(hound.tieBreakScore) || hound.tieBreakOutcome);
+    const activeRows = rows.filter((hound) => !hound.tieBreakOutcome);
+    const outcomeRows = rows.filter((hound) => hound.tieBreakOutcome);
+    const complete = rows.length > 0 && (
+        rows.every((hound) => hasScoreValue(hound.tieBreakScore) || hound.tieBreakOutcome)
+        || (activeRows.length === 1 && outcomeRows.length > 0)
+    );
     if (!complete) {
         return {
             ...runoff,
@@ -9746,6 +10451,20 @@ function resolveTieRunoffDrawResults(runoff) {
         .sort((a, b) => b.score - a.score);
     const placements = new Map();
     if (Number.isFinite(start) && Number.isFinite(end)) {
+        if (activeRows.length === 1 && scored.length === 0) {
+            placements.set(activeRows[0].entryId, start <= 4 ? String(start) : (start === 5 ? 'NBQ' : ''));
+            outcomeRows
+                .slice()
+                .sort((a, b) => compareTieBreakOutcomeRows({ hound: a }, { hound: b }))
+                .forEach((hound, index) => {
+                    const placementNumber = start + index + 1;
+                    if (placementNumber <= 4) {
+                        placements.set(hound.entryId, String(placementNumber));
+                    } else if (placementNumber === 5) {
+                        placements.set(hound.entryId, 'NBQ');
+                    }
+                });
+        }
         let offset = 0;
         while (offset < scored.length) {
             const score = scored[offset].score;
@@ -9881,7 +10600,12 @@ function normalizedBobOutcome(value) {
 
 function resolveBobRunoffResults(runoff) {
     const rows = runoffRows(runoff).map((row) => row.hound);
-    const complete = rows.length > 0 && rows.every((hound) => hasScoreValue(hound.bobScore || hound.tieBreakScore) || hound.bobOutcome || hound.tieBreakOutcome || hound.isPlaceholder);
+    const activeRows = rows.filter((hound) => !hound.isPlaceholder && !hound.bobOutcome && !hound.tieBreakOutcome);
+    const outcomeRows = rows.filter((hound) => !hound.isPlaceholder && (hound.bobOutcome || hound.tieBreakOutcome));
+    const complete = rows.length > 0 && (
+        rows.every((hound) => hasScoreValue(hound.bobScore || hound.tieBreakScore) || hound.bobOutcome || hound.tieBreakOutcome || hound.isPlaceholder)
+        || (activeRows.length === 1 && outcomeRows.length > 0)
+    );
     if (!complete) {
         return {
             ...runoff,
@@ -9905,7 +10629,9 @@ function resolveBobRunoffResults(runoff) {
         .filter((row) => Number.isFinite(row.score))
         .sort((a, b) => b.score - a.score);
     const topScore = scored[0]?.score;
-    const topTied = scored.filter((row) => row.score === topScore).map((row) => row.entryId);
+    const topTied = scored.length
+        ? scored.filter((row) => row.score === topScore).map((row) => row.entryId)
+        : (activeRows.length === 1 ? [activeRows[0].entryId] : []);
 
     return {
         ...runoff,
@@ -10510,7 +11236,7 @@ function printRibbonReport() {
         return;
     }
 
-    const groups = sortRibbonReportGroups(draw.groups, trial, document.getElementById('ribbonReportSort')?.value || 'runningOrder');
+    const groups = sortRibbonReportGroups(ribbonReportGroupsForPrint(draw.groups), trial, document.getElementById('ribbonReportSort')?.value || 'runningOrder');
     if (groups.length === 0) {
         showMessage(mainResultsMessage || document.getElementById('scoringMessage'), 'No completed results are available for the ribbon report yet.', 'warning');
         return;
@@ -10521,7 +11247,7 @@ function printRibbonReport() {
     markTrialGuidePrinted('ribbonReport');
 }
 
-async function printAsfaRecordSheet({ groupId = '', breed = '' } = {}) {
+async function printAsfaRecordSheet({ groupId = '', breed = '', combineMixedPosting = false } = {}) {
     const message = document.getElementById('scoringMessage');
     const trial = readForm();
     const draw = trial.preliminaryDraw;
@@ -10546,7 +11272,7 @@ async function printAsfaRecordSheet({ groupId = '', breed = '' } = {}) {
         const response = await fetch('/api/asfa-record-sheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial, groupId, breed, layout: getAsfaRecordLayout(), entryLayout: getAsfaEntryLayout(), lciEntryLayout: getAsfaLciEntryLayout() }),
+            body: JSON.stringify({ trial, groupId, breed, combineMixedPosting, layout: getAsfaRecordLayout(), entryLayout: getAsfaEntryLayout(), lciEntryLayout: getAsfaLciEntryLayout() }),
         });
 
         if (!response.ok) {
@@ -10593,13 +11319,16 @@ async function printAsfaRecordPacket() {
         showMessage(message, 'The full record packet is set up for ASFA trials first.', 'warning');
         return;
     }
-    await openTrialPdf('/api/asfa-record-packet', {
+    const printed = await openTrialPdf('/api/asfa-record-packet', {
         trial,
         layout: getAsfaRecordLayout(),
         entryLayout: getAsfaEntryLayout(),
         lciEntryLayout: getAsfaLciEntryLayout(),
         secretaryLayout: getAsfaSecretaryLayout(),
     }, message, 'ASFA record packet PDF created.', 'ASFA record packet could not be created.');
+    if (printed) {
+        markTrialGuidePrinted('asfaRecordPacket');
+    }
 }
 
 async function printAsfaEntryForms() {
@@ -10628,10 +11357,26 @@ async function printAsfaSecretaryReport() {
         showMessage(message, 'The secretary report button is set up for ASFA trials first.', 'warning');
         return;
     }
-    await openTrialPdf('/api/asfa-secretary-report', {
+    const printed = await openTrialPdf('/api/asfa-secretary-report', {
         trial,
         layout: getAsfaSecretaryLayout(),
     }, message, 'ASFA secretary report PDF created.', 'ASFA secretary report could not be created.');
+    if (printed) {
+        markTrialGuidePrinted('asfaSecretaryReport');
+    }
+}
+
+function markPaperworkSubmitted() {
+    const trial = readForm();
+    if (!trial || !trial.id) {
+        showMessage(wrapUpMessage || wrapUpSecretaryMessage, 'Select a trial before marking paperwork submitted.', 'warning');
+        return;
+    }
+    trial.paperworkSubmittedAt = new Date().toISOString();
+    upsertTrial(trial);
+    saveTrials();
+    showMessage(wrapUpMessage || wrapUpSecretaryMessage, 'Paperwork marked submitted to records@asfa.org.', 'success');
+    render();
 }
 
 async function createFinalTrialArchive() {
@@ -10768,7 +11513,7 @@ function downloadBlob(blob, filename) {
 async function openTrialPdf(endpoint, payload, messageElement, successMessage, failureMessage) {
     if (!isLocalServerMode()) {
         showMessage(messageElement, 'Official PDF reports require SQLite/server mode. Start the app with start_field_trial_secretary.ps1.', 'warning');
-        return;
+        return false;
     }
     const pdfWindow = window.open('', '_blank');
     try {
@@ -10800,11 +11545,13 @@ async function openTrialPdf(endpoint, payload, messageElement, successMessage, f
             link.click();
         }
         showMessage(messageElement, successMessage, 'success');
+        return true;
     } catch (error) {
         if (pdfWindow) {
             pdfWindow.close();
         }
         showMessage(messageElement, error.message || failureMessage, 'warning');
+        return false;
     }
 }
 
@@ -11102,6 +11849,7 @@ function renderScoreReportPrint(trial, groups, headingText) {
 
     heading.textContent = headingText;
     title.textContent = trialTitle(trial);
+    document.getElementById('scoreReportPrint')?.classList.remove('ribbon-report-print');
     container.innerHTML = '';
 
     groups.forEach((group) => {
@@ -11163,6 +11911,7 @@ function renderRibbonReportPrint(trial, groups, placementOrder = 'nbqFirst') {
 
     heading.textContent = 'Ribbon Report';
     title.textContent = trialTitle(trial);
+    document.getElementById('scoreReportPrint')?.classList.add('ribbon-report-print');
     container.innerHTML = '';
 
     const placementColumns = placementOrder === 'firstFirst'
@@ -11180,14 +11929,18 @@ function renderRibbonReportPrint(trial, groups, placementOrder = 'nbqFirst') {
         wrap.className = 'table-wrap';
         const table = document.createElement('table');
         table.className = 'ribbon-report-table';
-        table.innerHTML = `<thead><tr><th>Stake</th>${placementColumns.map((column) => `<th>${column}</th>`).join('')}<th>BOB</th></tr></thead>`;
+        table.appendChild(ribbonReportColGroup(placementColumns));
+        table.innerHTML += `<thead><tr><th class="ribbon-stake-column">Stake</th>${placementColumns.map((column) => `<th class="${ribbonAwardClass(column)}">${ribbonAwardLabel(column)}</th>`).join('')}<th class="ribbon-bob-column">BOB</th></tr></thead>`;
         const tbody = document.createElement('tbody');
         breedBlock.groups.forEach((group) => {
             const placements = ribbonPlacementsForGroup(group);
             const bob = ribbonBobForGroup(trial, group);
             const tr = document.createElement('tr');
-            [group.stake || groupTitle(group), ...placementColumns.map((column) => placements[column]), bob]
-                .forEach((value) => tr.appendChild(textCell(value)));
+            tr.appendChild(ribbonCell(group.stake || groupTitle(group), 'ribbon-stake-cell'));
+            placementColumns.forEach((column) => {
+                tr.appendChild(ribbonCell(placements[column], `ribbon-award-cell ${ribbonAwardClass(column)}`));
+            });
+            tr.appendChild(ribbonCell(bob, 'ribbon-bob-cell'));
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);
@@ -11197,6 +11950,95 @@ function renderRibbonReportPrint(trial, groups, placementOrder = 'nbqFirst') {
     });
 
     renderRibbonBifSection(trial, container);
+}
+
+function ribbonReportColGroup(placementColumns) {
+    const colgroup = document.createElement('colgroup');
+    const stake = document.createElement('col');
+    stake.className = 'ribbon-col-stake';
+    colgroup.appendChild(stake);
+    placementColumns.forEach((column) => {
+        const col = document.createElement('col');
+        col.className = `ribbon-col-award ${ribbonAwardClass(column)}`;
+        colgroup.appendChild(col);
+    });
+    const bob = document.createElement('col');
+    bob.className = 'ribbon-col-bob';
+    colgroup.appendChild(bob);
+    return colgroup;
+}
+
+function ribbonAwardLabel(value) {
+    return value === 'NBQ' ? 'NBQ' : `${value}${placementSuffix(value)}`;
+}
+
+function placementSuffix(value) {
+    return { 1: 'st', 2: 'nd', 3: 'rd', 4: 'th' }[String(value)] || '';
+}
+
+function ribbonAwardClass(value) {
+    const normalized = String(value || '').toUpperCase();
+    return {
+        NBQ: 'ribbon-nbq',
+        4: 'ribbon-fourth',
+        3: 'ribbon-third',
+        2: 'ribbon-second',
+        1: 'ribbon-first',
+    }[normalized] || '';
+}
+
+function ribbonCell(value, className = '') {
+    const td = textCell(value || '');
+    td.className = className;
+    return td;
+}
+
+function ribbonReportGroupsForPrint(groups = []) {
+    return groups.flatMap((group) => {
+        if (!group.mixedStake) {
+            return [group];
+        }
+
+        const stakeKeys = [];
+        (group.courses || []).forEach((course) => {
+            (course.hounds || []).forEach((hound) => {
+                const stake = hound.stake || group.stake || '';
+                const key = clean(stake);
+                if (key && !stakeKeys.includes(key)) {
+                    stakeKeys.push(key);
+                }
+            });
+        });
+
+        return stakeKeys.map((stakeKey) => ({
+            ...group,
+            id: `${group.id || clean(group.breed)}::ribbon-${stakeKey}`,
+            stake: stakeLabelFromGroup(group, stakeKey),
+            mixedStake: false,
+            courses: (group.courses || []).map((course) => ({
+                ...course,
+                hounds: (course.hounds || []).filter((hound) => clean(hound.stake || group.stake) === stakeKey),
+            })),
+            finalDraw: group.finalDraw ? {
+                ...group.finalDraw,
+                courses: (group.finalDraw.courses || []).map((course) => ({
+                    ...course,
+                    hounds: (course.hounds || []).filter((hound) => clean(hound.stake || group.stake) === stakeKey),
+                })),
+            } : group.finalDraw,
+        }));
+    });
+}
+
+function stakeLabelFromGroup(group, stakeKey) {
+    for (const course of group.courses || []) {
+        for (const hound of course.hounds || []) {
+            if (clean(hound.stake || group.stake) === stakeKey) {
+                return hound.stake || group.stake || '';
+            }
+        }
+    }
+    return group.stake || '';
 }
 
 function sortRibbonReportGroups(groups, trial, sortMode) {
@@ -11293,7 +12135,8 @@ function renderRibbonBifSection(trial, container) {
     wrap.className = 'table-wrap';
     const table = document.createElement('table');
     table.className = 'ribbon-report-table';
-    table.innerHTML = '<thead><tr><th>Run #/Color</th><th>Hound</th><th>Breed</th><th>Stake</th><th>Result</th></tr></thead>';
+    table.classList.add('ribbon-bif-table');
+    table.innerHTML = '<thead><tr><th>Run #/Color</th><th>Hound</th><th>Breed</th><th>Stake</th><th class="ribbon-bif-heading">Result</th></tr></thead>';
     const tbody = document.createElement('tbody');
     rows.forEach((row) => {
         const code = row.hound.bifCode || `${row.course.number}${blanketCode(row.hound.bifBlanketColor)}`;
@@ -12015,7 +12858,7 @@ function updateTieBreakResult(groupId, entryId, tieLabel, changes, tieCombinedSc
                         }),
                     })),
                 },
-                runoffs: (group.runoffs || []).map((runoff) => runoff.label !== tieLabel ? runoff : {
+                runoffs: (group.runoffs || []).map((runoff) => runoff.label !== tieLabel ? runoff : resolveTieRunoffDrawResults({
                     ...runoff,
                     courses: (runoff.courses || []).map((course) => ({
                         ...course,
@@ -12061,7 +12904,7 @@ function updateTieBreakResult(groupId, entryId, tieLabel, changes, tieCombinedSc
                             return next;
                         }),
                     })),
-                }),
+                })),
             };
         }),
     };
@@ -12878,7 +13721,14 @@ function populateAdminFinalsScores() {
 }
 
 function randomAdminPrelimScore() {
-    return secureRandomInt(31) + 70;
+    // Test scores should feel like a normal trial: clustered around 75 with small movement.
+    const centered = 75 + secureRandomInt(7) - 3;
+    const occasionalNudge = secureRandomInt(10) === 0 ? secureRandomInt(5) - 2 : 0;
+    return clampNumber(centered + occasionalNudge, 68, 82);
+}
+
+function clampNumber(value, min, max) {
+    return Math.min(max, Math.max(min, value));
 }
 
 function randomAdminJudgeScores(judgeCount = 2) {
@@ -12886,7 +13736,9 @@ function randomAdminJudgeScores(judgeCount = 2) {
     if (judgeCount < 2) {
         return { judge1, judge2: '', total: judge1 };
     }
-    const judge2 = randomAdminPrelimScore();
+    const closeOffset = secureRandomInt(7) - 3;
+    const rareWiderOffset = secureRandomInt(25) === 0 ? secureRandomInt(5) - 2 : 0;
+    const judge2 = clampNumber(judge1 + closeOffset + rareWiderOffset, 68, 82);
     return { judge1, judge2, total: judge1 + judge2 };
 }
 
@@ -12914,7 +13766,7 @@ function judgeCountForRunoffItem(trial, item) {
 }
 
 function randomAdminScoreOutcome() {
-    const roll = secureRandomInt(100);
+    const roll = secureRandomInt(500);
     if (roll < 2) {
         return { value: 'excused', note: 'Admin test excusal' };
     }
@@ -12924,10 +13776,10 @@ function randomAdminScoreOutcome() {
     if (roll < 4) {
         return { value: 'disqualified', note: 'Admin test DQ' };
     }
-    if (roll < 5) {
+    if (roll < 6) {
         return { value: 'forfeit', note: 'Admin test forfeit' };
     }
-    if (roll < 6) {
+    if (roll < 8) {
         return { value: 'pull', note: 'Admin test pull' };
     }
     return null;
@@ -13453,7 +14305,8 @@ function contextualMoveControls({ upDisabled = false, downDisabled = false, onUp
     const up = document.createElement('button');
     up.type = 'button';
     up.className = 'secondary small icon-button';
-    up.textContent = 'â†‘';
+    up.textContent = '\u2191';
+    up.setAttribute('aria-label', 'Move up');
     up.title = 'Move up';
     up.dataset.help = 'Moves the selected item earlier in the running order.';
     up.disabled = upDisabled;
@@ -13465,7 +14318,8 @@ function contextualMoveControls({ upDisabled = false, downDisabled = false, onUp
     const down = document.createElement('button');
     down.type = 'button';
     down.className = 'secondary small icon-button';
-    down.textContent = 'â†“';
+    down.textContent = '\u2193';
+    down.setAttribute('aria-label', 'Move down');
     down.title = 'Move down';
     down.dataset.help = 'Moves the selected item later in the running order.';
     down.disabled = downDisabled;
@@ -13617,6 +14471,7 @@ function ensureWorkerInDatabaseAndTrial(name, role, trial) {
 
 function renderPrintableSheets(trial) {
     renderWorkerSheet(trial);
+    renderJudgesMap(trial);
     renderRollCallSheet(trial);
     renderDrawSheet(trial);
 }
@@ -13630,7 +14485,7 @@ function renderWorkerSheet(trial) {
     if (rows.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 9;
+        td.colSpan = 10;
         td.textContent = 'No worker sheet rows yet.';
         tr.appendChild(td);
         body.appendChild(tr);
@@ -13644,6 +14499,7 @@ function renderWorkerSheet(trial) {
             row.runOrder,
             displayBreedCode(row.breed),
             row.entryCount,
+            stakeRuns.mixed,
             stakeRuns.open,
             stakeRuns.fchExc,
             stakeRuns.vet,
@@ -13656,15 +14512,24 @@ function renderWorkerSheet(trial) {
 }
 
 function workerSheetStakeRuns(trial, breed) {
+    const entries = entriesForRunGroupBreed(trial, breed);
+    const mixedEligibility = mixedStakeEligibilityForEntries(entries, breed);
+    const mixedActive = mixedStakeBreedEnabled(trial, breed) && mixedEligibility.eligible;
+    if (mixedActive) {
+        return {
+            mixed: `${mixedEligibility.stakes.map(displayJudgeMapStake).join('/')} ${formatWorkerSheetRunCount(mixedEligibility.total)}`,
+            open: '',
+            fchExc: '',
+            vet: '',
+        };
+    }
+
     const counts = {
         open: 0,
         fchExc: 0,
         vet: 0,
     };
-    (trial.entries || []).forEach((entry) => {
-        if (clean(runGroupBreedForEntry(entry)) !== clean(breed)) {
-            return;
-        }
+    entries.forEach((entry) => {
         const stake = runGroupStakeForEntry(entry);
         const normalized = clean(stake);
         if (normalized === 'OPEN' || normalized === 'SINGLES') {
@@ -13681,6 +14546,7 @@ function workerSheetStakeRuns(trial, breed) {
     });
 
     return {
+        mixed: '',
         open: formatWorkerSheetRunCount(counts.open),
         fchExc: formatWorkerSheetRunCount(counts.fchExc),
         vet: formatWorkerSheetRunCount(counts.vet),
@@ -13692,6 +14558,109 @@ function formatWorkerSheetRunCount(count) {
         return '';
     }
     return `${courseSizesForEntryCount(count).length}(${count})`;
+}
+
+function renderJudgesMap(trial) {
+    const title = document.getElementById('judgesMapTitle');
+    const body = document.getElementById('judgesMapTable');
+    if (!title || !body) {
+        return;
+    }
+    title.textContent = trialTitle(trial);
+    body.innerHTML = '';
+
+    const rows = judgesMapRows(trial);
+    if (rows.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 6;
+        td.textContent = 'No judge map rows yet.';
+        tr.appendChild(td);
+        body.appendChild(tr);
+        return;
+    }
+
+    rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        [
+            row.runOrder,
+            row.breed,
+            row.stake,
+            row.entryCount,
+            row.courseBreakdown,
+            row.judges,
+        ].forEach((value) => tr.appendChild(textCell(value)));
+        body.appendChild(tr);
+    });
+}
+
+function judgesMapRows(trial) {
+    const runRows = sortedRunPlanRows(trial.runPlan || []);
+    return runRows.flatMap((runRow) => {
+        const entries = (trial.entries || []).filter((entry) => clean(runGroupBreedForEntry(entry)) === clean(runRow.breed));
+        const mixedEligibility = mixedStakeEligibilityForEntries(entries, runRow.breed);
+        if (mixedStakeBreedEnabled(trial, runRow.breed) && mixedEligibility.eligible) {
+            return [{
+                runOrder: runRow.runOrder,
+                breed: displayBreedCode(runRow.breed),
+                stake: `Mixed (${mixedEligibility.stakes.map(displayJudgeMapStake).join('/')})`,
+                entryCount: entries.length,
+                courseBreakdown: formatJudgeMapCourseBreakdown(entries.length, false),
+                judges: [runRow.judge1, runRow.judge2].filter(Boolean).join(' / '),
+            }];
+        }
+        const stakeMap = new Map();
+        entries.forEach((entry) => {
+            const stake = runGroupStakeForEntry(entry) || 'Unassigned';
+            const key = clean(stake) || 'UNASSIGNED';
+            if (!stakeMap.has(key)) {
+                stakeMap.set(key, { stake, entries: [] });
+            }
+            stakeMap.get(key).entries.push(entry);
+        });
+
+        return Array.from(stakeMap.values())
+            .sort((a, b) => stakeSortOrder(a.stake) - stakeSortOrder(b.stake) || String(a.stake).localeCompare(String(b.stake)))
+            .map((stakeRow) => ({
+                runOrder: runRow.runOrder,
+                breed: displayBreedCode(runRow.breed),
+                stake: displayJudgeMapStake(stakeRow.stake),
+                entryCount: stakeRow.entries.length,
+                courseBreakdown: formatJudgeMapCourseBreakdown(stakeRow.entries.length, isQuasiBreedClass(runRow.breed) || isQuasiBreedClass(stakeRow.stake)),
+                judges: [runRow.judge1, runRow.judge2].filter(Boolean).join(' / '),
+            }));
+    });
+}
+
+function stakeSortOrder(stake) {
+    const normalized = clean(stake);
+    if (normalized === 'OPEN' || normalized === 'SINGLES') {
+        return 1;
+    }
+    if (normalized === 'FIELDCHAMPION' || normalized === 'FCH' || normalized === 'EXCELLENT') {
+        return 2;
+    }
+    if (normalized === 'VETERAN') {
+        return 3;
+    }
+    return 10;
+}
+
+function displayJudgeMapStake(stake) {
+    const normalized = clean(stake);
+    if (normalized === 'FIELDCHAMPION') {
+        return 'FCh';
+    }
+    return stake || '';
+}
+
+function formatJudgeMapCourseBreakdown(count, fillCourses = false) {
+    if (!count) {
+        return '';
+    }
+    return courseSizesForEntryCount(count, fillCourses)
+        .map((size, index) => `${index + 1}(${size})`)
+        .join(' ');
 }
 
 function renderRollCallSheet(trial) {
@@ -14840,6 +15809,7 @@ function buildFallbackHoundForBreed(breed, index) {
         breed,
         registrationNumber: `AT${String(index).padStart(5, '0')}`,
         owner: `Owner ${Math.floor(index / 2) + 1}`,
+        testData: true,
     };
 }
 
@@ -14914,6 +15884,7 @@ function normalizeAdminHound(hound, index, forcedBreed = '') {
         owner: hound.owner || `Owner ${index + 1}`,
         registrationVerificationStatus: hound.registrationVerificationStatus || 'not_checked',
         createdAt: hound.createdAt || new Date().toISOString(),
+        testData: Boolean(hound.testData),
     };
 }
 
@@ -15045,7 +16016,7 @@ function ensureAdminTestJudges() {
     return names.map((name, index) => {
         let judge = masterJudges.find((item) => clean(item.name) === clean(name));
         if (!judge) {
-            judge = { id: crypto.randomUUID(), name, number: `J${index + 101}`, email: '', phone: '', createdAt: new Date().toISOString() };
+            judge = { id: crypto.randomUUID(), name, number: `J${index + 101}`, email: '', phone: '', createdAt: new Date().toISOString(), testData: true };
             masterJudges.unshift(judge);
         }
         return { id: crypto.randomUUID(), judgeId: judge.id, name: judge.name, number: judge.number, assignment: 'Admin Test' };
@@ -15065,7 +16036,7 @@ function ensureAdminTestWorkers() {
     const rows = workers.map(([name, role]) => {
         let worker = masterWorkers.find((item) => clean(item.name) === clean(name));
         if (!worker) {
-            worker = { id: crypto.randomUUID(), name, email: '', phone: '', notes: '', createdAt: new Date().toISOString() };
+            worker = { id: crypto.randomUUID(), name, email: '', phone: '', notes: '', createdAt: new Date().toISOString(), testData: true };
             masterWorkers.unshift(worker);
         }
         return { id: crypto.randomUUID(), workerId: worker.id, name: worker.name, role, phone: worker.phone || '' };
@@ -15073,6 +16044,81 @@ function ensureAdminTestWorkers() {
     saveMasterJudges();
     saveMasterWorkers();
     return rows;
+}
+
+function isGeneratedAdminTestHound(hound) {
+    if (hound.testData === true) {
+        return true;
+    }
+    const registration = String(hound.registrationNumber || '').trim().toUpperCase();
+    const registeredName = String(hound.registeredName || '').trim().toUpperCase();
+    const testRegistration = /^AT\d{5}$/.test(registration) || /^TEST\d{4}$/.test(registration);
+    return testRegistration
+        && registeredName.startsWith('ADMIN TEST ')
+        && clean(hound.registrationType || '') === 'TEST';
+}
+
+function isGeneratedAdminTestJudge(judge) {
+    if (judge.testData === true) {
+        return true;
+    }
+    const legacyJudges = new Map([
+        ['J101', 'JORDANBLAKE'],
+        ['J102', 'MORGANELLIS'],
+        ['J103', 'CASEYHART'],
+        ['J104', 'TAYLORREED'],
+    ]);
+    const number = String(judge.number || '').trim().toUpperCase();
+    return legacyJudges.get(number) === clean(judge.name || '');
+}
+
+function isGeneratedAdminTestWorker(worker) {
+    if (worker.testData === true) {
+        return true;
+    }
+    const legacyNames = new Set([
+        'ALEXPARKER',
+        'JAMIEQUINN',
+        'ROBINSLOAN',
+        'DREWLANE',
+        'AVERYSTONE',
+        'RILEYFOX',
+    ]);
+    return legacyNames.has(clean(worker.name || ''))
+        && !String(worker.email || '').trim()
+        && !String(worker.phone || '').trim()
+        && !String(worker.notes || '').trim();
+}
+
+async function removeAdminTestRecords() {
+    const testHounds = masterHounds.filter(isGeneratedAdminTestHound);
+    const testJudges = masterJudges.filter(isGeneratedAdminTestJudge);
+    const testWorkers = masterWorkers.filter(isGeneratedAdminTestWorker);
+    const total = testHounds.length + testJudges.length + testWorkers.length;
+
+    if (!total) {
+        showMessage(adminTestMessage, 'No generated test hounds, judges, or workers were found in the reusable databases.', 'success');
+        return;
+    }
+
+    const confirmed = await showTrialConfirm({
+        title: 'Remove Test Database Records',
+        eyebrow: 'Reusable database cleanup',
+        message: `Remove ${testHounds.length} test hound${testHounds.length === 1 ? '' : 's'}, ${testJudges.length} test judge${testJudges.length === 1 ? '' : 's'}, and ${testWorkers.length} test worker${testWorkers.length === 1 ? '' : 's'}? Existing trials and their results will not be changed.`,
+        primaryText: 'Remove Test Records',
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    masterHounds = masterHounds.filter((hound) => !isGeneratedAdminTestHound(hound));
+    masterJudges = masterJudges.filter((judge) => !isGeneratedAdminTestJudge(judge));
+    masterWorkers = masterWorkers.filter((worker) => !isGeneratedAdminTestWorker(worker));
+    saveMasterHounds();
+    saveMasterJudges();
+    saveMasterWorkers();
+    showMessage(adminTestMessage, `Removed ${testHounds.length} test hounds, ${testJudges.length} test judges, and ${testWorkers.length} test workers. Existing trials were preserved.`, 'success');
+    render();
 }
 
 function buildAdminRunPlan(trial) {
@@ -15223,9 +16269,23 @@ function renderRows(tableId, rows, keys, options = {}) {
                 if (options.actions === 'hounds') {
                     removeMasterHound(row.id);
                 }
+                if (options.actions === 'masterJudges') {
+                    removeMasterJudge(row.id);
+                }
+                if (options.actions === 'masterWorkers') {
+                    removeMasterWorker(row.id);
+                }
+                if (options.actions === 'trialJudges') {
+                    removeTrialJudge(row.id);
+                }
+                if (options.actions === 'trialWorkers') {
+                    removeTrialWorker(row.id);
+                }
             });
 
-            td.append(edit);
+            if (options.actions === 'entries' || options.actions === 'hounds') {
+                td.append(edit);
+            }
             if (options.actions === 'entries' && entryDocumentLinks(row).length > 0) {
                 const docs = document.createElement('button');
                 docs.type = 'button';
@@ -17561,6 +18621,136 @@ function addMasterWorkerFromForm(source = 'master') {
     return worker;
 }
 
+async function removeMasterJudge(judgeId) {
+    const judge = masterJudges.find((item) => item.id === judgeId);
+    if (!judge) {
+        showMessage(masterJudgeMessage, 'Judge record not found.', 'warning');
+        return;
+    }
+
+    const trialCount = trials.filter((trial) =>
+        (trial.judges || []).some((item) => item.judgeId === judgeId || clean(item.name) === clean(judge.name))
+        || (trial.runPlan || []).some((item) => [item.judge1, item.judge2].some((name) => clean(name) === clean(judge.name)))
+    ).length;
+    const confirmed = await showTrialConfirm({
+        title: 'Remove Judge From Database',
+        eyebrow: judge.name || 'Judge',
+        message: `${judge.name || 'This judge'} is referenced by ${trialCount} existing trial${trialCount === 1 ? '' : 's'}. Remove this person from the reusable Judge Database? Existing trial assignments, scores, and reports will remain unchanged.`,
+        primaryText: 'Remove Judge',
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    masterJudges = masterJudges.filter((item) => item.id !== judgeId);
+    saveMasterJudges();
+    showMessage(masterJudgeMessage, `${judge.name} was removed from the Judge Database. Existing trials were preserved.`, 'success');
+    render();
+}
+
+async function removeMasterWorker(workerId) {
+    const worker = masterWorkers.find((item) => item.id === workerId);
+    if (!worker) {
+        showMessage(masterWorkerMessage, 'Worker record not found.', 'warning');
+        return;
+    }
+
+    const trialCount = trials.filter((trial) =>
+        (trial.workers || []).some((item) => item.workerId === workerId || clean(item.name) === clean(worker.name))
+        || (trial.runPlan || []).some((item) =>
+            [item.lureOperator, item.huntmaster].some((name) => clean(name) === clean(worker.name))
+        )
+    ).length;
+    const confirmed = await showTrialConfirm({
+        title: 'Remove Worker From Database',
+        eyebrow: worker.name || 'Worker',
+        message: `${worker.name || 'This worker'} is referenced by ${trialCount} existing trial${trialCount === 1 ? '' : 's'}. Remove this person from the reusable Worker Database? Existing trial assignments and reports will remain unchanged.`,
+        primaryText: 'Remove Worker',
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    masterWorkers = masterWorkers.filter((item) => item.id !== workerId);
+    saveMasterWorkers();
+    showMessage(masterWorkerMessage, `${worker.name} was removed from the Worker Database. Existing trials were preserved.`, 'success');
+    render();
+}
+
+async function removeTrialJudge(rowId) {
+    const trial = getSelectedTrial();
+    const judge = (trial?.judges || []).find((item) => item.id === rowId);
+    if (!trial || !judge) {
+        showMessage(masterJudgeMessage, 'Trial judge assignment not found.', 'warning');
+        return;
+    }
+
+    const runPlanCount = (trial.runPlan || []).filter((row) =>
+        [row.judge1, row.judge2].some((name) => clean(name) === clean(judge.name))
+    ).length;
+    const confirmed = await showTrialConfirm({
+        title: 'Remove Judge From This Trial',
+        eyebrow: judge.name || 'Trial judge',
+        message: `Remove ${judge.name || 'this judge'} from "${trial.trialName || 'this trial'}"? ${runPlanCount ? `The judge will also be cleared from ${runPlanCount} Running Order assignment${runPlanCount === 1 ? '' : 's'} for this trial. ` : ''}The reusable Judge Database and every other trial will remain unchanged.`,
+        primaryText: 'Remove From Trial',
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    const nextTrial = {
+        ...trial,
+        judges: (trial.judges || []).filter((item) => item.id !== rowId),
+        runPlan: (trial.runPlan || []).map((row) => ({
+            ...row,
+            judge1: clean(row.judge1) === clean(judge.name) ? '' : row.judge1,
+            judge2: clean(row.judge2) === clean(judge.name) ? '' : row.judge2,
+        })),
+        updatedAt: new Date().toISOString(),
+    };
+    trials = trials.map((item) => item.id === trial.id ? nextTrial : item);
+    saveTrials();
+    showMessage(masterJudgeMessage, `${judge.name} was removed from this trial. Other trials and the Judge Database were preserved.`, 'success');
+    render();
+}
+
+async function removeTrialWorker(rowId) {
+    const trial = getSelectedTrial();
+    const worker = (trial?.workers || []).find((item) => item.id === rowId);
+    if (!trial || !worker) {
+        showMessage(masterWorkerMessage, 'Trial worker assignment not found.', 'warning');
+        return;
+    }
+
+    const runPlanCount = (trial.runPlan || []).filter((row) =>
+        [row.lureOperator, row.huntmaster].some((name) => clean(name) === clean(worker.name))
+    ).length;
+    const confirmed = await showTrialConfirm({
+        title: 'Remove Worker From This Trial',
+        eyebrow: worker.name || 'Trial worker',
+        message: `Remove ${worker.name || 'this worker'} as ${worker.role || 'a worker'} from "${trial.trialName || 'this trial'}"? ${runPlanCount ? `This person will also be cleared from ${runPlanCount} matching Running Order assignment${runPlanCount === 1 ? '' : 's'} for this trial. ` : ''}The reusable Worker Database and every other trial will remain unchanged.`,
+        primaryText: 'Remove From Trial',
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    const nextTrial = {
+        ...trial,
+        workers: (trial.workers || []).filter((item) => item.id !== rowId),
+        runPlan: (trial.runPlan || []).map((row) => ({
+            ...row,
+            lureOperator: clean(row.lureOperator) === clean(worker.name) ? '' : row.lureOperator,
+            huntmaster: clean(row.huntmaster) === clean(worker.name) ? '' : row.huntmaster,
+        })),
+        updatedAt: new Date().toISOString(),
+    };
+    trials = trials.map((item) => item.id === trial.id ? nextTrial : item);
+    saveTrials();
+    showMessage(masterWorkerMessage, `${worker.name} was removed from this trial. Other trials and the Worker Database were preserved.`, 'success');
+    render();
+}
+
 function addTrialJudge() {
     let judge = findJudgeFromSearch();
 
@@ -18015,6 +19205,10 @@ function renderSubTabs(tab) {
         button.type = 'button';
         button.className = 'sub-tab-button';
         button.textContent = heading.textContent;
+        const status = guideStatusForSubTab(tab, heading.textContent);
+        if (status) {
+            button.classList.add(`guide-${status}`);
+        }
         button.addEventListener('click', () => {
             if (tab === 'scoring') {
                 currentScoringPage = heading.textContent;
@@ -18084,13 +19278,77 @@ function renderScoringPages() {
 function renderWrapUpPages() {
     const sections = [...document.querySelectorAll('.form-section[data-tab="wrapup"]')];
     if (!sections.some((section) => section.querySelector('h2, h3')?.textContent === currentWrapUpPage)) {
-        currentWrapUpPage = 'ASFA Record Packet';
+        currentWrapUpPage = 'ASFA Secretary Report';
     }
     sections.forEach((section) => {
         const heading = section.querySelector('h2, h3');
         section.hidden = heading ? heading.textContent !== currentWrapUpPage : true;
     });
+    renderPaperworkSubmittedStatus(getSelectedTrial());
     renderTrialArchiveStatus(getSelectedTrial());
+}
+
+function wrapUpPageGuideStatus(page, trial) {
+    if (!trial || !printStatus(trial, 'ribbonReport')) {
+        return 'blocked';
+    }
+    const statuses = trialWrapUpGuideSteps(trial)
+        .filter((step) => step.wrapUpPage === page)
+        .map((step) => step.status);
+    return guideStatusFromList(statuses) || 'blocked';
+}
+
+function guideStatusForSubTab(tab, headingText) {
+    if (!tab || tab === 'admin') {
+        return '';
+    }
+    if (tab === 'wrapup') {
+        return wrapUpPageGuideStatus(headingText, getSelectedTrial());
+    }
+    const steps = trialGuideSteps(getSelectedTrial());
+    const matches = steps.filter((step) => {
+        if (step.tab !== tab) {
+            return false;
+        }
+        if (tab === 'scoring') {
+            return step.scoringPage === headingText || step.sectionTitle === headingText;
+        }
+        return step.sectionTitle === headingText;
+    }).map((step) => step.status);
+    return guideStatusFromList(matches);
+}
+
+function guideStatusFromList(statuses = []) {
+    if (!statuses.length) {
+        return '';
+    }
+    if (statuses.some((status) => status === 'attention')) {
+        return 'attention';
+    }
+    if (statuses.some((status) => status === 'ready')) {
+        return 'ready';
+    }
+    if (statuses.every((status) => status === 'done')) {
+        return 'done';
+    }
+    return 'blocked';
+}
+
+function renderPaperworkSubmittedStatus(trial) {
+    const container = document.getElementById('paperworkSubmittedStatus');
+    if (!container) {
+        return;
+    }
+    container.innerHTML = '';
+    const paragraph = document.createElement('p');
+    if (!trial) {
+        paragraph.textContent = 'Select a trial to see submission status.';
+    } else if (trial.paperworkSubmittedAt) {
+        paragraph.innerHTML = `<strong>Submitted:</strong> ${formatTimestamp(trial.paperworkSubmittedAt)}. Next step is to archive the completed trial.`;
+    } else {
+        paragraph.innerHTML = 'After printing and reviewing the ASFA record packet, submit paperwork to <strong>records@asfa.org</strong>, then mark it submitted here.';
+    }
+    container.appendChild(paragraph);
 }
 
 function renderTrialArchiveStatus(trial) {
@@ -18183,6 +19441,7 @@ function render() {
     renderTrialList();
     renderActiveBadge();
     renderSaveStatus();
+    renderDatabaseIntegrityStatus();
 
     const selected = trials.find((trial) => trial.id === selectedTrialId);
     if (selected && recalculateTrialResults(selected)) {
@@ -18402,6 +19661,7 @@ document.getElementById('returnTopButton')?.addEventListener('click', scrollToPa
 window.addEventListener('scroll', updateReturnTopButton, { passive: true });
 window.addEventListener('resize', updateReturnTopButton);
 document.getElementById('printWorkerSheetButton').addEventListener('click', () => printSectionAndMark('workerSheetPrint', 'workerSheet'));
+document.getElementById('printJudgesMapButton')?.addEventListener('click', () => printSection('judgesMapPrint'));
 document.getElementById('printRollCallButton').addEventListener('click', () => printSectionAndMark('rollCallPrint', 'rollCallSheet'));
 document.getElementById('markSeparationReviewedButton')?.addEventListener('click', markOwnerSeparationReviewed);
 document.getElementById('printDrawSheetButton').addEventListener('click', printDrawSheet);
@@ -18413,6 +19673,7 @@ document.getElementById('printRibbonReportButton')?.addEventListener('click', pr
 document.getElementById('printAsfaEntryFormsButton')?.addEventListener('click', printAsfaEntryForms);
 document.getElementById('printAsfaRecordPacketButton')?.addEventListener('click', printAsfaRecordPacket);
 document.getElementById('printAsfaSecretaryReportButton')?.addEventListener('click', printAsfaSecretaryReport);
+document.getElementById('markPaperworkSubmittedButton')?.addEventListener('click', markPaperworkSubmitted);
 document.getElementById('createFinalArchiveButton')?.addEventListener('click', createFinalTrialArchive);
 document.getElementById('unlockArchivedTrialButton')?.addEventListener('click', unlockArchivedTrial);
 showArchivedTrials?.addEventListener('change', renderTrialList);
@@ -18423,18 +19684,27 @@ showArchivedTrials?.addEventListener('change', renderTrialList);
     'secretarySpecialBenchCount',
     'secretaryCheckAmount',
     'secretaryPaypalAmount',
+    'secretaryPaypalTransactionId',
 ].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', () => {
         const trial = readForm();
         upsertTrial(trial);
         saveTrials();
         renderSecretaryFeeSummary(trial);
+        renderTrialGuide(trial);
+        if (currentTab === 'wrapup') {
+            renderSubTabs('wrapup');
+        }
     });
     document.getElementById(id)?.addEventListener('change', () => {
         const trial = readForm();
         upsertTrial(trial);
         saveTrials();
         renderSecretaryFeeSummary(trial);
+        renderTrialGuide(trial);
+        if (currentTab === 'wrapup') {
+            renderSubTabs('wrapup');
+        }
     });
 });
 document.getElementById('redrawAllRunoffsButton').addEventListener('click', redrawAllRunoffs);
@@ -18449,21 +19719,27 @@ document.getElementById('addAdminPlanRowButton').addEventListener('click', addAd
 document.getElementById('createAdminTestTrialButton').addEventListener('click', createAdminTestTrial);
 document.getElementById('populateAdminScoresButton').addEventListener('click', populateAdminPreliminaryScores);
 document.getElementById('populateAdminFinalsScoresButton').addEventListener('click', populateAdminFinalsScores);
+document.getElementById('removeAdminTestRecordsButton')?.addEventListener('click', removeAdminTestRecords);
 document.getElementById('deleteSelectedTrialButton').addEventListener('click', deleteSelectedAdminTrial);
-document.getElementById('enablePersistentStorageButton').addEventListener('click', enablePersistentStorage);
 document.getElementById('restoreBrowserBackupButton').addEventListener('click', restoreBrowserSafetyBackup);
 document.getElementById('createSQLiteBackupButton').addEventListener('click', createSQLiteBackup);
+document.getElementById('saveBackupRetentionButton')?.addEventListener('click', saveBackupRetention);
 document.getElementById('restoreSQLiteBackupButton')?.addEventListener('click', restoreSQLiteBackup);
 sqliteBackupSelect?.addEventListener('change', updateSQLiteBackupDetails);
+document.getElementById('refreshSQLiteBackupsButton')?.addEventListener('click', () => refreshSQLiteBackupList());
 document.getElementById('buildPortablePackageButton')?.addEventListener('click', buildPortablePackage);
 document.getElementById('refreshPortableStatusButton')?.addEventListener('click', () => refreshPortableStatus(true));
 document.getElementById('createTransferPackageButton')?.addEventListener('click', createTransferPackage);
+document.getElementById('createProgramUpdatePackageButton')?.addEventListener('click', createProgramUpdatePackage);
 document.getElementById('restoreTransferAppFilesButton')?.addEventListener('click', () => document.getElementById('restoreTransferAppFilesInput')?.click());
 document.getElementById('restoreTransferAppFilesInput')?.addEventListener('change', (event) => {
     restoreTransferAppFiles(event.target.files?.[0] || null);
     event.target.value = '';
 });
 document.getElementById('restartServerButton')?.addEventListener('click', restartAppServer);
+document.getElementById('exitAppButton')?.addEventListener('click', exitAppServer);
+document.getElementById('exitAppToolsButton')?.addEventListener('click', exitAppServer);
+document.getElementById('goToArchiveTrialButton')?.addEventListener('click', goToArchiveTrialSection);
 document.getElementById('exportDataBackupButton').addEventListener('click', exportDataBackup);
 document.getElementById('importDataBackupButton').addEventListener('click', () => document.getElementById('importDataBackupFile').click());
 document.getElementById('importDataBackupFile').addEventListener('change', (event) => {
@@ -18490,12 +19766,16 @@ document.getElementById('addJudgeButton').addEventListener('click', addTrialJudg
 document.getElementById('addWorkerButton').addEventListener('click', addTrialWorker);
 
 async function startApp() {
+    startStartupSplashAnimation();
+    await loadAppVersion();
     populateBreedSelects();
     renderSaveStatus();
     await loadFromSQLiteIfAvailable();
+    refreshDatabaseIntegrityStatus();
     render();
     updateReturnTopButton();
     initializeResilientStorage();
+    hideStartupSplash();
 }
 
 window.addEventListener('pagehide', flushSQLiteSaveBeforeClose);

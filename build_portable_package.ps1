@@ -1,6 +1,7 @@
 param(
     [switch]$SkipPyInstallerInstall,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$NoZip
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,19 +30,38 @@ if (-not $python) {
 
 Set-Location -LiteralPath $root
 
-if (-not $SkipPyInstallerInstall) {
-    $pyInstallerInstalled = $false
+$versionPath = Join-Path $root "app\version.json"
+$appVersion = "0.0.0"
+if (Test-Path -LiteralPath $versionPath) {
     try {
-        & $python -m pip show pyinstaller *> $null
-        $pyInstallerInstalled = ($LASTEXITCODE -eq 0)
+        $versionData = Get-Content -Raw -LiteralPath $versionPath | ConvertFrom-Json
+        if ($versionData.version) {
+            $appVersion = [string]$versionData.version
+        }
     } catch {
-        $pyInstallerInstalled = $false
+        $appVersion = "0.0.0"
     }
-    if (-not $pyInstallerInstalled) {
-        Write-Host "PyInstaller is not installed in this Python. Installing it now..."
-        & $python -m pip install pyinstaller
-        if ($LASTEXITCODE -ne 0) {
-            throw "PyInstaller install failed."
+}
+$safeAppVersion = ($appVersion -replace '[^0-9A-Za-z._-]', '-').Trim('-')
+if (-not $safeAppVersion) {
+    $safeAppVersion = "0.0.0"
+}
+
+if (-not $SkipPyInstallerInstall) {
+    foreach ($package in @("pyinstaller", "pypdfium2", "pypdf", "reportlab", "pillow")) {
+        $packageInstalled = $false
+        try {
+            & $python -m pip show $package *> $null
+            $packageInstalled = ($LASTEXITCODE -eq 0)
+        } catch {
+            $packageInstalled = $false
+        }
+        if (-not $packageInstalled) {
+            Write-Host "$package is not installed in this Python. Installing it now..."
+            & $python -m pip install $package
+            if ($LASTEXITCODE -ne 0) {
+                throw "$package install failed."
+            }
         }
     }
 }
@@ -56,7 +76,21 @@ if ($Clean) {
 }
 
 Write-Host "Building FieldTrialSecretary.exe..."
-& $python -m PyInstaller --noconfirm --clean --onedir --console --name FieldTrialSecretary server.py
+$iconPath = Join-Path $root "app\assets\field-trial-secretary-icon.ico"
+$pyInstallerArgs = @(
+    "--noconfirm",
+    "--clean",
+    "--noupx",
+    "--onedir",
+    "--console",
+    "--name", "FieldTrialSecretary",
+    "--collect-all", "pypdfium2"
+)
+if (Test-Path -LiteralPath $iconPath) {
+    $pyInstallerArgs += @("--icon", $iconPath)
+}
+$pyInstallerArgs += "server.py"
+& $python -m PyInstaller @pyInstallerArgs
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller build failed."
 }
@@ -77,13 +111,35 @@ foreach ($folder in @("app", "database")) {
     Copy-Item -LiteralPath (Join-Path $root $folder) -Destination (Join-Path $packageRoot $folder) -Recurse -Force
 }
 
-foreach ($folder in @("data", "backups")) {
+foreach ($folder in @("data")) {
     $source = Join-Path $root $folder
     $destination = Join-Path $packageRoot $folder
     if (Test-Path -LiteralPath $source) {
         Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
     } else {
         New-Item -ItemType Directory -Path $destination | Out-Null
+    }
+}
+
+foreach ($folder in @(
+    "backups",
+    "backups\database",
+    "backups\trial_archives",
+    "backups\transfer_packages",
+    "backups\app_file_restores"
+)) {
+    New-Item -ItemType Directory -Path (Join-Path $packageRoot $folder) -Force | Out-Null
+}
+
+$blankDb = Join-Path $packageRoot "data\blank_field_trial_secretary.sqlite"
+$schemaPath = Join-Path $root "database\schema.sql"
+if (Test-Path -LiteralPath $blankDb) {
+    Remove-Item -LiteralPath $blankDb -Force
+}
+if (Test-Path -LiteralPath $schemaPath) {
+    & $python -c "import sqlite3, pathlib; schema = pathlib.Path(r'$schemaPath').read_text(encoding='utf-8'); db = pathlib.Path(r'$blankDb'); db.parent.mkdir(parents=True, exist_ok=True); conn = sqlite3.connect(db); conn.executescript(schema); conn.commit(); conn.close()"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Blank SQLite database creation failed."
     }
 }
 
@@ -96,32 +152,82 @@ echo.
 echo If the browser does not open, go to:
 echo http://127.0.0.1:8765/
 echo.
-FieldTrialSecretary.exe --host 127.0.0.1 --port 8765 --open-browser
-pause
+"%~dp0FieldTrialSecretary.exe" --host 127.0.0.1 --port 8765 --open-browser
+if errorlevel 1 pause
 '@ | Set-Content -LiteralPath $startBat -Encoding ASCII
+
+$startVbs = Join-Path $packageRoot "Start Field Trial Secretary.vbs"
+@'
+Set shell = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+appFolder = fso.GetParentFolderName(WScript.ScriptFullName)
+shell.CurrentDirectory = appFolder
+command = """" & appFolder & "\FieldTrialSecretary.exe" & """" & " --host 127.0.0.1 --port 8765 --open-browser"
+shell.Run command, 0, False
+'@ | Set-Content -LiteralPath $startVbs -Encoding ASCII
+
+$shortcutBat = Join-Path $packageRoot "Create Desktop Shortcut.bat"
+@'
+@echo off
+cd /d "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$desktop=[Environment]::GetFolderPath('Desktop'); $shell=New-Object -ComObject WScript.Shell; $shortcut=$shell.CreateShortcut((Join-Path $desktop 'Field Trial Secretary.lnk')); $shortcut.TargetPath=(Join-Path $env:WINDIR 'System32\wscript.exe'); $shortcut.Arguments='""' + (Join-Path $PWD 'Start Field Trial Secretary.vbs') + '""'; $shortcut.WorkingDirectory=$PWD.Path; $shortcut.IconLocation=(Join-Path $PWD 'app\assets\field-trial-secretary-icon.ico'); $shortcut.Description='Start Field Trial Secretary'; $shortcut.Save()"
+echo Desktop shortcut created.
+pause
+'@ | Set-Content -LiteralPath $shortcutBat -Encoding ASCII
+
+$installBat = Join-Path $packageRoot "Install Field Trial Secretary.bat"
+@'
+@echo off
+cd /d "%~dp0"
+echo Field Trial Secretary is portable.
+echo.
+echo To choose an install location, move or extract this whole folder wherever you want it.
+echo This folder is currently:
+echo %CD%
+echo.
+echo Starting Field Trial Secretary...
+start "" "%~dp0Start Field Trial Secretary.vbs"
+'@ | Set-Content -LiteralPath $installBat -Encoding ASCII
 
 $readme = Join-Path $packageRoot "README-PORTABLE.txt"
 @'
 Field Trial Secretary - Portable Package
+Version: __APP_VERSION__
 
-To run:
-1. Double-click "Start Field Trial Secretary.bat".
+Fast install on a new computer:
+1. Extract the zip into the folder where you want the app to live.
+2. Open the "Field Trial Secretary" folder.
+3. Double-click "Start Field Trial Secretary.vbs".
+4. Optional: double-click "Create Desktop Shortcut.bat" to add a desktop shortcut with the Field Trial Secretary icon.
+
+To run without installing:
+1. Double-click "Start Field Trial Secretary.vbs".
 2. Your browser should open to http://127.0.0.1:8765/.
-3. Leave the black command window open while using the app.
-4. Close the command window or press Ctrl+C to stop the app.
+3. Click Exit in the app header to stop the app. You can then close the browser tab.
+
+Troubleshooting:
+If the quiet launcher does not open, double-click "Start Field Trial Secretary.bat" to see startup messages.
 
 To move to another computer:
-Copy this whole "Field Trial Secretary" folder.
+Copy this whole "Field Trial Secretary" folder, or use the installer batch file after extracting the zip.
 
 Important files:
 - data\field_trial_secretary.sqlite contains the live SQLite data.
+- data\blank_field_trial_secretary.sqlite is a blank starter database.
 - app\templates contains the official PDF templates.
-- backups contains backup files.
+- backups starts empty in portable packages and will fill as the app creates backups.
 
 The target computer does not need Python installed.
-'@ | Set-Content -LiteralPath $readme -Encoding ASCII
+'@.Replace("__APP_VERSION__", $appVersion) | Set-Content -LiteralPath $readme -Encoding ASCII
 
-$zipPath = Join-Path $root ("portable\Field-Trial-Secretary-portable-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".zip")
+if ($NoZip) {
+    Write-Host ""
+    Write-Host "Portable package folder created:"
+    Write-Host $packageRoot
+    exit 0
+}
+
+$zipPath = Join-Path $root ("portable\Field-Trial-Secretary-" + $safeAppVersion + "-portable-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".zip")
 $zipCreated = $false
 for ($attempt = 1; $attempt -le 3; $attempt++) {
     try {

@@ -1,0 +1,9 @@
+{
+  "name": "Field Trial Secretary",
+  "version": "0.2.0",
+  "releaseDate": "2026-07-12",
+  "channel": "local",
+  "releaseUrl": "",
+  "latestVersionUrl": "",
+  "notes": "Production-readiness workflow, reporting, backup, and portable package improvements."
+}

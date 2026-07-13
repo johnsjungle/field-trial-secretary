@@ -31,15 +31,44 @@ ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) el
 APP_DIR = ROOT / "app"
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "field_trial_secretary.sqlite"
+VERSION_PATH = APP_DIR / "version.json"
 DB_BACKUP_DIR = ROOT / "backups" / "database"
 TRIAL_ARCHIVE_DIR = ROOT / "backups" / "trial_archives"
 TRANSFER_PACKAGE_DIR = ROOT / "backups" / "transfer_packages"
 APP_RESTORE_BACKUP_DIR = ROOT / "backups" / "app_file_restores"
+LOG_DIR = ROOT / "logs"
+APP_LOG_PATH = LOG_DIR / "field_trial_secretary.log"
+SETTINGS_PATH = DATA_DIR / "app_settings.json"
 STATE_KEY = "current"
-MAX_DB_BACKUPS = 75
+DEFAULT_MAX_DB_BACKUPS = 30
+MIN_DB_BACKUPS = 5
+MAX_DB_BACKUPS_LIMIT = 250
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 TEMPLATE_IMAGE_CACHE: dict[str, bytes] = {}
 TEMPLATE_IMAGE_LOCK = threading.Lock()
+
+
+class NullWriter:
+    def write(self, _text: str) -> int:
+        return 0
+
+    def flush(self) -> None:
+        return None
+
+
+if sys.stdout is None:
+    sys.stdout = NullWriter()
+if sys.stderr is None:
+    sys.stderr = NullWriter()
+
+
+def app_log(message: str) -> None:
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(APP_LOG_PATH, "a", encoding="utf-8") as handle:
+            handle.write(f"{utc_now()} {message}\n")
+    except Exception:
+        pass
 DRAW_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "SEC-05-Draw-Order-Rev-08-01.pdf",
     "AKC": APP_DIR / "templates" / "akc" / "JERSC2-Lure-Coursing-Draw-Order.pdf",
@@ -104,6 +133,10 @@ DEFAULT_ASFA_RECORD_LAYOUT = {
     "stakesRunoffLabelY": 159,
     "stakesRunoffCodeX": 640,
     "stakesRunoffCodeY": 169,
+    "secondRunoffLabelX": 682,
+    "secondRunoffLabelY": 159,
+    "secondRunoffCodeX": 682,
+    "secondRunoffCodeY": 169,
     "bobRunoffLabelX": 724,
     "bobRunoffLabelY": 159,
     "bobRunoffCodeX": 724,
@@ -291,6 +324,14 @@ DEFAULT_ASFA_ENTRY_LAYOUT = {
     "circleWeight": 1.4,
     "globalYAdjust": 0,
     "copyOffsetX": 396,
+    "trialClubX": 30,
+    "trialClubY": 58,
+    "trialDateX": 30,
+    "trialDateY": 72,
+    "trialSecretaryX": 205,
+    "trialSecretaryY": 58,
+    "trialSecretaryEmailX": 205,
+    "trialSecretaryEmailY": 72,
     "breedX": 54,
     "breedY": 82,
     "callNameX": 78,
@@ -352,6 +393,14 @@ DEFAULT_ASFA_LCI_ENTRY_LAYOUT = {
     "circleWeight": 1.4,
     "globalYAdjust": 0,
     "copyOffsetX": 396,
+    "trialClubX": 30,
+    "trialClubY": 64,
+    "trialDateX": 30,
+    "trialDateY": 78,
+    "trialSecretaryX": 205,
+    "trialSecretaryY": 64,
+    "trialSecretaryEmailX": 205,
+    "trialSecretaryEmailY": 78,
     "breedX": 54,
     "breedY": 88,
     "callNameX": 78,
@@ -455,9 +504,58 @@ def read_state() -> dict | None:
     return json.loads(row[0])
 
 
+def database_integrity_status() -> dict:
+    ensure_database()
+    started = datetime.now()
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute("PRAGMA integrity_check").fetchall()
+    messages = [str(row[0]) for row in rows if row]
+    ok = messages == ["ok"]
+    elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
+    return {
+        "ok": ok,
+        "status": "ok" if ok else "error",
+        "messages": messages,
+        "checkedAt": utc_now(),
+        "elapsedMs": elapsed_ms,
+        "dbPath": str(DB_PATH),
+    }
+
+
+def normalize_backup_retention(value: object) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        count = DEFAULT_MAX_DB_BACKUPS
+    return max(MIN_DB_BACKUPS, min(MAX_DB_BACKUPS_LIMIT, count))
+
+
+def read_app_settings() -> dict:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    settings = {"maxDbBackups": DEFAULT_MAX_DB_BACKUPS}
+    try:
+        loaded = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            settings.update(loaded)
+    except Exception:
+        pass
+    settings["maxDbBackups"] = normalize_backup_retention(settings.get("maxDbBackups"))
+    return settings
+
+
+def write_app_settings(settings: dict) -> dict:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    current = read_app_settings()
+    current["maxDbBackups"] = normalize_backup_retention(settings.get("maxDbBackups", current.get("maxDbBackups")))
+    SETTINGS_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    prune_backups()
+    return current
+
+
 def prune_backups() -> None:
+    max_backups = normalize_backup_retention(read_app_settings().get("maxDbBackups"))
     backups = sorted(DB_BACKUP_DIR.glob("field_trial_secretary-*.sqlite"), key=lambda path: path.stat().st_mtime, reverse=True)
-    for old_backup in backups[MAX_DB_BACKUPS:]:
+    for old_backup in backups[max_backups:]:
         old_backup.unlink(missing_ok=True)
 
 
@@ -479,7 +577,8 @@ def create_database_backup(reason: str) -> str:
 def list_database_backups() -> list[dict]:
     DB_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
-    for path in sorted(DB_BACKUP_DIR.glob("field_trial_secretary-*.sqlite"), key=lambda item: item.stat().st_mtime, reverse=True):
+    backup_paths = {path.resolve() for path in DB_BACKUP_DIR.glob("*.sqlite") if path.is_file()}
+    for path in sorted(backup_paths, key=lambda item: item.stat().st_mtime, reverse=True):
         stat = path.stat()
         rows.append(
             {
@@ -594,6 +693,34 @@ def latest_portable_zip() -> Path | None:
     return zips[0] if zips else None
 
 
+def portable_package_folder() -> Path:
+    return ROOT / "portable" / "Field Trial Secretary"
+
+
+def app_version_info() -> dict:
+    fallback = {
+        "name": "Field Trial Secretary",
+        "version": "0.0.0",
+        "releaseDate": "",
+        "channel": "local",
+        "notes": "",
+    }
+    try:
+        data = json.loads(VERSION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    merged = {**fallback, **data}
+    merged["version"] = str(merged.get("version") or fallback["version"])
+    return merged
+
+
+def app_version_label() -> str:
+    version = app_version_info().get("version") or "0.0.0"
+    return re.sub(r"[^0-9A-Za-z._-]+", "-", str(version)).strip("-") or "0.0.0"
+
+
 def newest_relevant_app_file() -> tuple[Path | None, float]:
     candidates: list[Path] = []
     for file_name in RESTORABLE_ROOT_FILES:
@@ -620,6 +747,7 @@ def portable_package_status() -> dict:
         return {
             "hasPortable": False,
             "current": False,
+            "appVersion": app_version_info(),
             "message": "No portable zip was found.",
             "newestAppFile": str(newest_path) if newest_path else "",
             "newestAppFileModifiedAt": datetime.fromtimestamp(newest_time).isoformat() if newest_time else "",
@@ -629,6 +757,7 @@ def portable_package_status() -> dict:
     return {
         "hasPortable": True,
         "current": current,
+        "appVersion": app_version_info(),
         "zipName": portable_zip.name,
         "zipPath": str(portable_zip),
         "zipModifiedAt": datetime.fromtimestamp(zip_time).isoformat(),
@@ -641,7 +770,7 @@ def portable_package_status() -> dict:
 
 def build_portable_package() -> dict:
     if getattr(sys, "frozen", False):
-        raise ValueError("Portable packages must be built from the source folder, not from inside the portable EXE.")
+        raise ValueError("This app is running from the portable EXE. Close it, open the source-folder copy of Field Trial Secretary on the build computer, then run Build Portable EXE from Admin > Tools.")
     script = ROOT / "build_portable_package.ps1"
     if not script.exists():
         raise FileNotFoundError("build_portable_package.ps1 was not found.")
@@ -682,66 +811,158 @@ def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
     if state is not None and not isinstance(state, dict):
         raise ValueError("state must be an object")
 
+    status = portable_package_status()
+    if not status.get("hasPortable") or not status.get("current"):
+        build_portable_package()
+
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"field-trial-secretary-transfer-{timestamp}.zip"
+    version_label = app_version_label()
+    filename = f"field-trial-secretary-{version_label}-installer-{timestamp}.zip"
     TRANSFER_PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
     package_path = TRANSFER_PACKAGE_DIR / filename
-    sqlite_backup_path = Path(create_database_backup("transfer_package"))
-    portable_zip = latest_portable_zip()
-    include_runnable = portable_zip is not None
+    package_folder = portable_package_folder()
+    if not package_folder.exists():
+        raise RuntimeError("Portable package folder was not created.")
 
     notes = [
-        "Field Trial Secretary Transfer Package",
+        "Field Trial Secretary Installer Package",
+        f"Version: {app_version_info().get('version')}",
         f"Created: {utc_now()}",
         "",
         "What is included:",
-        "- current SQLite database and a fresh SQLite backup",
-        "- browser/state JSON backup",
-        "- app files, templates, server code, scripts, and documentation",
-        "- latest portable program zip when it exists",
+        "- FieldTrialSecretary.exe and its bundled Python runtime files",
+        "- current SQLite database: Field Trial Secretary\\data\\field_trial_secretary.sqlite",
+        "- blank starter database: Field Trial Secretary\\data\\blank_field_trial_secretary.sqlite",
+        "- app files and official PDF templates",
+        "- empty backup folders that the app will use on the new computer",
         "",
         "Move to another computer:",
         "1. Copy this zip to the other computer.",
-        "2. Extract the zip into a normal folder, not directly inside Downloads if Windows blocks it.",
-        "3. If the package contains portable/, extract the portable zip on the new computer and run the app from that extracted folder.",
-        "4. If using source mode instead, install Python dependencies or use the existing portable build process.",
-        "5. Keep the database folder with the program folder. It contains trial data and uploaded first-time-entry documents.",
+        "2. Right-click the zip and choose Extract All.",
+        "3. Extract it into the folder where you want the app to live.",
+        "4. Open the Field Trial Secretary folder.",
+        "5. Double-click Start Field Trial Secretary.vbs, or use the desktop shortcut if one was created.",
+        "",
+        "Run without installing:",
+        "Open Field Trial Secretary and double-click Start Field Trial Secretary.vbs.",
         "",
         "Important: create a fresh transfer package after making program changes or entering new trial data.",
-    ]
-    if not include_runnable:
-        notes.append("")
-        notes.append("No portable zip was found, so this package includes source files and data but not a no-Python runnable build.")
-
-    root_files = [
-        "server.py",
-        "start_field_trial_secretary.ps1",
-        "build_portable_package.ps1",
-        "backup_field_trial_secretary.ps1",
-        "FieldTrialSecretary.spec",
-        "README.md",
-        "BACKUP_AND_TRANSFER.md",
-        "PHASE_1_SQLITE_MODE.md",
-        "TRIAL_DAY_DATA_SAFETY.md",
+        "The target computer does not need Python installed.",
     ]
 
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("README-TRANSFER.txt", "\n".join(notes) + "\n")
-        if state is not None:
-            archive.writestr("data/state-export.json", json.dumps(state, ensure_ascii=False, indent=2))
-        if DB_PATH.exists():
-            archive.write(DB_PATH, "data/field_trial_secretary.sqlite")
-        archive.write(sqlite_backup_path, f"backups/database/{sqlite_backup_path.name}")
+        archive.writestr(
+            "Start Field Trial Secretary.bat",
+            '@echo off\r\n'
+            'cd /d "%~dp0Field Trial Secretary"\r\n'
+            'call "Start Field Trial Secretary.bat"\r\n',
+        )
+        archive.writestr(
+            "Start Field Trial Secretary.vbs",
+            'Set shell = CreateObject("WScript.Shell")\r\n'
+            'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
+            'root = fso.GetParentFolderName(WScript.ScriptFullName)\r\n'
+            'appFolder = fso.BuildPath(root, "Field Trial Secretary")\r\n'
+            'shell.CurrentDirectory = appFolder\r\n'
+            'shell.Run """" & fso.BuildPath(appFolder, "Start Field Trial Secretary.vbs") & """", 0, False\r\n',
+        )
+        for path in package_folder.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(package_folder).as_posix()
+            if relative.startswith("backups/database/") or relative.startswith("backups/trial_archives/"):
+                continue
+            if relative.startswith("backups/transfer_packages/") or relative.startswith("backups/app_file_restores/"):
+                continue
+            archive.write(path, f"Field Trial Secretary/{relative}")
 
-        for file_name in root_files:
-            path = ROOT / file_name
-            if path.exists() and path.is_file():
-                archive.write(path, file_name)
+    return package_path.read_bytes(), filename, str(package_path)
 
-        add_directory_to_archive(archive, APP_DIR, "app")
-        add_directory_to_archive(archive, ROOT / "database", "database")
-        if portable_zip:
-            archive.write(portable_zip, f"portable/{portable_zip.name}")
+
+def create_program_update_package() -> tuple[bytes, str, str]:
+    status = portable_package_status()
+    if not status.get("hasPortable") or not status.get("current"):
+        build_portable_package()
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    version_label = app_version_label()
+    filename = f"field-trial-secretary-{version_label}-program-update-{timestamp}.zip"
+    TRANSFER_PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
+    package_path = TRANSFER_PACKAGE_DIR / filename
+    package_folder = portable_package_folder()
+    if not package_folder.exists():
+        raise RuntimeError("Portable package folder was not created.")
+
+    update_bat = (
+        '@echo off\r\n'
+        'setlocal\r\n'
+        'set "SOURCE=%~dp0Field Trial Secretary"\r\n'
+        'set "DEFAULT_TARGET=%USERPROFILE%\\Documents\\Field Trial Secretary Portable"\r\n'
+        'echo Field Trial Secretary program updater\r\n'
+        'echo.\r\n'
+        'echo This updates program files only. It will not replace your SQLite trial database.\r\n'
+        'echo.\r\n'
+        'echo Press Enter to use the default target folder, or type the folder to update:\r\n'
+        'echo %DEFAULT_TARGET%\r\n'
+        'echo.\r\n'
+        'set /P "TARGET=Install folder to update: "\r\n'
+        'if "%TARGET%"=="" set "TARGET=%DEFAULT_TARGET%"\r\n'
+        'echo.\r\n'
+        'echo Target: %TARGET%\r\n'
+        'choice /C YN /M "Continue"\r\n'
+        'if errorlevel 2 exit /b 1\r\n'
+        'if not exist "%TARGET%" mkdir "%TARGET%"\r\n'
+        'for /D %%D in ("%SOURCE%\\*") do (\r\n'
+        '  if /I not "%%~nxD"=="data" if /I not "%%~nxD"=="backups" xcopy "%%~fD" "%TARGET%\\%%~nxD\\" /E /I /Y >nul\r\n'
+        ')\r\n'
+        'for %%F in ("%SOURCE%\\*") do (\r\n'
+        '  xcopy "%%~fF" "%TARGET%\\" /Y >nul\r\n'
+        ')\r\n'
+        'if exist "%SOURCE%\\data\\blank_field_trial_secretary.sqlite" (\r\n'
+        '  if not exist "%TARGET%\\data" mkdir "%TARGET%\\data"\r\n'
+        '  copy /Y "%SOURCE%\\data\\blank_field_trial_secretary.sqlite" "%TARGET%\\data\\blank_field_trial_secretary.sqlite" >nul\r\n'
+        ')\r\n'
+        'if errorlevel 1 (\r\n'
+        '  echo.\r\n'
+        '  echo Update did not complete.\r\n'
+        '  pause\r\n'
+        '  exit /b 1\r\n'
+        ')\r\n'
+        'echo.\r\n'
+        'echo Update complete. Your SQLite database was left alone.\r\n'
+        'pause\r\n'
+    )
+
+    notes = [
+        "Field Trial Secretary Program Update Package",
+        f"Version: {app_version_info().get('version')}",
+        f"Created: {utc_now()}",
+        "",
+        "This package updates program files only.",
+        "It does not include or replace data\\field_trial_secretary.sqlite.",
+        "",
+        "Use on a computer that already has Field Trial Secretary installed:",
+        "1. Close Field Trial Secretary on that computer.",
+        "2. Copy this zip to that computer.",
+        "3. Right-click the zip and choose Extract All.",
+        "4. Double-click Update Field Trial Secretary.bat.",
+        "5. Press Enter for the default folder or type the installed app folder.",
+        "6. Start Field Trial Secretary again.",
+    ]
+
+    with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("README-PROGRAM-UPDATE.txt", "\n".join(notes) + "\n")
+        archive.writestr("Update Field Trial Secretary.bat", update_bat)
+        for path in package_folder.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(package_folder).as_posix()
+            if relative == "data/field_trial_secretary.sqlite":
+                continue
+            if relative.startswith("backups/"):
+                continue
+            archive.write(path, f"Field Trial Secretary/{relative}")
 
     return package_path.read_bytes(), filename, str(package_path)
 
@@ -843,6 +1064,12 @@ def restart_server(server: ThreadingHTTPServer) -> None:
     if sys.platform.startswith("win"):
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
     subprocess.Popen(command, **kwargs)
+
+
+def shutdown_server(server: ThreadingHTTPServer) -> None:
+    time.sleep(0.4)
+    server.shutdown()
+    server.server_close()
 
 
 def write_state(state: dict) -> dict:
@@ -1387,12 +1614,13 @@ def generate_asfa_record_sheet_pdf(
     secretary_layout: dict | None = None,
     include_secretary_report: bool = False,
     include_first_time_documents: bool = False,
+    combine_mixed_posting: bool = False,
 ) -> bytes:
     template_path = RECORD_TEMPLATES["ASFA"]
     if not template_path.exists():
         raise FileNotFoundError(f"ASFA record sheet template not found: {template_path}")
 
-    groups = record_groups_for_print(trial, group_id, breed, sort_mode)
+    groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting)
     if not groups:
         raise ValueError("No score rows were found for that ASFA record sheet.")
 
@@ -1605,6 +1833,7 @@ def build_asfa_entry_form_overlay(trial: dict, entry: dict, page, layout: dict) 
     pdf.setStrokeColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica", layout["fontSize"])
 
+    draw_asfa_entry_trial_context(pdf, layout, trial)
     draw_asfa_entry_text(pdf, layout, "breed", run_group_breed_for_entry(source), 20)
     draw_asfa_entry_text(pdf, layout, "callName", source.get("callName") or entry_registered_name_for_form(source), 24)
     draw_asfa_entry_text(pdf, layout, "registeredName", entry_registered_name_for_form(source) or source.get("callName"), 34)
@@ -1652,6 +1881,7 @@ def build_asfa_lci_entry_form_overlay(trial: dict, entry: dict, page, layout: di
     pdf.setStrokeColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica", layout["fontSize"])
 
+    draw_asfa_entry_trial_context(pdf, layout, trial)
     draw_asfa_lci_entry_text(pdf, layout, "breed", run_group_breed_for_entry(source), 20)
     draw_asfa_lci_entry_text(pdf, layout, "callName", source.get("callName") or entry_registered_name_for_form(source), 24)
     draw_asfa_lci_entry_text(pdf, layout, "registeredName", entry_registered_name_for_form(source) or source.get("callName"), 34)
@@ -1687,6 +1917,23 @@ def draw_asfa_entry_text(pdf: canvas.Canvas, layout: dict, key: str, value: obje
 
 def draw_asfa_lci_entry_text(pdf: canvas.Canvas, layout: dict, key: str, value: object, limit: int) -> None:
     draw_asfa_entry_text(pdf, layout, key, value, limit)
+
+
+def draw_asfa_entry_trial_context(pdf: canvas.Canvas, layout: dict, trial: dict) -> None:
+    pdf.setFont("Helvetica", layout.get("smallFontSize", layout.get("fontSize", 8)))
+    draw_asfa_entry_text(pdf, layout, "trialClub", f"Club: {trial.get('clubName') or ''}", 34)
+    draw_asfa_entry_text(pdf, layout, "trialDate", f"Date: {trial_date_for_entry_form(trial)}", 26)
+    draw_asfa_entry_text(pdf, layout, "trialSecretary", f"FTS: {trial.get('secretaryName') or ''}", 28)
+    draw_asfa_entry_text(pdf, layout, "trialSecretaryEmail", f"Email: {trial.get('secretaryEmail') or ''}", 34)
+    pdf.setFont("Helvetica", layout["fontSize"])
+
+
+def trial_date_for_entry_form(trial: dict) -> str:
+    starts_on = str(trial.get("startsOn") or "").strip()
+    ends_on = str(trial.get("endsOn") or "").strip()
+    if starts_on and ends_on and starts_on != ends_on:
+        return f"{starts_on} - {ends_on}"
+    return starts_on or ends_on
 
 
 def draw_asfa_entry_stake_mark(pdf: canvas.Canvas, layout: dict, stake: object) -> None:
@@ -1942,7 +2189,7 @@ def is_lci_entry(entry: dict) -> bool:
     return clean_text(run_group_breed_for_entry(entry)).startswith("LCI") or clean_text(entry.get("className")).startswith("LCI")
 
 
-def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "") -> list[dict]:
+def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "", combine_mixed_posting: bool = False) -> list[dict]:
     groups = draw_groups_for_print(trial)
     if group_id:
         groups = [group for group in groups if str(group.get("id") or "") == str(group_id)]
@@ -1950,7 +2197,8 @@ def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", so
         groups = [group for group in groups if clean_text(group.get("breed")) == clean_text(breed)]
     elif sort_mode == "alpha":
         groups = sorted(groups, key=record_packet_sort_key)
-    groups = split_mixed_record_groups(groups)
+    if not combine_mixed_posting:
+        groups = split_mixed_record_groups(groups)
     if not group_id and (not breed or clean_text(breed) == "BIF"):
         bif_group = bif_record_group(trial)
         if bif_group:
@@ -2087,7 +2335,7 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
                 "stakesRunoffCode": stake_runoff_by_entry.get(entry_id, {}).get("code", ""),
                 "bobRunoffLabel": bob_runoff_by_entry.get(entry_id, {}).get("label", ""),
                 "bobRunoffCode": bob_runoff_by_entry.get(entry_id, {}).get("code", ""),
-                "placement": award_by_entry.get(entry_id) or placement,
+                "placement": asfa_record_placement_text(placement, award_by_entry.get(entry_id)),
             })
     return rows
 
@@ -2133,6 +2381,7 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
     bif = (trial.get("scorebook") or {}).get("bif") or {}
     outcomes = bif.get("outcomes") or {}
     bif_results = bif_results_by_entry(trial)
+    bif_tie_boxes = bif_tie_runoff_boxes_by_entry(bif)
     rows = []
     for course in sorted(group.get("courses") or [], key=lambda item: int(item.get("number") or 0)):
         for hound in sorted_hounds_by_blanket([
@@ -2146,8 +2395,14 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
             entry = entries_by_id.get(entry_id) or {}
             outcome = normalized_record_outcome(outcomes.get(entry_id))
             placement = bif_results.get(entry_id) or ""
+            if clean_text(placement) == "BIFTIE":
+                placement = ""
+            call_name = hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound"
+            breed_display = breed_display_for_record(entry.get("breed") or hound.get("breed") or hound.get("entryBreed") or "")
+            if breed_display and breed_display not in str(call_name):
+                call_name = f"{call_name} ({breed_display})"
             rows.append({
-                "callName": hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound",
+                "callName": call_name,
                 "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
                 "rollCallStatus": "",
                 "rollCallNotes": "",
@@ -2162,9 +2417,42 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
                 "finalJudge2": "",
                 "finalScore": "",
                 "combinedScore": outcome.get("score") or "",
+                "stakesRunoffLabel": bif_tie_boxes.get(entry_id, {}).get("label", ""),
+                "stakesRunoffCode": bif_tie_boxes.get(entry_id, {}).get("code", ""),
+                "secondRunoffLabel": bif_tie_boxes.get(entry_id, {}).get("secondLabel", ""),
+                "secondRunoffCode": bif_tie_boxes.get(entry_id, {}).get("secondCode", ""),
+                "bobRunoffLabel": bif_tie_boxes.get(entry_id, {}).get("bobLabel", ""),
+                "bobRunoffCode": bif_tie_boxes.get(entry_id, {}).get("bobCode", ""),
                 "placement": placement,
             })
     return rows
+
+
+def bif_tie_runoff_boxes_by_entry(bif: dict) -> dict[str, dict[str, str]]:
+    boxes: dict[str, dict[str, str]] = {}
+    tie_runoffs = bif.get("tieRunoffs") or []
+    if not tie_runoffs and bif.get("tieRunoff"):
+        tie_runoffs = [bif.get("tieRunoff")]
+    slots = [
+        ("label", "code"),
+        ("secondLabel", "secondCode"),
+        ("bobLabel", "bobCode"),
+    ]
+    for index, runoff in enumerate(tie_runoffs):
+        label_key, code_key = slots[min(index, len(slots) - 1)]
+        outcomes = (runoff or {}).get("outcomes") or {}
+        for course in (((runoff or {}).get("draw") or {}).get("courses") or []):
+            for hound in course.get("hounds") or []:
+                entry_id = str(hound.get("entryId") or "")
+                if not entry_id:
+                    continue
+                outcome = normalized_record_outcome(outcomes.get(entry_id))
+                code = score_or_outcome(outcome.get("score"), outcome.get("value"))
+                if code:
+                    boxes.setdefault(entry_id, {})
+                    boxes[entry_id][label_key] = "BIF Tie"
+                    boxes[entry_id][code_key] = str(code)
+    return boxes
 
 
 def asfa_record_awards_by_entry(trial: dict) -> dict[str, str]:
@@ -2179,28 +2467,66 @@ def asfa_record_awards_by_entry(trial: dict) -> dict[str, str]:
     return awards
 
 
+def asfa_record_placement_text(placement: object, award: object) -> str:
+    placement_text = str(placement or "").strip()
+    award_text = str(award or "").strip()
+    if not award_text:
+        return placement_text
+    if placement_text and clean_text(placement_text) != clean_text(award_text):
+        return f"{placement_text}-{award_text}"
+    return award_text
+
+
 def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str, str]]:
     boxes: dict[str, dict[str, str]] = {}
     for runoff in group.get("runoffs") or []:
         label = concise_tie_label(runoff.get("label") or "")
+        suppress_pending_codes = runoff_resolved_without_scores(runoff)
         for course in runoff.get("courses") or []:
             for hound in course.get("hounds") or []:
                 entry_id = str(hound.get("entryId") or "")
-                code = hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor"))
-                if entry_id and code:
+                code = runoff_record_value(
+                    hound.get("tieBreakOutcome"),
+                    hound.get("tieBreakScore"),
+                    hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor")),
+                    suppress_pending_codes,
+                )
+                if entry_id and (code or label):
                     boxes[entry_id] = {"label": label, "code": str(code)}
     group_id = str(group.get("id") or "").split("::", 1)[0]
     for runoff in (trial.get("bobRunoffs") or []):
         if str(runoff.get("tieGroupId") or "") not in {str(group.get("id") or ""), group_id}:
             continue
         label = concise_tie_label(runoff.get("tieLabel") or runoff.get("label") or "")
+        suppress_pending_codes = runoff_resolved_without_scores(runoff)
+        is_combined = combined_tie_bob_runoff(runoff)
+        tie_winner_ids = combined_tie_winner_entry_ids(runoff) if is_combined else set()
         for course in runoff.get("courses") or []:
             for hound in course.get("hounds") or []:
                 if hound.get("runoffRole") != "tie" and clean_text(hound.get("tieBreakLabel")) in {"BOB", ""}:
                     continue
                 entry_id = str(hound.get("entryId") or "")
-                code = hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor"))
-                if entry_id and code:
+                score_value = hound.get("tieBreakScore")
+                outcome_value = hound.get("tieBreakOutcome")
+                if not is_combined:
+                    score_value = score_value or hound.get("bobScore")
+                    outcome_value = outcome_value or hound.get("bobOutcome")
+                code = runoff_record_value(
+                    outcome_value,
+                    score_value,
+                    hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor")),
+                    suppress_pending_codes,
+                )
+                if (
+                    is_combined
+                    and entry_id in tie_winner_ids
+                    and (
+                        clean_text(hound.get("tieBreakOutcome")) in {"FORFEIT", "FOR"}
+                        or combined_tie_has_forfeit(runoff)
+                    )
+                ):
+                    code = ""
+                if entry_id and (code or label):
                     boxes[entry_id] = {"label": label, "code": str(code)}
     return boxes
 
@@ -2208,16 +2534,136 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
 def bob_runoff_boxes_by_entry(trial: dict) -> dict[str, dict[str, str]]:
     boxes: dict[str, dict[str, str]] = {}
     for runoff in trial.get("bobRunoffs") or []:
+        suppress_pending_codes = runoff_resolved_without_scores(runoff)
+        key_text = clean_text(runoff.get("key"))
+        is_combined = combined_tie_bob_runoff(runoff)
+        is_bob_runoff = key_text.startswith("BOB") or key_text.startswith("COMBINED") or key_text.startswith("BOBTIE") or clean_text(runoff.get("phase")) == "BOB"
         for course in runoff.get("courses") or []:
             for hound in course.get("hounds") or []:
                 if hound.get("isPlaceholder"):
                     continue
                 entry_id = str(hound.get("entryId") or "")
-                code = hound.get("bobCode") or hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("bobBlanketColor") or hound.get("tieBreakBlanketColor") or hound.get("blanketColor"))
                 role = clean_text(hound.get("runoffRole") or hound.get("tieBreakLabel") or "")
-                if entry_id and code and (role in {"BOB", ""} or "BOB" in clean_text(runoff.get("key"))):
-                    boxes[entry_id] = {"label": "BOB", "code": str(code)}
+                is_tie_hound = combined_tie_hound(hound)
+                include_hound = role in {"BOB", ""} or is_bob_runoff
+                if is_combined:
+                    include_hound = True
+                if not entry_id or not include_hound:
+                    continue
+                code = runoff_record_value(
+                    hound.get("bobOutcome") or hound.get("tieBreakOutcome"),
+                    hound.get("bobScore") or hound.get("tieBreakScore"),
+                    hound.get("bobCode") or hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("bobBlanketColor") or hound.get("tieBreakBlanketColor") or hound.get("blanketColor")),
+                    suppress_pending_codes,
+                )
+                boxes[entry_id] = {"label": "BOB", "code": str(code)}
     return boxes
+
+
+def combined_tie_bob_runoff(runoff: dict) -> bool:
+    key_text = clean_text(runoff.get("key"))
+    return key_text.startswith("COMBINED") or (
+        bool(runoff.get("tieLabel"))
+        and any(combined_tie_hound(hound) for hound in runoff_hounds(runoff))
+        and any(not combined_tie_hound(hound) for hound in runoff_hounds(runoff) if not hound.get("isPlaceholder"))
+    )
+
+
+def runoff_hounds(runoff: dict) -> list[dict]:
+    return [
+        hound
+        for course in runoff.get("courses") or []
+        for hound in course.get("hounds") or []
+        if isinstance(hound, dict)
+    ]
+
+
+def combined_tie_hound(hound: dict) -> bool:
+    role = clean_text(hound.get("runoffRole"))
+    label = clean_text(hound.get("tieBreakLabel"))
+    return role == "TIE" or (label not in {"", "BOB"} and "TIE" in label)
+
+
+def combined_tie_winner_entry_ids(runoff: dict) -> set[str]:
+    tie_hounds = [
+        hound
+        for hound in runoff_hounds(runoff)
+        if not hound.get("isPlaceholder") and combined_tie_hound(hound)
+    ]
+    placed_winners = {
+        str(hound.get("entryId") or "")
+        for hound in tie_hounds
+        if clean_text(hound.get("tieBreakResolvedPlacement")) == "1" and hound.get("entryId")
+    }
+    if placed_winners:
+        return placed_winners
+
+    scored: list[tuple[float, str]] = []
+    for hound in tie_hounds:
+        score_text = str(hound.get("tieBreakScore") or "").strip()
+        try:
+            scored.append((float(score_text), str(hound.get("entryId") or "")))
+        except ValueError:
+            pass
+    if scored:
+        scored.sort(reverse=True)
+        top_score = scored[0][0]
+        return {entry_id for score, entry_id in scored if score == top_score and entry_id}
+
+    active = [
+        str(hound.get("entryId") or "")
+        for hound in tie_hounds
+        if not clean_text(hound.get("tieBreakOutcome")) and hound.get("entryId")
+    ]
+    if len(active) == 1:
+        return {active[0]}
+
+    forfeits: list[tuple[int, str]] = []
+    for hound in tie_hounds:
+        if clean_text(hound.get("tieBreakOutcome")) not in {"FORFEIT", "FOR"}:
+            continue
+        try:
+            order = int(str(hound.get("tieBreakForfeitOrder") or "0"))
+        except ValueError:
+            order = 0
+        forfeits.append((order, str(hound.get("entryId") or "")))
+    if forfeits:
+        forfeits.sort(reverse=True)
+        return {forfeits[0][1]} if forfeits[0][1] else set()
+
+    return set()
+
+
+def combined_tie_has_forfeit(runoff: dict) -> bool:
+    return any(
+        clean_text(hound.get("tieBreakOutcome")) in {"FORFEIT", "FOR"}
+        for hound in runoff_hounds(runoff)
+        if not hound.get("isPlaceholder") and combined_tie_hound(hound)
+    )
+
+
+def runoff_resolved_without_scores(runoff: dict) -> bool:
+    hounds = [
+        hound
+        for course in runoff.get("courses") or []
+        for hound in course.get("hounds") or []
+        if not hound.get("isPlaceholder")
+    ]
+    has_outcome = any(hound.get("tieBreakOutcome") or hound.get("bobOutcome") for hound in hounds)
+    has_score = any(str(hound.get("tieBreakScore") or hound.get("bobScore") or "").strip() for hound in hounds)
+    return has_outcome and not has_score
+
+
+def runoff_record_value(outcome: object, score: object, code: object, suppress_pending_code: bool = False) -> str:
+    if clean_text(outcome) in {"FORFEIT", "FOR"}:
+        return "F"
+    if str(score or "").strip():
+        return str(score).strip()
+    if outcome:
+        return record_score_outcome_label(outcome)
+    if suppress_pending_code:
+        return ""
+    return str(code or "")
 
 
 def concise_tie_label(value: object) -> str:
@@ -2587,7 +3033,7 @@ def draw_asfa_record_header(pdf: canvas.Canvas, trial: dict, group: dict, entry_
     pdf.setFillColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica-Bold", layout["headerFontSize"])
     pdf.drawString(layout["breedX"], y_from_top(asfa_record_y(layout, "breedY")), safe_text(group.get("breed"), 24))
-    pdf.drawString(layout["stakeX"], y_from_top(asfa_record_y(layout, "stakeY")), safe_text(abbreviate_stake(group.get("stake") or ""), 18))
+    pdf.drawString(layout["stakeX"], y_from_top(asfa_record_y(layout, "stakeY")), safe_text(asfa_record_stake_label(group), 22))
     pdf.drawString(layout["flightX"], y_from_top(asfa_record_y(layout, "flightY")), "A")
     pdf.drawString(layout["enteredX"], y_from_top(asfa_record_y(layout, "enteredY")), str(entry_count))
     pdf.drawString(layout["refundsX"], y_from_top(asfa_record_y(layout, "refundsY")), str(refund_count))
@@ -2602,6 +3048,23 @@ def draw_asfa_record_header(pdf: canvas.Canvas, trial: dict, group: dict, entry_
     pdf.drawString(layout["footerDateX"], y_from_top(asfa_record_y(layout, "footerDateY")), safe_text(trial.get("startsOn"), 14))
     pdf.drawString(layout["fieldClerkX"], y_from_top(asfa_record_y(layout, "fieldClerkY")), safe_text(trial.get("fieldClerk"), 32))
     pdf.drawString(layout["fieldSecretaryX"], y_from_top(asfa_record_y(layout, "fieldSecretaryY")), safe_text(trial.get("secretaryName"), 32))
+
+
+def asfa_record_stake_label(group: dict) -> str:
+    if not group.get("mixedStake"):
+        return abbreviate_stake(group.get("stake") or "")
+    stakes: list[str] = []
+    seen: set[str] = set()
+    for course in group.get("courses") or []:
+        for hound in course.get("hounds") or []:
+            stake = str(hound.get("stake") or "").strip()
+            key = clean_text(stake)
+            if stake and key not in seen:
+                seen.add(key)
+                stakes.append(abbreviate_stake(stake))
+    if not stakes:
+        return "Mixed"
+    return f"Mixed ({' - '.join(stakes)})"
 
 
 def judges_for_group(trial: dict, group: dict) -> tuple[str, str]:
@@ -2634,9 +3097,11 @@ def draw_asfa_record_rows(pdf: canvas.Canvas, rows: list[dict], layout: dict) ->
         pdf.drawCentredString(layout["combinedScoreX"], y_from_top(asfa_record_y(layout, "combinedScoreY", row_offset)), safe_text(row.get("combinedScore"), 8))
         pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(asfa_record_y(layout, "stakesRunoffLabelY", row_offset)), safe_text(row.get("stakesRunoffLabel"), 8))
         pdf.drawCentredString(layout["stakesRunoffCodeX"], y_from_top(asfa_record_y(layout, "stakesRunoffCodeY", row_offset)), safe_text(row.get("stakesRunoffCode"), 5))
+        pdf.drawCentredString(layout["secondRunoffLabelX"], y_from_top(asfa_record_y(layout, "secondRunoffLabelY", row_offset)), safe_text(row.get("secondRunoffLabel"), 8))
+        pdf.drawCentredString(layout["secondRunoffCodeX"], y_from_top(asfa_record_y(layout, "secondRunoffCodeY", row_offset)), safe_text(row.get("secondRunoffCode"), 5))
         pdf.drawCentredString(layout["bobRunoffLabelX"], y_from_top(asfa_record_y(layout, "bobRunoffLabelY", row_offset)), safe_text(row.get("bobRunoffLabel"), 8))
         pdf.drawCentredString(layout["bobRunoffCodeX"], y_from_top(asfa_record_y(layout, "bobRunoffCodeY", row_offset)), safe_text(row.get("bobRunoffCode"), 5))
-        pdf.drawCentredString(layout["placementX"], y_from_top(asfa_record_y(layout, "placementY", row_offset)), safe_text(row.get("placement"), 10))
+        draw_record_placement(pdf, row.get("placement"), layout, row_offset)
         reason = asfa_record_refund_reason(row)
         if reason:
             strike_y = y_from_top(asfa_record_y(layout, "callNameY", row_offset) + layout.get("scratchLineYOffset", -5))
@@ -2648,6 +3113,20 @@ def draw_asfa_record_rows(pdf: canvas.Canvas, rows: list[dict], layout: dict) ->
             pdf.setFont("Helvetica-Bold", layout["bodyFontSize"])
             pdf.drawString(layout["scratchReasonX"], y_from_top(asfa_record_y(layout, "callNameY", row_offset)), reason)
             pdf.restoreState()
+
+
+def draw_record_placement(pdf: canvas.Canvas, value: object, layout: dict, row_offset: float) -> None:
+    text = str(value or "").strip()
+    if "-" not in text:
+        pdf.drawCentredString(layout["placementX"], y_from_top(asfa_record_y(layout, "placementY", row_offset)), safe_text(text, 10))
+        return
+    parts = [part.strip() for part in text.split("-") if part.strip()]
+    if len(parts) <= 1:
+        pdf.drawCentredString(layout["placementX"], y_from_top(asfa_record_y(layout, "placementY", row_offset)), safe_text(text, 10))
+        return
+    y = asfa_record_y(layout, "placementY", row_offset) - 7
+    for index, part in enumerate(parts[:2]):
+        pdf.drawCentredString(layout["placementX"], y_from_top(y + (index * 13)), safe_text(part, 8))
 
 
 def asfa_record_y(layout: dict, key: str, row_offset: float = 0) -> float:
@@ -2839,7 +3318,10 @@ def draw_wrapped_lines(pdf: canvas.Canvas, text: str, x: float, y: float, max_wi
 
 def asfa_secretary_entry_counts(trial: dict) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {}
+    dismissed_entry_ids = secretary_dismissed_entry_ids(trial)
     for entry in trial.get("entries") or []:
+        if not secretary_entry_counts_for_per_capita(entry, dismissed_entry_ids):
+            continue
         key = secretary_breed_key(entry)
         if not key:
             continue
@@ -2851,16 +3333,51 @@ def asfa_secretary_entry_counts(trial: dict) -> dict[str, dict[str, int]]:
 
 
 def secretary_breed_key(entry: dict) -> str:
+    breed_key = clean_text(entry.get("breed"))
     class_key = clean_text(entry.get("className"))
     if class_key == "SINGLES":
         return "SINGLES"
-    if class_key.startswith("LCILARGE"):
+    if breed_key.startswith("LCILARGE") or class_key.startswith("LCILARGE"):
         return "LCILARGE"
-    if class_key.startswith("LCISMALL"):
+    if breed_key.startswith("LCISMALL") or class_key.startswith("LCISMALL"):
         return "LCISMALL"
-    if class_key.startswith("LCISIGHTHOUNDMIX") or class_key.startswith("LCISHMIX"):
+    if (
+        breed_key.startswith("LCISIGHTHOUNDMIX")
+        or breed_key.startswith("LCISHMIX")
+        or class_key.startswith("LCISIGHTHOUNDMIX")
+        or class_key.startswith("LCISHMIX")
+    ):
         return "LCISHMIX"
     return secretary_breed_code(entry.get("breed"))
+
+
+def secretary_entry_counts_for_per_capita(entry: dict, dismissed_entry_ids: set[str] | None = None) -> bool:
+    status = clean_text(entry.get("rollCallStatus"))
+    notes = clean_text(entry.get("rollCallNotes"))
+    if status in {"LAME", "INSEASON", "SEASON", "BREEDDQ", "BREEDDISQUALIFIED", "SCRATCHED", "SCRATCH"}:
+        return False
+    if any(value in notes for value in ("LAME", "INSEASON", "SEASON", "BREEDDQ", "BREEDDISQUALIFIED", "SCRATCHED", "SCRATCH")):
+        return False
+    return str(entry.get("id") or "") not in (dismissed_entry_ids or set())
+
+
+def secretary_dismissed_entry_ids(trial: dict) -> set[str]:
+    dismissed: set[str] = set()
+    for group in ((trial.get("preliminaryDraw") or {}).get("groups") or []):
+        for course in group.get("courses") or []:
+            for hound in course.get("hounds") or []:
+                if row_outcome_is_dismissed(hound.get("prelimOutcome")):
+                    entry_id = str(hound.get("entryId") or "")
+                    if entry_id:
+                        dismissed.add(entry_id)
+        final_draw = group.get("finalDraw") or {}
+        for course in final_draw.get("courses") or []:
+            for hound in course.get("hounds") or []:
+                if row_outcome_is_dismissed(hound.get("finalOutcome")):
+                    entry_id = str(hound.get("entryId") or "")
+                    if entry_id:
+                        dismissed.add(entry_id)
+    return dismissed
 
 
 def secretary_breed_code(breed: object) -> str:
@@ -3507,6 +4024,9 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(APP_DIR), **kwargs)
 
+    def log_message(self, format: str, *args) -> None:
+        app_log(f"{self.client_address[0]} {format % args}")
+
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
@@ -3564,11 +4084,37 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": True, "state": state})
             return
         if parsed.path == "/api/status":
-            self.send_json({"ok": True, "dbPath": str(DB_PATH), "time": utc_now()})
+            self.send_json({
+                "ok": True,
+                "dbPath": str(DB_PATH),
+                "time": utc_now(),
+                "appVersion": app_version_info(),
+                "runtime": {
+                    "root": str(ROOT),
+                    "isPortableExe": bool(getattr(sys, "frozen", False)),
+                    "canBuildPortable": (not getattr(sys, "frozen", False)) and (ROOT / "build_portable_package.ps1").exists(),
+                },
+            })
+            return
+        if parsed.path == "/api/version":
+            self.send_json({"ok": True, "appVersion": app_version_info()})
+            return
+        if parsed.path == "/api/database-integrity":
+            try:
+                self.send_json({"ok": True, "integrity": database_integrity_status()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if parsed.path == "/api/database-backups":
             try:
-                self.send_json({"ok": True, "backups": list_database_backups()})
+                settings = read_app_settings()
+                self.send_json({"ok": True, "backupDir": str(DB_BACKUP_DIR), "settings": settings, "backups": list_database_backups()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/backup-settings":
+            try:
+                self.send_json({"ok": True, "settings": read_app_settings()})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -3652,6 +4198,18 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if parsed.path == "/api/backup-settings":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("settings payload must be an object")
+                settings = write_app_settings(payload)
+                self.send_json({"ok": True, "settings": settings, "backups": list_database_backups()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/restore-sqlite-backup":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
@@ -3668,6 +4226,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             try:
                 threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
                 self.send_json({"ok": True, "message": "Restarting app server."})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/shutdown":
+            try:
+                threading.Thread(target=shutdown_server, args=(self.server,), daemon=False).start()
+                self.send_json({"ok": True, "message": "Field Trial Secretary is closing. You can close this browser tab."})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -3691,6 +4256,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 if not isinstance(payload, dict):
                     raise ValueError("transfer payload must be an object")
                 body, filename, archive_path = create_transfer_package(payload)
+                self.send_zip(body, filename, archive_path)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/program-update-package":
+            try:
+                body, filename, archive_path = create_program_update_package()
                 self.send_zip(body, filename, archive_path)
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -3833,6 +4405,10 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     str(payload.get("sortMode") or ""),
                     payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None,
                     payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None,
+                    None,
+                    False,
+                    False,
+                    bool(payload.get("combineMixedPosting")),
                 )
                 self.send_pdf(pdf, "asfa-record-sheet.pdf")
             except Exception as exc:

@@ -26,4 +26,4 @@ Write-Host "Starting Field Trial Secretary with SQLite storage..."
 Write-Host "Open this address in your browser:"
 Write-Host "http://127.0.0.1:8765/"
 Write-Host ""
-& $python "$root\server.py" --host 127.0.0.1 --port 8765
+& $python "$root\server.py" --host 127.0.0.1 --port 8765 --open-browser
