@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260712-exit-button">
+    <link rel="stylesheet" href="styles.css?v=20260713-entry-form-collapsed">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -374,12 +374,11 @@
                 </section>
 
                 <section class="form-section" data-tab="entries">
-                    <div class="section-heading with-action">
+                    <div class="section-heading">
                         <div>
                             <h2>Trial Entries</h2>
-                            <p>Search the master hound database, then assign the hound to this trial and class.</p>
+                            <p>Search the master hound database, choose a match, or enter a new hound directly below.</p>
                         </div>
-                        <button type="button" class="secondary small" id="addEntryButton">Add Entry</button>
                     </div>
                     <div class="form-message compact" id="entryMessage"></div>
                     <div class="edit-banner" id="entryEditBanner" hidden>
@@ -390,109 +389,133 @@
                         <button type="button" class="secondary small" id="cancelEntryEditButton">Cancel Edit</button>
                     </div>
                     <datalist id="houndSearchOptions"></datalist>
-                    <div class="inline-entry">
-                        <label class="field-label">Hound search<input id="entryHoundSearch" list="houndSearchOptions" placeholder="Search call name, registered name, or registration"></label>
-                        <label class="field-label">Stake/class<select id="entryClass"></select></label>
-                        <label class="field-label">Registration used<select id="entryRegistrationUsed"></select></label>
-                        <label class="field-label">Handler<input id="entryHandler" placeholder="Handler"></label>
-                        <label class="field-label">Entry number<input id="entryNumber" placeholder="Entry number"></label>
+                    <select id="entryRegistrationUsed" hidden></select>
+                    <input id="entryNumber" type="hidden">
+                    <div class="entry-search-panel">
+                        <label class="field-label">Find existing hound<input id="entryHoundSearch" list="houndSearchOptions" placeholder="Search call name, registered name, owner, or registration"></label>
+                        <div class="button-row entry-search-actions">
+                            <button type="button" class="secondary small" id="selectEntryHoundButton">Use Selected Hound</button>
+                            <button type="button" class="secondary small" id="newEntryHoundButton">Enter New Hound</button>
+                        </div>
+                        <p class="field-note wide" id="entryHoundSearchStatus">Search first, then choose a hound from the suggestions or enter a new hound below.</p>
                     </div>
-                    <div class="inline-entry">
-                        <label class="field-label">Call name<input id="entryCallName" placeholder="New hound call name"></label>
-                        <label class="field-label">Registered name<input id="entryRegName" placeholder="New hound registered name"></label>
-                        <label class="field-label">Breed<select id="entryBreed"></select></label>
-                        <label class="field-label">Registration number<input id="entryRegNumber" placeholder="Registration number"></label>
+                    <div class="entry-form-grid">
+                        <section class="entry-form-card" id="trialEntryFields">
+                            <h3>Hound Information</h3>
+                            <div class="inline-entry">
+                                <label class="field-label">Call name<input id="entryCallName" placeholder="Call name"></label>
+                                <label class="field-label">Registered name<input id="entryRegName" placeholder="Registered name"></label>
+                                <label class="field-label">Breed<select id="entryBreed"></select></label>
+                                <label class="field-label">Stake/class<select id="entryClass"></select></label>
+                            </div>
+                            <div class="inline-entry">
+                                <label class="field-label">Date of birth<input id="entryDob" type="date" title="Date of birth"></label>
+                                <label class="field-label">Registration number<input id="entryRegNumber" placeholder="Registration number"></label>
+                                <label class="field-label">Primary registry<select id="entryRegistry">
+                                        <option value="">Primary registry</option>
+                                        <option>AKC</option>
+                                        <option>ASFA</option>
+                                        <option>CKC</option>
+                                        <option>FCI</option>
+                                        <option>NGA</option>
+                                        <option>UKC</option>
+                                        <option>Foreign Registry</option>
+                                        <option>Other</option>
+                                    </select></label>
+                                <label class="field-label">Registration type<select id="entryRegType">
+                                        <option value="">Registration type</option>
+                                        <option>Regular</option>
+                                        <option>PAL/ILP</option>
+                                        <option>FSS</option>
+                                        <option>Foreign</option>
+                                        <option>Critique</option>
+                                        <option>Other</option>
+                                    </select></label>
+                            </div>
+                            <div class="inline-entry">
+                                <label class="field-label">Sex<select id="entrySex">
+                                        <option value="">Sex</option>
+                                        <option>Dog</option>
+                                        <option>Bitch</option>
+                                    </select></label>
+                                <label class="field-label">Breeder<input id="entryBreeder" placeholder="Breeder"></label>
+                                <label class="field-label">Sire<input id="entrySire" placeholder="Sire"></label>
+                                <label class="field-label">Dam<input id="entryDam" placeholder="Dam"></label>
+                            </div>
+                            <details class="entry-alternate-registration" id="entryAlternateRegistration">
+                                <summary>Alternate registration</summary>
+                                <div class="inline-entry">
+                                    <label class="field-label">Alternate registry<select id="entryAltRegistry">
+                                            <option value="">Alternate registry</option>
+                                            <option>AKC</option>
+                                            <option>ASFA</option>
+                                            <option>CKC</option>
+                                            <option>FCI</option>
+                                            <option>NGA</option>
+                                            <option>UKC</option>
+                                            <option>Foreign Registry</option>
+                                            <option>Other</option>
+                                        </select></label>
+                                    <label class="field-label">Alternate reg #<input id="entryAltRegNumber" placeholder="Alternate registration number"></label>
+                                </div>
+                            </details>
+                        </section>
+                        <details class="entry-form-card entry-collapsible" id="entryOwnerInformation"><summary>Owner Information</summary>
+                            <div class="inline-entry">
+                                <label class="field-label">Owner<input id="entryOwner" placeholder="Owner"></label>
+                                <label class="field-label">Owner email<input id="entryOwnerEmail" type="email" placeholder="Owner email"></label>
+                                <label class="field-label">Owner phone<input id="entryOwnerPhone" placeholder="Owner phone"></label>
+                                <label class="field-label">Country<input id="entryOwnerCountry" placeholder="Country"></label>
+                            </div>
+                            <div class="inline-entry">
+                                <label class="field-label">Owner address<input id="entryOwnerAddress" placeholder="Owner address"></label>
+                                <label class="field-label">City<input id="entryOwnerCity" placeholder="City"></label>
+                                <label class="field-label">State/Province<input id="entryOwnerState" placeholder="State or province"></label>
+                                <label class="field-label">ZIP/postal<input id="entryOwnerPostalCode" placeholder="ZIP/postal"></label>
+                            </div>
+                        </details>
+                        <details class="entry-form-card entry-collapsible" id="entryDetails"><summary>Entry Details</summary>
+                            <div class="entry-detail-row entry-detail-primary">
+                                <label class="field-label">Handler<input id="entryHandler" placeholder="Handler"></label>
+                                <label class="switch"><input id="entryFirstTime" type="checkbox"> <span>First-time entry</span></label>
+                                <label class="switch"><input id="entryCertRequired" type="checkbox"> <span>Certificate required</span></label>
+                                <label class="switch"><input id="entryOwnerSeparation" type="checkbox"> <span>Separate owner hounds</span></label>
+                            </div>
+                            <div class="entry-detail-row entry-detail-secondary">
+                                <label class="switch"><input id="entryDismissedLastSix" type="checkbox"> <span>Dismissed last 6</span></label>
+                                <label class="switch"><input id="entryInfoChanged" type="checkbox"> <span>Info changed</span></label>
+                                <label class="switch"><input id="entryAdditionalKennel" type="checkbox"> <span>Kennel</span></label>
+                                <label class="switch"><input id="entryAdditionalBreeder" type="checkbox"> <span>Breeder</span></label>
+                                <label class="switch"><input id="entryAdditionalBench" type="checkbox"> <span>Bench</span></label>
+                            </div>
+                            <div class="grid two" id="entryFirstTimeDocs">
+                                <label>
+                                    Registration certificate
+                                    <input id="entryRegistrationCertFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
+                                </label>
+                                <label>
+                                    Coursing certification
+                                    <input id="entryCoursingCertFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
+                                </label>
+                                <p class="field-note wide" id="entryFirstTimeDocsNote">Attach first-time entry paperwork here. LCI and Singles need the registration certificate only; regular breed stakes also need the coursing certification.</p>
+                            </div>
+                            <div class="inline-entry three-cols" id="entryOwnerSeparationGroupRow" hidden>
+                                <label>
+                                    Separation group
+                                    <input id="entryOwnerSeparationGroup" maxlength="3" placeholder="A">
+                                </label>
+                                <p class="field-note">Use the same letter for hounds that should be separated from each other when possible.</p>
+                            </div>
+                        </details>
                     </div>
-                    <div class="inline-entry">
-                        <label class="field-label">Primary registry<select id="entryRegistry">
-                                <option value="">Primary registry</option>
-                                <option>AKC</option>
-                                <option>ASFA</option>
-                                <option>CKC</option>
-                                <option>FCI</option>
-                                <option>NGA</option>
-                                <option>UKC</option>
-                                <option>Foreign Registry</option>
-                                <option>Other</option>
-                            </select></label>
-                        <label class="field-label">Registration type<select id="entryRegType">
-                                <option value="">Registration type</option>
-                                <option>Regular</option>
-                                <option>PAL/ILP</option>
-                                <option>FSS</option>
-                                <option>Foreign</option>
-                                <option>Critique</option>
-                                <option>Other</option>
-                            </select></label>
-                        <label class="field-label">Alternate registry<select id="entryAltRegistry">
-                                <option value="">Alternate registry</option>
-                                <option>AKC</option>
-                                <option>ASFA</option>
-                                <option>CKC</option>
-                                <option>FCI</option>
-                                <option>NGA</option>
-                                <option>UKC</option>
-                                <option>Foreign Registry</option>
-                                <option>Other</option>
-                            </select></label>
-                        <label class="field-label">Alternate reg #<input id="entryAltRegNumber" placeholder="Alternate registration number"></label>
+                    <div class="entry-add-panel">
+                        <div>
+                            <h3>Add To Trials</h3>
+                            <p>Select one or more setup trials. The current trial is selected automatically.</p>
+                            <div class="quick-grid" id="entryTrialTargets"></div>
+                        </div>
+                        <button type="button" class="secondary" id="addEntryButton">Add Entry</button>
                     </div>
-                    <div class="inline-entry">
-                        <label class="field-label">Owner<input id="entryOwner" placeholder="Owner"></label>
-                        <label class="field-label">Owner email<input id="entryOwnerEmail" type="email" placeholder="Owner email"></label>
-                        <label class="field-label">Owner phone<input id="entryOwnerPhone" placeholder="Owner phone"></label>
-                        <label class="field-label">Date of birth<input id="entryDob" type="date" title="Date of birth"></label>
-                    </div>
-                    <div class="inline-entry">
-                        <label class="field-label">Sex<select id="entrySex">
-                                <option value="">Sex</option>
-                                <option>Dog</option>
-                                <option>Bitch</option>
-                            </select></label>
-                        <label class="field-label">Owner address<input id="entryOwnerAddress" placeholder="Owner address"></label>
-                        <label class="field-label">City<input id="entryOwnerCity" placeholder="City"></label>
-                        <label class="field-label">State<input id="entryOwnerState" maxlength="2" placeholder="State"></label>
-                        <label class="field-label">ZIP/postal<input id="entryOwnerPostalCode" placeholder="ZIP/postal"></label>
-                    </div>
-                    <div class="inline-entry">
-                        <label class="field-label">Country<input id="entryOwnerCountry" placeholder="Country"></label>
-                        <label class="field-label">Breeder<input id="entryBreeder" placeholder="Breeder"></label>
-                        <label class="field-label">Sire<input id="entrySire" placeholder="Sire"></label>
-                        <label class="field-label">Dam<input id="entryDam" placeholder="Dam"></label>
-                    </div>
-                    <div class="switch-row">
-                        <label class="switch"><input id="entryFirstTime" type="checkbox"> <span>First-time entry</span></label>
-                        <label class="switch"><input id="entryCertRequired" type="checkbox"> <span>Certificate required</span></label>
-                        <label class="switch"><input id="entryOwnerSeparation" type="checkbox"> <span>Separate owner hounds</span></label>
-                        <label class="switch"><input id="entryAdditionalKennel" type="checkbox"> <span>Kennel</span></label>
-                        <label class="switch"><input id="entryAdditionalBreeder" type="checkbox"> <span>Breeder</span></label>
-                        <label class="switch"><input id="entryAdditionalBench" type="checkbox"> <span>Bench</span></label>
-                        <label class="switch"><input id="entryInfoChanged" type="checkbox"> <span>Info changed</span></label>
-                        <label class="switch"><input id="entryDismissedLastSix" type="checkbox"> <span>Dismissed last 6</span></label>
-                    </div>
-                    <div class="grid two" id="entryFirstTimeDocs">
-                        <label>
-                            Registration certificate
-                            <input id="entryRegistrationCertFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
-                        </label>
-                        <label>
-                            Coursing certification
-                            <input id="entryCoursingCertFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
-                        </label>
-                        <p class="field-note wide" id="entryFirstTimeDocsNote">Attach first-time entry paperwork here. LCI and Singles need the registration certificate only; regular breed stakes also need the coursing certification.</p>
-                    </div>
-                    <div class="inline-entry three-cols" id="entryOwnerSeparationGroupRow" hidden>
-                        <label>
-                            Separation group
-                            <input id="entryOwnerSeparationGroup" maxlength="3" placeholder="A">
-                        </label>
-                        <p class="field-note">Use the same letter for hounds that should be separated from each other when possible.</p>
-                    </div>
-                    <div class="section-heading table-heading">
-                        <h2>Add To Trials</h2>
-                        <p>Select one or more setup trials. The current trial is selected automatically.</p>
-                    </div>
-                    <div class="quick-grid" id="entryTrialTargets"></div>
                     <div class="table-wrap">
                         <table>
                             <thead>
@@ -1526,6 +1549,6 @@
     </main>
 
     <script src="asfa_recent_hounds.js"></script>
-    <script src="script.js?v=20260712-exit-button"></script>
+    <script src="script.js?v=20260713-entry-form-collapsed"></script>
 </body>
 </html>

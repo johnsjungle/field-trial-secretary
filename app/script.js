@@ -1,4 +1,4 @@
-﻿const storageKey = 'fieldTrialSecretary.trials.v1';
+const storageKey = 'fieldTrialSecretary.trials.v1';
 const houndStorageKey = 'fieldTrialSecretary.masterHounds.v1';
 const judgeStorageKey = 'fieldTrialSecretary.masterJudges.v1';
 const workerStorageKey = 'fieldTrialSecretary.masterWorkers.v1';
@@ -793,6 +793,7 @@ let currentWrapUpPage = 'ASFA Secretary Report';
 let currentAdminPage = 'Judges & Workers';
 let editingHoundId = '';
 let editingEntryId = '';
+let selectedEntryHoundId = '';
 let selectedRunPlanRowId = '';
 let selectedRunoffItemId = '';
 let manualDrawEditKey = '';
@@ -5039,7 +5040,7 @@ function renderClassOptions(trial) {
         select.value = '';
     }
 
-    renderEntryRegistrationOptions(findHoundFromSearch());
+    renderEntryRegistrationOptions(getSelectedEntryHound());
 }
 
 function deriveClassesFromEntries(entries = [], fallback = []) {
@@ -5211,9 +5212,11 @@ function ownerLetter(index) {
 
 function suggestOwnerSeparationGroup() {
     const existing = getSelectedTrial();
-    const hound = findHoundFromSearch();
-    const owner = hound && hound.owner ? hound.owner : '';
-    const ownerId = clean([owner, hound && hound.ownerEmail, hound && hound.ownerPhone].filter(Boolean).join('|'));
+    const hound = getSelectedEntryHound();
+    const owner = (hound && hound.owner) || document.getElementById('entryOwner')?.value || '';
+    const ownerEmail = (hound && hound.ownerEmail) || document.getElementById('entryOwnerEmail')?.value || '';
+    const ownerPhone = (hound && hound.ownerPhone) || document.getElementById('entryOwnerPhone')?.value || '';
+    const ownerId = clean([owner, ownerEmail, ownerPhone].filter(Boolean).join('|'));
     const entries = existing && Array.isArray(existing.entries) ? existing.entries : [];
 
     if (ownerId) {
@@ -16677,7 +16680,7 @@ function getAsfaRecentCount() {
 }
 
 async function addTrialEntry() {
-    let hound = findHoundFromSearch();
+    let hound = getSelectedEntryHound();
     let createdHoundFromEntry = false;
 
     if (!hound) {
@@ -17992,16 +17995,18 @@ function entryDatesLabel(entry, trial) {
 
 function entryTrialMembershipLabel(entry) {
     const memberships = [];
-    trials.forEach((trial) => {
-        const entries = Array.isArray(trial.entries) ? trial.entries : [];
-        const match = entries.find((candidate) => sameHoundEntry(candidate, entry));
-        if (!match) {
-            return;
-        }
-        const date = trial.startsOn || entryDatesLabel(match, trial);
-        const name = trial.trialName || 'Untitled trial';
-        memberships.push([name, date, match.className].filter(Boolean).join(' | '));
-    });
+    trials
+        .filter((trial) => !trial.archivedAt)
+        .forEach((trial) => {
+            const entries = Array.isArray(trial.entries) ? trial.entries : [];
+            const match = entries.find((candidate) => sameHoundEntry(candidate, entry));
+            if (!match) {
+                return;
+            }
+            const date = trial.startsOn || entryDatesLabel(match, trial);
+            const name = trial.trialName || 'Untitled trial';
+            memberships.push([name, date, match.className].filter(Boolean).join(' | '));
+        });
     return memberships.join('; ');
 }
 
@@ -18401,12 +18406,16 @@ function entryHoundFieldIds() {
 
 function clearEntryForm() {
     editingEntryId = '';
+    selectedEntryHoundId = '';
     clearValues(entryHoundFieldIds());
     document.getElementById('entryClass').value = '';
     document.getElementById('entryBreed').value = '';
     document.getElementById('entryRegistry').value = '';
     document.getElementById('entryRegType').value = '';
     document.getElementById('entryAltRegistry').value = '';
+    document.getElementById('entryAlternateRegistration').open = false;
+    document.getElementById('entryOwnerInformation').open = false;
+    document.getElementById('entryDetails').open = false;
     document.getElementById('entrySex').value = '';
     document.getElementById('entryFirstTime').checked = false;
     document.getElementById('entryCertRequired').checked = false;
@@ -18422,6 +18431,7 @@ function clearEntryForm() {
     document.getElementById('entryOwnerSeparationGroup').value = '';
     toggleOwnerSeparationGroupField();
     renderEntryRegistrationOptions(null);
+    renderEntryHoundSearchStatus();
     document.getElementById('addEntryButton').textContent = 'Add Entry';
     renderEntryEditBanner(null);
 }
@@ -18476,6 +18486,7 @@ function editTrialEntry(entryId) {
     }
 
     editingEntryId = entryId;
+    selectedEntryHoundId = entry.houndId || '';
     document.getElementById('entryHoundSearch').value = [entry.callName, entry.registeredName, entry.registrationNumber].filter(Boolean).join(' | ');
     document.getElementById('entryCallName').value = entry.callName || '';
     document.getElementById('entryRegName').value = entry.registeredName || '';
@@ -18499,12 +18510,8 @@ function editTrialEntry(entryId) {
     document.getElementById('entryOwnerSeparation').checked = Boolean(entry.ownerSeparationRequested);
     document.getElementById('entryOwnerSeparationGroup').value = entry.ownerSeparationGroup || '';
     toggleOwnerSeparationGroupField();
-    const searchedHound = findHoundFromSearch();
-    if (searchedHound) {
-        renderEntryRegistrationOptions(searchedHound);
-    } else {
-        renderEntryRegistrationOptions(null);
-    }
+    renderEntryRegistrationOptions(getSelectedEntryHound());
+    renderEntryHoundSearchStatus();
     document.getElementById('addEntryButton').textContent = 'Update Entry';
     switchTab('entries');
     showMessage(entryMessage, 'Editing entry. Make changes, then click Update Entry.', 'warning');
@@ -18829,6 +18836,13 @@ function addTrialWorker() {
     render();
 }
 
+function getSelectedEntryHound() {
+    if (!selectedEntryHoundId) {
+        return null;
+    }
+    return masterHounds.find((hound) => hound.id === selectedEntryHoundId) || null;
+}
+
 function findHoundFromSearch() {
     const searchValue = document.getElementById('entryHoundSearch').value.trim();
     if (!searchValue) {
@@ -18845,17 +18859,97 @@ function findHoundFromSearch() {
     }) || null;
 }
 
-function fillEntryFromSearch() {
-    renderHoundSearchOptions();
-    const hound = findHoundFromSearch();
-    if (!hound) {
-        return;
+function matchingEntryHounds() {
+    const search = clean(document.getElementById('entryHoundSearch')?.value || '');
+    if (!search) {
+        return [];
     }
-
-    fillEntryHoundFields(hound);
-    renderEntryRegistrationOptions(hound);
+    return masterHounds.filter((hound) => houndMatchesSearch(hound, search));
 }
 
+function renderEntryHoundSearchStatus(message = '') {
+    const status = document.getElementById('entryHoundSearchStatus');
+    if (!status) {
+        return;
+    }
+    if (message) {
+        status.textContent = message;
+        return;
+    }
+    const selected = getSelectedEntryHound();
+    if (selected) {
+        status.textContent = `Selected: ${houndLabel(selected)}. Editing the fields below will update the entry from this hound record.`;
+        return;
+    }
+    const search = document.getElementById('entryHoundSearch')?.value.trim() || '';
+    if (!search) {
+        status.textContent = 'Search first, then choose a hound from the suggestions or enter a new hound below.';
+        return;
+    }
+    const matches = matchingEntryHounds();
+    status.textContent = matches.length
+        ? `${matches.length} possible match${matches.length === 1 ? '' : 'es'} found. Choose one from the suggestions, then click Use Selected Hound.`
+        : 'No matching hound found. Click Enter New Hound or fill out the hound information below.';
+}
+
+function handleEntryHoundSearchInput() {
+    selectedEntryHoundId = '';
+    renderHoundSearchOptions();
+    renderEntryRegistrationOptions(null);
+    renderEntryHoundSearchStatus();
+}
+
+function selectEntryHoundFromSearch() {
+    const hound = findHoundFromSearch();
+    if (!hound) {
+        selectedEntryHoundId = '';
+        renderEntryRegistrationOptions(null);
+        renderEntryHoundSearchStatus('No exact hound selected. Choose a suggestion from the search box, or click Enter New Hound.');
+        return;
+    }
+    selectedEntryHoundId = hound.id;
+    document.getElementById('entryHoundSearch').value = houndLabel(hound);
+    fillEntryHoundFields(hound);
+    renderEntryRegistrationOptions(hound);
+    renderEntryHoundSearchStatus();
+    document.getElementById('trialEntryFields')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => document.getElementById('entryClass')?.focus({ preventScroll: true }), 350);
+}
+
+function startNewEntryHound() {
+    selectedEntryHoundId = '';
+    clearValues([
+        'entryHoundSearch',
+        'entryCallName',
+        'entryRegName',
+        'entryRegNumber',
+        'entryAltRegNumber',
+        'entryOwner',
+        'entryOwnerEmail',
+        'entryOwnerPhone',
+        'entryDob',
+        'entryOwnerAddress',
+        'entryOwnerCity',
+        'entryOwnerState',
+        'entryOwnerPostalCode',
+        'entryOwnerCountry',
+        'entryBreeder',
+        'entrySire',
+        'entryDam',
+    ]);
+    document.getElementById('entryBreed').value = '';
+    document.getElementById('entryClass').value = '';
+    document.getElementById('entryRegistry').value = '';
+    document.getElementById('entryRegType').value = '';
+    document.getElementById('entryAltRegistry').value = '';
+    document.getElementById('entryAlternateRegistration').open = false;
+    document.getElementById('entryOwnerInformation').open = false;
+    document.getElementById('entryDetails').open = false;
+    document.getElementById('entrySex').value = '';
+    renderEntryRegistrationOptions(null);
+    renderEntryHoundSearchStatus('New hound mode. Fill out the hound, owner, and entry details below, then add the entry.');
+    document.getElementById('entryCallName')?.focus();
+}
 function fillEntryHoundFields(hound) {
     if (!hound) {
         return;
@@ -18869,6 +18963,9 @@ function fillEntryHoundFields(hound) {
     document.getElementById('entryRegType').value = hound.registrationType || '';
     document.getElementById('entryAltRegistry').value = hound.alternateRegistry || '';
     document.getElementById('entryAltRegNumber').value = hound.alternateRegistrationNumber || '';
+    document.getElementById('entryAlternateRegistration').open = false;
+    document.getElementById('entryOwnerInformation').open = false;
+    document.getElementById('entryDetails').open = false;
     document.getElementById('entrySex').value = hound.sex || '';
     document.getElementById('entryDob').value = hound.dob || '';
     document.getElementById('entryOwner').value = hound.owner || '';
@@ -19609,9 +19706,11 @@ document.getElementById('addMasterWorkerButton').addEventListener('click', () =>
     }
 });
 
-document.getElementById('entryHoundSearch').addEventListener('input', fillEntryFromSearch);
+document.getElementById('entryHoundSearch').addEventListener('input', handleEntryHoundSearchInput);
+document.getElementById('selectEntryHoundButton')?.addEventListener('click', selectEntryHoundFromSearch);
+document.getElementById('newEntryHoundButton')?.addEventListener('click', startNewEntryHound);
 document.getElementById('entryBreed').addEventListener('change', () => renderClassOptions(getSelectedTrial()));
-document.getElementById('entryRegNumber').addEventListener('input', () => renderEntryRegistrationOptions(findHoundFromSearch()));
+document.getElementById('entryRegNumber').addEventListener('input', () => renderEntryRegistrationOptions(getSelectedEntryHound()));
 document.getElementById('entryOwnerSeparation').addEventListener('change', toggleOwnerSeparationGroupField);
 document.getElementById('entryOwnerSeparationGroup').addEventListener('input', (event) => {
     event.target.value = event.target.value.toUpperCase();
