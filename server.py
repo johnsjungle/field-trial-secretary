@@ -469,7 +469,7 @@ def utc_now() -> str:
 
 
 def ensure_database() -> None:
-    DATA_DIR.mkdir(exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     DB_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     TRIAL_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
