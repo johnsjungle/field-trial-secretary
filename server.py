@@ -13,6 +13,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 import webbrowser
 import zipfile
 from datetime import datetime
@@ -4531,4 +4532,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        app_log("Fatal startup error:\n" + traceback.format_exc())
+        raise

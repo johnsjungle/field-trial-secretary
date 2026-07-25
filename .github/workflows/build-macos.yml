@@ -29,10 +29,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -52,12 +52,21 @@ jobs:
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
+          STATUS_READY=false
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8877/api/status >build/macos-status.json; then
+              STATUS_READY=true
               break
             fi
             sleep 1
           done
+
+          if [[ "$STATUS_READY" != "true" ]]; then
+            echo "Packaged application did not start."
+            cat build/macos-smoke.log || true
+            cat "$HOME/Library/Application Support/Field Trial Secretary/logs/field_trial_secretary.log" || true
+            exit 1
+          fi
 
           python3 -c 'import json; data=json.load(open("build/macos-status.json")); assert data["ok"] is True; print(data["dbPath"])'
 
