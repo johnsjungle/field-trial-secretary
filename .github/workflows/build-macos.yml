@@ -1,0 +1,70 @@
+name: Build macOS Application
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - codex/trial-entry-redesign
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.architecture }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: Apple-Silicon
+            runner: macos-latest
+          - architecture: Intel
+            runner: macos-15-intel
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-macos-build.txt
+
+      - name: Install build dependencies
+        run: python3 -m pip install --upgrade -r requirements-macos-build.txt
+
+      - name: Build application and DMG
+        run: bash build_macos_package.sh
+
+      - name: Smoke test packaged server
+        shell: bash
+        run: |
+          APP_EXECUTABLE="dist/Field Trial Secretary.app/Contents/MacOS/Field Trial Secretary"
+          "$APP_EXECUTABLE" --host 127.0.0.1 --port 8877 >build/macos-smoke.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8877/api/status >build/macos-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          python3 -c 'import json; data=json.load(open("build/macos-status.json")); assert data["ok"] is True; print(data["dbPath"])'
+
+      - name: Upload macOS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Field-Trial-Secretary-macOS-${{ matrix.architecture }}
+          path: dist/Field-Trial-Secretary-*-macOS-*.dmg
+          if-no-files-found: error
+          retention-days: 30

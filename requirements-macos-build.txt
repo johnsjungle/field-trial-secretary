@@ -1,0 +1,5 @@
+pyinstaller>=6.11,<7
+pillow>=10,<13
+pypdf>=5,<7
+pypdfium2>=4,<6
+reportlab>=4,<5

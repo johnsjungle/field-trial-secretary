@@ -27,3 +27,21 @@ Create a portable package with:
 ```powershell
 .\build_portable_package.ps1
 ```
+
+## macOS Build
+
+The GitHub Actions workflow in `.github/workflows/build-macos.yml` builds
+separate Apple Silicon and Intel disk images. In GitHub, open **Actions**,
+choose **Build macOS Application**, and select **Run workflow**. When both
+jobs finish, download the two DMG artifacts from the workflow run.
+
+The Mac application keeps its live SQLite database and backups outside the
+application bundle at:
+
+```text
+~/Library/Application Support/Field Trial Secretary
+```
+
+This means replacing the application with a newer build does not replace the
+trial database. The current builds use ad-hoc signing for testing. Public
+distribution will require an Apple Developer ID certificate and notarization.

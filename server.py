@@ -5,6 +5,7 @@ import base64
 import copy
 import io
 import json
+import os
 import re
 import subprocess
 import shutil
@@ -27,16 +28,30 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 
-ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+IS_MAC_APP = IS_FROZEN and sys.platform == "darwin"
+
+if IS_MAC_APP:
+    ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+elif IS_FROZEN:
+    ROOT = Path(sys.executable).resolve().parent
+else:
+    ROOT = Path(__file__).resolve().parent
+
 APP_DIR = ROOT / "app"
-DATA_DIR = ROOT / "data"
+STORAGE_ROOT = (
+    Path.home() / "Library" / "Application Support" / "Field Trial Secretary"
+    if IS_MAC_APP
+    else ROOT
+)
+DATA_DIR = STORAGE_ROOT / "data"
 DB_PATH = DATA_DIR / "field_trial_secretary.sqlite"
 VERSION_PATH = APP_DIR / "version.json"
-DB_BACKUP_DIR = ROOT / "backups" / "database"
-TRIAL_ARCHIVE_DIR = ROOT / "backups" / "trial_archives"
-TRANSFER_PACKAGE_DIR = ROOT / "backups" / "transfer_packages"
-APP_RESTORE_BACKUP_DIR = ROOT / "backups" / "app_file_restores"
-LOG_DIR = ROOT / "logs"
+DB_BACKUP_DIR = STORAGE_ROOT / "backups" / "database"
+TRIAL_ARCHIVE_DIR = STORAGE_ROOT / "backups" / "trial_archives"
+TRANSFER_PACKAGE_DIR = STORAGE_ROOT / "backups" / "transfer_packages"
+APP_RESTORE_BACKUP_DIR = STORAGE_ROOT / "backups" / "app_file_restores"
+LOG_DIR = STORAGE_ROOT / "logs"
 APP_LOG_PATH = LOG_DIR / "field_trial_secretary.log"
 SETTINGS_PATH = DATA_DIR / "app_settings.json"
 STATE_KEY = "current"
@@ -4507,7 +4522,10 @@ def main() -> None:
     print(f"Field Trial Secretary running at {url}")
     print(f"SQLite database: {DB_PATH}")
     print("Press Ctrl+C to stop.")
-    if args.open_browser:
+    should_open_browser = args.open_browser or (
+        IS_MAC_APP and not bool(os.environ.get("CI"))
+    )
+    if should_open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     server.serve_forever()
 
