@@ -2066,6 +2066,18 @@ tr.roll-call-print-needs-documents > td {
     table-layout: fixed;
 }
 
+.roll-call-print-meta {
+    align-items: baseline;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.roll-call-print-meta p:last-child {
+    font-weight: 800;
+    white-space: nowrap;
+}
+
 .print-checkbox {
     border: 2px solid #111;
     display: inline-block;

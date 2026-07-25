@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260713-entry-form-collapsed">
+    <link rel="stylesheet" href="styles.css?v=20260723-trial-workflow-fixes">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -1052,7 +1052,10 @@
                     </div>
                     <div class="print-area sheet-preview" id="rollCallPrint">
                         <h2>Roll Call Sheet</h2>
-                        <p id="rollCallTitle"></p>
+                        <div class="roll-call-print-meta">
+                            <p id="rollCallTitle"></p>
+                            <p id="rollCallTotal"></p>
+                        </div>
                         <div class="table-wrap roll-call-print-wrap">
                             <table class="roll-call-print-table">
                                 <thead>
@@ -1549,6 +1552,6 @@
     </main>
 
     <script src="asfa_recent_hounds.js"></script>
-    <script src="script.js?v=20260713-entry-form-collapsed"></script>
+    <script src="script.js?v=20260723-trial-workflow-fixes"></script>
 </body>
 </html>

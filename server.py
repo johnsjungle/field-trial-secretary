@@ -1911,8 +1911,15 @@ def draw_asfa_entry_text(pdf: canvas.Canvas, layout: dict, key: str, value: obje
     if not value:
         return
     font_size = layout["smallFontSize"] if key in {"registration", "email", "address"} else layout["fontSize"]
+    text = safe_text(value, limit)
+    if key in {"email", "trialSecretaryEmail"}:
+        text = safe_text(value, 254)
+        right_edge = layout.get("regionX", 288) - 8 if key == "email" else layout.get("copyOffsetX", 396) - 8
+        max_width = max(40, right_edge - layout[f"{key}X"])
+        while font_size > 4 and pdf.stringWidth(text, "Helvetica", font_size) > max_width:
+            font_size -= 0.25
     pdf.setFont("Helvetica", font_size)
-    pdf.drawString(layout[f"{key}X"], y_from_top(asfa_entry_y(layout, f"{key}Y")), safe_text(value, limit))
+    pdf.drawString(layout[f"{key}X"], y_from_top(asfa_entry_y(layout, f"{key}Y")), text)
 
 
 def draw_asfa_lci_entry_text(pdf: canvas.Canvas, layout: dict, key: str, value: object, limit: int) -> None:
@@ -2395,7 +2402,7 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
             entry = entries_by_id.get(entry_id) or {}
             outcome = normalized_record_outcome(outcomes.get(entry_id))
             placement = bif_results.get(entry_id) or ""
-            if clean_text(placement) == "BIFTIE":
+            if clean_text(placement) != "BIF":
                 placement = ""
             call_name = hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound"
             breed_display = breed_display_for_record(entry.get("breed") or hound.get("breed") or hound.get("entryBreed") or "")
@@ -2550,13 +2557,25 @@ def bob_runoff_boxes_by_entry(trial: dict) -> dict[str, dict[str, str]]:
                     include_hound = True
                 if not entry_id or not include_hound:
                     continue
-                code = runoff_record_value(
+                blanket_code = (
+                    hound.get("bobCode")
+                    or hound.get("tieBreakCode")
+                    or course_color_code(
+                        course.get("number"),
+                        hound.get("bobBlanketColor")
+                        or hound.get("tieBreakBlanketColor")
+                        or hound.get("blanketColor"),
+                    )
+                )
+                if suppress_pending_codes:
+                    blanket_code = ""
+                result = runoff_record_value(
                     hound.get("bobOutcome") or hound.get("tieBreakOutcome"),
                     hound.get("bobScore") or hound.get("tieBreakScore"),
-                    hound.get("bobCode") or hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("bobBlanketColor") or hound.get("tieBreakBlanketColor") or hound.get("blanketColor")),
-                    suppress_pending_codes,
+                    "",
+                    True,
                 )
-                boxes[entry_id] = {"label": "BOB", "code": str(code)}
+                boxes[entry_id] = {"label": str(blanket_code), "code": str(result)}
     return boxes
 
 

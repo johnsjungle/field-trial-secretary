@@ -3011,7 +3011,7 @@ function trialGuideSteps(trial) {
         { id: 'print-roll-call-sheet', label: 'Print Roll Call Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', targetSelector: '#printRollCallButton', status: attentionStatus(printStatus(trial, 'rollCallSheet'), entriesDone, rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan)), detail: rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan) ? 'Entries changed after the roll call sheet was printed. Reprint the roll call sheet for the current entry list.' : (printStatus(trial, 'rollCallSheet') ? 'Roll call sheet has been printed or marked printed.' : 'Print the roll call sheet before checking in hounds at roll call.'), action: 'Go To Roll Call Sheet' },
         { id: 'worker-sheet', label: 'Worker Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', status: attentionStatus(printStatus(trial, 'workerSheet'), runDone && !entriesStaleForRunPlan, workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan)), detail: workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan) ? 'Entries changed after the worker sheet was printed. Rebuild Running Order if needed, then print the worker sheet again.' : (printStatus(trial, 'workerSheet') ? 'Worker sheet has been printed or marked printed.' : 'Print the worker sheet after running order and assignments are ready.'), action: 'Go To Worker Sheet' },
         { id: 'roll-call', label: 'Roll Call Check In', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: attentionStatus(rollDone, entriesDone, rollDone && (entriesStaleForRunPlan || rollCallSheetStale)), detail: rollDone && (entriesStaleForRunPlan || rollCallSheetStale) ? 'Entries changed after setup was built. Review roll call for the current entry list.' : (rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.'), action: 'Go To Roll Call' },
-        { id: 'separate-hounds', label: 'Separate Hounds', tab: 'rollcall', sectionTitle: 'Owner Separation', status: attentionStatus(entriesDone && ownerStatus.done, entriesDone, entriesDone && ownerStatus.done && entriesStaleForRunPlan), detail: entriesDone && ownerStatus.done && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Review owner separation again before drawing.' : ownerStatus.detail, action: 'Go To Separation' },
+        { id: 'separate-hounds', label: 'Separate Hounds', tab: 'rollcall', sectionTitle: 'Owner Separation', status: stepStatus(entriesDone && ownerStatus.done, entriesDone), detail: ownerStatus.detail, action: 'Go To Separation' },
         { id: 'prelim-draw', label: 'Preliminary Draw', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(prelimDrawDone, rollDone && runDone && !entriesStaleForRunPlan, prelimDrawDone && (entriesStaleForRunPlan || entriesStaleForPrelimDraw)), detail: prelimDrawDone && (entriesStaleForRunPlan || entriesStaleForPrelimDraw) ? 'Entries or roll call changed after the preliminary draw was built. Rebuild before scoring starts.' : (prelimDrawDone ? 'Preliminary courses and blanket colors are built.' : 'Build the randomized preliminary draw after roll call and running order are ready.'), action: 'Go To Draw' },
         { id: 'print-draw', label: 'Print Draw Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(printStatus(trial, 'prelimDrawSheet'), prelimDrawDone && !entriesStaleForPrelimDraw, prelimDrawSheetStale || (printStatus(trial, 'prelimDrawSheet') && entriesStaleForPrelimDraw)), detail: prelimDrawSheetStale || (printStatus(trial, 'prelimDrawSheet') && entriesStaleForPrelimDraw) ? 'Entries changed after draw sheets were printed. Rebuild/reprint the draw sheets.' : (printStatus(trial, 'prelimDrawSheet') ? 'Preliminary draw sheets have been printed or marked printed.' : 'Print the posted draw order sheet for the fancy.'), action: 'Go To Draw Sheets' },
         { id: 'print-judge-prelim', label: 'Print Judges Sheets', tab: 'rollcall', sectionTitle: 'Preliminary Draw', status: attentionStatus(allReadyPrelimJudgeSheetsPrinted(trial), prelimDrawDone && !entriesStaleForPrelimDraw, allReadyPrelimJudgeSheetsPrinted(trial) && entriesStaleForPrelimDraw), detail: allReadyPrelimJudgeSheetsPrinted(trial) && entriesStaleForPrelimDraw ? 'Entries changed after preliminary judge sheets were queued/printed. Rebuild the draw, then print judge sheets again.' : (allReadyPrelimJudgeSheetsPrinted(trial) ? 'All currently ready preliminary judge sheets have been printed.' : 'Print preliminary judge sheets from the judge sheet queue.'), action: 'Go To Judge Sheets' },
@@ -3383,10 +3383,10 @@ function renderAsfaRecordAlignmentTool(trial) {
         ['secondRunoffLabelY', '2nd runoff label Y offset', 135, 190, 1],
         ['secondRunoffCodeX', '2nd runoff score X', 650, 715, 1],
         ['secondRunoffCodeY', '2nd runoff score Y offset', 135, 190, 1],
-        ['bobRunoffLabelX', 'BOB runoff label X', 690, 755, 1],
-        ['bobRunoffLabelY', 'BOB runoff label Y offset', 135, 190, 1],
-        ['bobRunoffCodeX', 'BOB runoff color X', 690, 755, 1],
-        ['bobRunoffCodeY', 'BOB runoff color Y offset', 135, 190, 1],
+        ['bobRunoffLabelX', 'BOB runoff color X', 690, 755, 1],
+        ['bobRunoffLabelY', 'BOB runoff color Y offset', 135, 190, 1],
+        ['bobRunoffCodeX', 'BOB runoff score X', 690, 755, 1],
+        ['bobRunoffCodeY', 'BOB runoff score Y offset', 135, 190, 1],
         ['placementX', 'Placement X', 720, 780, 1],
         ['placementY', 'Placement Y offset', 135, 190, 1],
         ['judge1X', 'Judge 1 name X', 300, 430, 1],
@@ -4055,8 +4055,8 @@ function renderAsfaRecordVisualEditor(layout) {
         { key: 'stakeRunoffCode', label: 'Stake RO color', xKey: 'stakesRunoffCodeX', yKey: 'stakesRunoffCodeY', fontKey: 'codeFontSize', centered: true },
         { key: 'secondRunoffLabel', label: '2nd RO label', xKey: 'secondRunoffLabelX', yKey: 'secondRunoffLabelY', fontKey: 'codeFontSize', centered: true },
         { key: 'secondRunoffCode', label: '2nd RO score', xKey: 'secondRunoffCodeX', yKey: 'secondRunoffCodeY', fontKey: 'codeFontSize', centered: true },
-        { key: 'bobRunoffLabel', label: 'BOB RO label', xKey: 'bobRunoffLabelX', yKey: 'bobRunoffLabelY', fontKey: 'codeFontSize', centered: true },
-        { key: 'bobRunoffCode', label: 'BOB RO color', xKey: 'bobRunoffCodeX', yKey: 'bobRunoffCodeY', fontKey: 'codeFontSize', centered: true },
+        { key: 'bobRunoffLabel', label: 'BOB RO color', xKey: 'bobRunoffLabelX', yKey: 'bobRunoffLabelY', fontKey: 'codeFontSize', centered: true },
+        { key: 'bobRunoffCode', label: 'BOB RO score', xKey: 'bobRunoffCodeX', yKey: 'bobRunoffCodeY', fontKey: 'codeFontSize', centered: true },
         { key: 'place', label: 'Place', xKey: 'placementX', yKey: 'placementY', fontKey: 'codeFontSize', centered: true },
         { key: 'judge1', label: 'Judge 1', xKey: 'judge1X', yKey: 'judge1Y', fontKey: 'bodyFontSize' },
         { key: 'judge2', label: 'Judge 2', xKey: 'judge2X', yKey: 'judge2Y', fontKey: 'bodyFontSize' },
@@ -5086,7 +5086,7 @@ function renderRosterTables(trial) {
     renderHoundDatabaseCount(filteredHounds.length, houndRows.length);
 
     renderRows('masterHoundsTable', filteredHounds, ['callName', 'registeredName', 'breed', 'registrationDisplay', 'alternateRegistrationDisplay', 'owner'], { actions: 'hounds' });
-    const entryRows = (trial.entries || trial.hounds || []).map((entry) => ({
+    const entryRows = [...(trial.entries || trial.hounds || [])].reverse().map((entry) => ({
         ...entry,
         entryDatesLabel: entryDatesLabel(entry, trial),
         trialMembershipLabel: entryTrialMembershipLabel(entry),
@@ -9898,7 +9898,7 @@ function bobStakeCandidatesByBreed(groups) {
 
 function bobStakeWinnerRowsForGroup(group) {
     const rows = finalsRowsForGroup(group);
-    if (rows.length === 0) {
+    if (rows.length === 0 || rows.some((row) => !hasScoreValue(row.hound.finalScore) && !row.hound.finalOutcome)) {
         return [];
     }
     if (group.mixedStake) {
@@ -14037,7 +14037,9 @@ function applyPremiumJudgeAssignmentsToRunPlan(trial, rows) {
     }
     return rows.map((row) => {
         const code = premiumCodeForRunGroup(row.breed);
-        const judges = uniqueNames((assignments[code] || []).map((assignment) => assignment.judge)).slice(0, 2);
+        const judges = sortJudgeNamesByLastName(
+            uniqueNames((assignments[code] || []).map((assignment) => assignment.judge))
+        ).slice(0, 2);
         if (judges.length === 0) {
             return row;
         }
@@ -14371,9 +14373,32 @@ function assignmentCell(row, key, options, role) {
     return td;
 }
 
-function updateRunPlanField(rowId, key, value, role = '') {
+async function updateRunPlanField(rowId, key, value, role = '') {
     const trial = readForm();
     trial.runPlan = (trial.runPlan || []).map((row) => row.id === rowId ? { ...row, [key]: key === 'runOrder' ? Number(value) || '' : value } : row);
+    const updatedRow = (trial.runPlan || []).find((row) => row.id === rowId);
+    if (
+        role === 'judge'
+        && clean(trial.association) === 'ASFA'
+        && updatedRow?.judge1
+        && updatedRow?.judge2
+        && compareJudgeNamesByLastName(updatedRow.judge1, updatedRow.judge2) > 0
+    ) {
+        const switchJudges = await showTrialConfirm({
+            title: 'Switch Judge Order?',
+            eyebrow: 'ASFA Judge Assignment',
+            message: 'ASFA record sheets designate Judge 1 and Judge 2 alphabetically by last name. ' + updatedRow.judge2 + ' should be Judge 1 and ' + updatedRow.judge1 + ' should be Judge 2. Would you like to switch them?',
+            primaryText: 'Switch Judges',
+            secondaryText: 'Keep Entered Order',
+        });
+        if (switchJudges) {
+            trial.runPlan = trial.runPlan.map((row) => row.id === rowId ? {
+                ...row,
+                judge1: updatedRow.judge2,
+                judge2: updatedRow.judge1,
+            } : row);
+        }
+    }
     if (value && role) {
         if (role === 'judge') {
             ensureJudgeInDatabaseAndTrial(value, trial);
@@ -14442,6 +14467,35 @@ function sortedRunPlanRows(rows) {
 
 function uniqueNames(values) {
     return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function judgeLastNameSortKey(name) {
+    const text = String(name || '').trim();
+    if (!text) {
+        return '';
+    }
+    if (text.includes(',')) {
+        const [lastName, ...rest] = text.split(',').map((part) => part.trim());
+        return clean(lastName) + '|' + clean(rest.join(' '));
+    }
+    const parts = text.split(/\s+/).filter(Boolean);
+    while (parts.length > 1 && /^(JR\.?|SR\.?|II|III|IV|V)$/i.test(parts[parts.length - 1])) {
+        parts.pop();
+    }
+    const lastName = parts.pop() || '';
+    return clean(lastName) + '|' + clean(parts.join(' '));
+}
+
+function compareJudgeNamesByLastName(first, second) {
+    return judgeLastNameSortKey(first).localeCompare(
+        judgeLastNameSortKey(second),
+        undefined,
+        { sensitivity: 'base', numeric: true }
+    );
+}
+
+function sortJudgeNamesByLastName(names) {
+    return [...names].sort(compareJudgeNamesByLastName);
 }
 
 function ensureJudgeInDatabaseAndTrial(name, trial) {
@@ -14671,6 +14725,7 @@ function renderRollCallSheet(trial) {
     const body = document.getElementById('rollCallTable');
     body.innerHTML = '';
     const rows = sortRollCallEntries(trial.entries || []);
+    document.getElementById('rollCallTotal').textContent = `Total hounds: ${rows.length}`;
 
     if (rows.length === 0) {
         const tr = document.createElement('tr');
@@ -16650,9 +16705,14 @@ function updateTrialEntriesForHound(hound) {
                 callName: hound.callName,
                 registeredName: hound.registeredName,
                 breed: hound.breed,
-                owner: hound.owner || entry.owner || '',
-                ownerEmail: hound.ownerEmail || entry.ownerEmail || '',
-                ownerPhone: hound.ownerPhone || entry.ownerPhone || '',
+                owner: hound.owner ?? entry.owner ?? '',
+                ownerEmail: hound.ownerEmail ?? entry.ownerEmail ?? '',
+                ownerPhone: hound.ownerPhone ?? entry.ownerPhone ?? '',
+                ownerAddress: hound.ownerAddress ?? entry.ownerAddress ?? '',
+                ownerCity: hound.ownerCity ?? entry.ownerCity ?? '',
+                ownerState: hound.ownerState ?? entry.ownerState ?? '',
+                ownerPostalCode: hound.ownerPostalCode ?? entry.ownerPostalCode ?? '',
+                ownerCountry: hound.ownerCountry ?? entry.ownerCountry ?? '',
                 registrationNumber: registration.number,
                 registry: registration.registry,
                 registrationType: registration.type,
@@ -16682,6 +16742,7 @@ function getAsfaRecentCount() {
 async function addTrialEntry() {
     let hound = getSelectedEntryHound();
     let createdHoundFromEntry = false;
+    let masterHoundEditedFromEntry = false;
 
     if (!hound) {
         hound = addMasterHoundFromForm('entry');
@@ -16690,6 +16751,22 @@ async function addTrialEntry() {
 
     if (!hound) {
         return;
+    }
+
+    if (editingEntryId && selectedEntryHoundId) {
+        hound = {
+            ...hound,
+            owner: getFormValue('entryOwner'),
+            ownerEmail: getFormValue('entryOwnerEmail'),
+            ownerPhone: getFormValue('entryOwnerPhone'),
+            ownerAddress: getFormValue('entryOwnerAddress'),
+            ownerCity: getFormValue('entryOwnerCity'),
+            ownerState: getFormValue('entryOwnerState'),
+            ownerPostalCode: getFormValue('entryOwnerPostalCode'),
+            ownerCountry: getFormValue('entryOwnerCountry'),
+            updatedAt: new Date().toISOString(),
+        };
+        masterHoundEditedFromEntry = true;
     }
 
     const className = document.getElementById('entryClass').value;
@@ -16759,6 +16836,11 @@ async function addTrialEntry() {
     upsertTrial(currentTrial);
 
     if (editingEntryId) {
+        if (masterHoundEditedFromEntry) {
+            masterHounds = masterHounds.map((item) => item.id === hound.id ? hound : item);
+            updateTrialEntriesForHound(hound);
+            saveMasterHounds();
+        }
         const updatedEntryId = editingEntryId;
         const entry = buildTrialEntry(hound, selectedRegistration, className, editingEntryId, documentResult);
         let updated = false;
@@ -18377,7 +18459,7 @@ function isSameEntry(entry, hound, selectedRegistration, className) {
         ? entry.houndId === hound.id
         : clean(entry.registrationNumber) && clean(entry.registrationNumber) === clean(selectedRegistration.number);
 
-    return sameHound && entry.className === className;
+    return sameHound;
 }
 
 function entryHoundFieldIds() {
@@ -18899,7 +18981,7 @@ function handleEntryHoundSearchInput() {
     renderEntryHoundSearchStatus();
 }
 
-function selectEntryHoundFromSearch() {
+async function selectEntryHoundFromSearch() {
     const hound = findHoundFromSearch();
     if (!hound) {
         selectedEntryHoundId = '';
@@ -18912,6 +18994,25 @@ function selectEntryHoundFromSearch() {
     fillEntryHoundFields(hound);
     renderEntryRegistrationOptions(hound);
     renderEntryHoundSearchStatus();
+    const existingEntry = (getSelectedTrial()?.entries || []).find((entry) => (
+        entry.houndId === hound.id
+        || [hound.registrationNumber, hound.alternateRegistrationNumber]
+            .filter(Boolean)
+            .some((number) => clean(number) === clean(entry.registrationNumber))
+    ));
+    if (existingEntry) {
+        const editExisting = await showTrialConfirm({
+            title: 'Hound Already Entered',
+            eyebrow: 'Trial Entry',
+            message: `${hound.callName || hound.registeredName || 'This hound'} is already entered in ${existingEntry.className || 'this trial'}. Would you like to edit that entry?`,
+            primaryText: 'Edit Existing Entry',
+        });
+        if (editExisting) {
+            editTrialEntry(existingEntry.id);
+            return;
+        }
+        renderEntryHoundSearchStatus(`${hound.callName || hound.registeredName || 'This hound'} is already entered in the active trial. It will not be added there a second time.`);
+    }
     document.getElementById('trialEntryFields')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.setTimeout(() => document.getElementById('entryClass')?.focus({ preventScroll: true }), 350);
 }
