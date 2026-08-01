@@ -23,6 +23,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import pypdfium2 as pdfium
+from asfa_judges import parse_asfa_judge_directory
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.utils import ImageReader
@@ -101,13 +102,14 @@ ENTRY_FORM_TEMPLATES = {
     "ASFA_LCI": APP_DIR / "templates" / "asfa" / "EF-A-LCI-Entry-Form-Rev-08-24.pdf",
 }
 SECRETARY_REPORT_TEMPLATES = {
-    "ASFA": APP_DIR / "templates" / "asfa" / "REC-25-Field-Trial-Secretary-Report-New-03-26.pdf",
+    "ASFA": APP_DIR / "templates" / "asfa" / "REC-25-Field-Trial-Secretary-Report-Rev-08-26.pdf",
     "AKC": APP_DIR / "templates" / "akc" / "JFSEC2-Event-Secretary-Report-10-25.pdf",
 }
 DEFAULT_ASFA_RECORD_LAYOUT = {
     "headerFontSize": 10,
     "bodyFontSize": 8.5,
     "codeFontSize": 8.5,
+    "footerFontSize": 9,
     "globalYAdjust": 0,
     "breedX": 158,
     "stakeX": 392,
@@ -269,6 +271,7 @@ DEFAULT_ASFA_DRAW_LAYOUT = {
     "bifCheckY": 90,
 }
 DEFAULT_ASFA_SECRETARY_LAYOUT = {
+    "templateRevision": "8-26",
     "fontSize": 9,
     "circleWeight": 1.5,
     "globalYAdjust": 0,
@@ -322,17 +325,21 @@ DEFAULT_ASFA_SECRETARY_LAYOUT = {
     "specialTotalX": 501,
     "totalsY": 477,
     "breedFeeX": 535,
-    "breedFeeY": 544,
+    "breedFeeY": 529,
     "specialFeeX": 535,
-    "specialFeeY": 582,
+    "specialFeeY": 567,
+    "lciRegistrationCountX": 355,
+    "lciRegistrationCountY": 594,
+    "lciRegistrationFeeX": 535,
+    "lciRegistrationFeeY": 594,
     "recordsFeeX": 535,
-    "recordsFeeY": 619,
+    "recordsFeeY": 621,
     "checkAmountX": 535,
-    "checkAmountY": 656,
+    "checkAmountY": 648,
     "paypalAmountX": 535,
-    "paypalAmountY": 693,
+    "paypalAmountY": 675,
     "paypalIdX": 348,
-    "paypalIdY": 720,
+    "paypalIdY": 702,
 }
 DEFAULT_ASFA_ENTRY_LAYOUT = {
     "fontSize": 8,
@@ -2326,7 +2333,7 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
     final_outcome_by_id = final_outcome_by_entry(group)
     combined_by_entry = final_combined_scores_by_entry(group)
     final_placement_by_entry = final_placements_by_entry(group)
-    award_by_entry = asfa_record_awards_by_entry(trial)
+    award_by_entry = asfa_record_bob_awards_by_entry(trial)
     stake_runoff_by_entry = stake_runoff_boxes_by_entry(trial, group)
     bob_runoff_by_entry = bob_runoff_boxes_by_entry(trial)
     qualifying_minimum = placement_qualifying_minimum_for_group(trial, group)
@@ -2478,14 +2485,10 @@ def bif_tie_runoff_boxes_by_entry(bif: dict) -> dict[str, dict[str, str]]:
     return boxes
 
 
-def asfa_record_awards_by_entry(trial: dict) -> dict[str, str]:
+def asfa_record_bob_awards_by_entry(trial: dict) -> dict[str, str]:
     awards: dict[str, str] = {}
-    bif_results = bif_results_by_entry(trial)
-    for entry_id, result in bif_results.items():
-        if result == "BIF":
-            awards[str(entry_id)] = "BIF"
     for entry_id, result in ((trial.get("resultState") or {}).get("bobResultsByEntry") or {}).items():
-        if result == "BOB" and str(entry_id) not in awards:
+        if result == "BOB":
             awards[str(entry_id)] = "BOB"
     return awards
 
@@ -2515,7 +2518,10 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                     suppress_pending_codes,
                 )
                 if entry_id and (code or label):
-                    boxes[entry_id] = {"label": label, "code": str(code)}
+                    boxes[entry_id] = {
+                        "label": runoff_label_with_blanket(label, hound, course),
+                        "code": str(code),
+                    }
     group_id = str(group.get("id") or "").split("::", 1)[0]
     for runoff in (trial.get("bobRunoffs") or []):
         if str(runoff.get("tieGroupId") or "") not in {str(group.get("id") or ""), group_id}:
@@ -2550,7 +2556,10 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                 ):
                     code = ""
                 if entry_id and (code or label):
-                    boxes[entry_id] = {"label": label, "code": str(code)}
+                    boxes[entry_id] = {
+                        "label": runoff_label_with_blanket(label, hound, course),
+                        "code": str(code),
+                    }
     return boxes
 
 
@@ -2560,6 +2569,7 @@ def bob_runoff_boxes_by_entry(trial: dict) -> dict[str, dict[str, str]]:
         suppress_pending_codes = runoff_resolved_without_scores(runoff)
         key_text = clean_text(runoff.get("key"))
         is_combined = combined_tie_bob_runoff(runoff)
+        tie_winner_ids = combined_tie_winner_entry_ids(runoff) if is_combined else set()
         is_bob_runoff = key_text.startswith("BOB") or key_text.startswith("COMBINED") or key_text.startswith("BOBTIE") or clean_text(runoff.get("phase")) == "BOB"
         for course in runoff.get("courses") or []:
             for hound in course.get("hounds") or []:
@@ -2570,7 +2580,7 @@ def bob_runoff_boxes_by_entry(trial: dict) -> dict[str, dict[str, str]]:
                 is_tie_hound = combined_tie_hound(hound)
                 include_hound = role in {"BOB", ""} or is_bob_runoff
                 if is_combined:
-                    include_hound = True
+                    include_hound = not is_tie_hound or entry_id in tie_winner_ids
                 if not entry_id or not include_hound:
                     continue
                 blanket_code = (
@@ -2704,6 +2714,21 @@ def runoff_record_value(outcome: object, score: object, code: object, suppress_p
 def concise_tie_label(value: object) -> str:
     text = str(value or "").replace(" Runoff", "").replace(" Tie", "").strip()
     return text or "Tie"
+
+
+def runoff_label_with_blanket(label: object, hound: dict, course: dict) -> str:
+    text = str(label or "").strip()
+    color = (
+        hound.get("tieBreakBlanketColor")
+        or hound.get("bobBlanketColor")
+        or hound.get("blanketColor")
+    )
+    color_code = {"YELLOW": "Y", "PINK": "P", "BLUE": "B"}.get(clean_text(color), "")
+    if not color_code:
+        draw_code = str(hound.get("tieBreakCode") or hound.get("bobCode") or "").strip().upper()
+        if draw_code.endswith(("Y", "P", "B")):
+            color_code = draw_code[-1]
+    return f"{text}({color_code})" if text and color_code else text
 
 
 def normalized_record_outcome(value: object) -> dict[str, str]:
@@ -2926,10 +2951,13 @@ def first_time_document_ids_for_entry(entry: dict, group: dict) -> list[str]:
     ids: list[str] = []
     registration_id = str(entry.get("registrationCertDocumentId") or "")
     coursing_id = str(entry.get("coursingCertDocumentId") or "")
+    lci_registration_id = str(entry.get("lciRegistrationDocumentId") or "")
     if registration_id:
         ids.append(registration_id)
     if not is_quasi_breed_record_group(group) and coursing_id:
         ids.append(coursing_id)
+    if bool(entry.get("needsLciRegistration")) and lci_registration_id:
+        ids.append(lci_registration_id)
     if not ids:
         ids.extend(str(document_id) for document_id in entry.get("documentIds") or [] if document_id)
     return ids
@@ -3076,6 +3104,7 @@ def draw_asfa_record_header(pdf: canvas.Canvas, trial: dict, group: dict, entry_
     pdf.setFont("Helvetica", 7)
     if page_start:
         pdf.drawRightString(770, y_from_top(104), f"Continued - rows {page_start + 1}+")
+    pdf.setFont("Helvetica", layout.get("footerFontSize", 9))
     judge1, judge2 = judges_for_group(trial, group)
     pdf.drawString(layout["judge1X"], y_from_top(asfa_record_y(layout, "judge1Y")), safe_text(judge1, 32))
     pdf.drawString(layout["judge2X"], y_from_top(asfa_record_y(layout, "judge2Y")), safe_text(judge2, 32))
@@ -3269,9 +3298,21 @@ def draw_asfa_secretary_page_two(pdf: canvas.Canvas, trial: dict, height: float,
     per_capita_rate = secretary_per_capita_rate(trial)
     breed_fee = totals["total"] * per_capita_rate
     special_fee = special["total"]
+    lci_registration_count = secretary_lci_registration_count(trial)
+    lci_registration_fee = lci_registration_count * 10
     pdf.setFont("Helvetica-Bold", 9)
     pdf.drawRightString(layout["breedFeeX"], secretary_y(height, layout, "breedFeeY"), money_text(breed_fee))
     pdf.drawRightString(layout["specialFeeX"], secretary_y(height, layout, "specialFeeY"), money_text(special_fee))
+    pdf.drawCentredString(
+        layout["lciRegistrationCountX"],
+        secretary_y(height, layout, "lciRegistrationCountY"),
+        str(lci_registration_count),
+    )
+    pdf.drawRightString(
+        layout["lciRegistrationFeeX"],
+        secretary_y(height, layout, "lciRegistrationFeeY"),
+        money_text(lci_registration_fee),
+    )
     pdf.drawRightString(layout["recordsFeeX"], secretary_y(height, layout, "recordsFeeY"), money_text(15))
     draw_optional_money(pdf, trial.get("secretaryCheckAmount"), layout["checkAmountX"], secretary_y(height, layout, "checkAmountY"))
     draw_optional_money(pdf, trial.get("secretaryPaypalAmount"), layout["paypalAmountX"], secretary_y(height, layout, "paypalAmountY"))
@@ -3284,8 +3325,8 @@ def secretary_report_answers(trial: dict) -> dict[str, str]:
         "premiumChanged": yes_no_value(trial.get("secretaryPremiumChanged"), "no"),
         "openVetFirstTimers": yes_no_value(trial.get("secretaryOpenVetFirstTimers"), auto_open_vet_first_timers(trial)),
         "singlesFirstTimers": yes_no_value(trial.get("secretarySinglesFirstTimers"), auto_singles_first_timers(trial)),
-        "workingOffDismissal": yes_no_value(trial.get("secretaryWorkingOffDismissal"), "no"),
-        "changeOfInfo": yes_no_value(trial.get("secretaryChangeOfInfo"), "no"),
+        "workingOffDismissal": yes_no_value(trial.get("secretaryWorkingOffDismissal"), auto_working_off_dismissal(trial)),
+        "changeOfInfo": yes_no_value(trial.get("secretaryChangeOfInfo"), auto_change_of_info(trial)),
     }
 
 
@@ -3320,6 +3361,14 @@ def auto_singles_first_timers(trial: dict) -> str:
         if bool(entry.get("firstTime")) and clean_text(entry.get("className")) == "SINGLES":
             return "yes"
     return "no"
+
+
+def auto_working_off_dismissal(trial: dict) -> str:
+    return "yes" if any(bool(entry.get("dismissedLastSix")) for entry in trial.get("entries") or []) else "no"
+
+
+def auto_change_of_info(trial: dict) -> str:
+    return "yes" if any(bool(entry.get("infoChanged")) for entry in trial.get("entries") or []) else "no"
 
 
 def trial_location_text(trial: dict) -> str:
@@ -3468,11 +3517,18 @@ def asfa_secretary_special_counts(trial: dict) -> dict[str, int]:
     return {"breeder": breeder, "kennel": kennel, "bench": bench, "total": breeder + kennel + bench}
 
 
+def secretary_lci_registration_count(trial: dict) -> int:
+    configured = positive_int(trial.get("secretaryLciRegistrationCount"))
+    if bool(trial.get("secretaryLciRegistrationCountManual")) or configured > 0:
+        return configured
+    return sum(1 for entry in trial.get("entries") or [] if bool(entry.get("needsLciRegistration")))
+
+
 def secretary_per_capita_rate(trial: dict) -> float:
     try:
-        rate = float(trial.get("secretaryPerCapitaRate") or 4)
+        rate = float(trial.get("secretaryPerCapitaRate") or 3.5)
     except (TypeError, ValueError):
-        rate = 4.0
+        rate = 3.5
     return 3.5 if abs(rate - 3.5) < 0.01 else 4.0
 
 
@@ -4330,6 +4386,23 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     raise ValueError("document payload must be an object")
                 document = save_entry_document(payload)
                 self.send_json({"ok": True, "document": document})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/import/asfa-judges":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+                encoded = str(payload.get("pdfBase64") or "")
+                if not encoded:
+                    raise ValueError("Choose an ASFA judge directory PDF first.")
+                pdf_bytes = base64.b64decode(encoded, validate=True)
+                parsed_directory = parse_asfa_judge_directory(
+                    pdf_bytes,
+                    str(payload.get("fileName") or "ASFA Judge Directory"),
+                )
+                self.send_json({"ok": True, **parsed_directory})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return

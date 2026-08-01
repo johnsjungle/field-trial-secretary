@@ -1,0 +1,149 @@
+/*
+ * Field Trial Secretary v0.2.0
+ * Random draw core copied from app/script.js.
+ * Review source commit:
+ * 62973b0763cf6752855f6bfeb250bddbc4fbd2fa
+ *
+ * This file is supplied for external review. The running application loads
+ * app/script.js, not this extract.
+ */
+
+function orderEntriesForDraw(entries) {
+    const randomizedEntries = secureShuffle(entries);
+    const separationCounts = new Map();
+
+    randomizedEntries.forEach((entry) => {
+        const group = ownerSeparationDrawKey(entry);
+        if (group) {
+            separationCounts.set(group, (separationCounts.get(group) || 0) + 1);
+        }
+    });
+
+    const separatedEntries = randomizedEntries.filter((entry) => {
+        const group = ownerSeparationDrawKey(entry);
+        return group && separationCounts.get(group) > 1;
+    });
+    const otherEntries = randomizedEntries.filter((entry) => {
+        const group = ownerSeparationDrawKey(entry);
+        return !group || separationCounts.get(group) <= 1;
+    });
+
+    return [...separatedEntries, ...otherEntries];
+}
+
+function orderEntriesForSequentialSoloDraw(entries) {
+    let bestOrder = secureShuffle(entries);
+    let bestScore = sequentialSeparationConflictCount(bestOrder);
+    for (let attempt = 0; attempt < 60 && bestScore > 0; attempt += 1) {
+        const candidate = secureShuffle(entries);
+        const score = sequentialSeparationConflictCount(candidate);
+        if (score < bestScore) {
+            bestOrder = candidate;
+            bestScore = score;
+        }
+    }
+    return bestOrder;
+}
+
+function sequentialSeparationConflictCount(entries) {
+    let conflicts = 0;
+    for (let index = 1; index < entries.length; index += 1) {
+        const previous = ownerSeparationDrawKey(entries[index - 1]);
+        const current = ownerSeparationDrawKey(entries[index]);
+        if (previous && current && previous === current) {
+            conflicts += 1;
+        }
+    }
+    return conflicts;
+}
+
+function ownerSeparationDrawKey(entry) {
+    return String(entry.ownerSeparationGroup || '').trim().toUpperCase();
+}
+
+function courseSizesForEntryCount(count, fillCourses = false) {
+    if (fillCourses) {
+        const sizes = [];
+        let remaining = count;
+        while (remaining > 0) {
+            const size = Math.min(3, remaining);
+            sizes.push(size);
+            remaining -= size;
+        }
+        return sizes;
+    }
+    const sizes = [];
+    let remaining = count;
+    while (remaining > 0) {
+        if (remaining <= 3) {
+            sizes.push(remaining);
+            break;
+        }
+        if (remaining === 4) {
+            sizes.push(2, 2);
+            break;
+        }
+        sizes.push(3);
+        remaining -= 3;
+    }
+    return sizes;
+}
+
+function assignEntriesSequentiallyToCourses(courses, entries) {
+    let courseIndex = 0;
+    entries.forEach((entry) => {
+        while (courseIndex < courses.length && courses[courseIndex].hounds.length >= courses[courseIndex].capacity) {
+            courseIndex += 1;
+        }
+        const course = courses[Math.min(courseIndex, courses.length - 1)];
+        course.hounds.push(entry);
+    });
+}
+
+function chooseCourseForEntry(courses, entry) {
+    const open = courses.filter((course) => course.hounds.length < course.capacity);
+    const group = ownerSeparationDrawKey(entry);
+    const preferred = group
+        ? open.filter((course) => !course.hounds.some((hound) => ownerSeparationDrawKey(hound) === group))
+        : open;
+    const candidates = preferred.length ? preferred : open;
+    const fewestHounds = Math.min(...candidates.map((course) => course.hounds.length));
+    return secureChoice(candidates.filter((course) => course.hounds.length === fewestHounds));
+}
+
+function blanketColorsForCourseSize(size) {
+    if (size <= 1) {
+        return ['Yellow'];
+    }
+    if (size === 2) {
+        return ['Yellow', 'Pink'];
+    }
+    return ['Yellow', 'Pink', 'Blue'];
+}
+
+function secureShuffle(values) {
+    const result = [...values];
+    for (let index = result.length - 1; index > 0; index -= 1) {
+        const swapIndex = secureRandomInt(index + 1);
+        [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+    }
+    return result;
+}
+
+function secureChoice(values) {
+    return values[secureRandomInt(values.length)];
+}
+
+function secureRandomInt(maxExclusive) {
+    if (maxExclusive <= 0) {
+        return 0;
+    }
+    const maxUint = 0x100000000;
+    const limit = maxUint - (maxUint % maxExclusive);
+    const array = new Uint32Array(1);
+    do {
+        crypto.getRandomValues(array);
+    } while (array[0] >= limit);
+    return array[0] % maxExclusive;
+}
+

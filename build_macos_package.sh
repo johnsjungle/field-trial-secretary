@@ -38,6 +38,8 @@ python3 -m PyInstaller \
   --icon "$ICON_FILE" \
   --osx-bundle-identifier "org.fieldtrialsecretary.app" \
   --collect-all pypdfium2 \
+  --collect-all pdfplumber \
+  --collect-all pdfminer \
   --add-data "app:app" \
   --add-data "database:database" \
   server.py

@@ -1,9 +1,9 @@
 {
   "name": "Field Trial Secretary",
-  "version": "0.2.0",
-  "releaseDate": "2026-07-12",
-  "channel": "local",
-  "releaseUrl": "",
+  "version": "0.3.0",
+  "releaseDate": "2026-08-01",
+  "channel": "release",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.0",
   "latestVersionUrl": "",
-  "notes": "Production-readiness workflow, reporting, backup, and portable package improvements."
+  "notes": "Trial-day workflow refinements, improved imports and reports, ASFA judge directory, and Windows and macOS release packaging."
 }

@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260723-trial-workflow-fixes">
+    <link rel="stylesheet" href="styles.css?v=20260801-asfa-judges">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -165,6 +165,10 @@
                         <label class="switch">
                             <input id="priorityDate" type="checkbox">
                             <span>Priority date</span>
+                        </label>
+                        <label class="switch">
+                            <input id="testTrial" type="checkbox">
+                            <span>Test trial</span>
                         </label>
                     </div>
                 </section>
@@ -333,7 +337,7 @@
                         <input id="masterOwnerPhone" placeholder="Owner phone">
                         <input id="masterOwnerAddress" placeholder="Owner address">
                         <input id="masterOwnerCity" placeholder="Owner city">
-                        <input id="masterOwnerState" placeholder="Owner state">
+                        <input id="masterOwnerState" list="stateProvinceOptions" placeholder="State or province">
                     </div>
                     <div class="inline-entry">
                         <input id="masterOwnerPostalCode" placeholder="Owner postal code">
@@ -389,6 +393,7 @@
                         <button type="button" class="secondary small" id="cancelEntryEditButton">Cancel Edit</button>
                     </div>
                     <datalist id="houndSearchOptions"></datalist>
+                    <datalist id="stateProvinceOptions"></datalist>
                     <select id="entryRegistrationUsed" hidden></select>
                     <input id="entryNumber" type="hidden">
                     <div class="entry-search-panel">
@@ -470,7 +475,7 @@
                             <div class="inline-entry">
                                 <label class="field-label">Owner address<input id="entryOwnerAddress" placeholder="Owner address"></label>
                                 <label class="field-label">City<input id="entryOwnerCity" placeholder="City"></label>
-                                <label class="field-label">State/Province<input id="entryOwnerState" placeholder="State or province"></label>
+                                <label class="field-label">State/Province<input id="entryOwnerState" list="stateProvinceOptions" placeholder="Type or select"></label>
                                 <label class="field-label">ZIP/postal<input id="entryOwnerPostalCode" placeholder="ZIP/postal"></label>
                             </div>
                         </details>
@@ -479,6 +484,7 @@
                                 <label class="field-label">Handler<input id="entryHandler" placeholder="Handler"></label>
                                 <label class="switch"><input id="entryFirstTime" type="checkbox"> <span>First-time entry</span></label>
                                 <label class="switch"><input id="entryCertRequired" type="checkbox"> <span>Certificate required</span></label>
+                                <label class="switch"><input id="entryNeedsLciRegistration" type="checkbox"> <span>Needs LCI registration</span></label>
                                 <label class="switch"><input id="entryOwnerSeparation" type="checkbox"> <span>Separate owner hounds</span></label>
                             </div>
                             <div class="entry-detail-row entry-detail-secondary">
@@ -497,6 +503,10 @@
                                     Coursing certification
                                     <input id="entryCoursingCertFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
                                 </label>
+                                <label>
+                                    LCI registration paperwork
+                                    <input id="entryLciRegistrationFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
+                                </label>
                                 <p class="field-note wide" id="entryFirstTimeDocsNote">Attach first-time entry paperwork here. LCI and Singles need the registration certificate only; regular breed stakes also need the coursing certification.</p>
                             </div>
                             <div class="inline-entry three-cols" id="entryOwnerSeparationGroupRow" hidden>
@@ -513,6 +523,7 @@
                             <h3>Add To Trials</h3>
                             <p>Select one or more setup trials. The current trial is selected automatically.</p>
                             <div class="quick-grid" id="entryTrialTargets"></div>
+                            <label class="switch compact-switch entry-paid-switch"><input id="entryPaid" type="checkbox"> <span>Paid - entry fee collected</span></label>
                         </div>
                         <button type="button" class="secondary" id="addEntryButton">Add Entry</button>
                     </div>
@@ -529,6 +540,7 @@
                                     <th>Entry Dates</th>
                                     <th>Trial(s)</th>
                                     <th>Handler</th>
+                                    <th>Paid</th>
                                     <th>Separate</th>
                                     <th>Docs</th>
                                     <th>Actions</th>
@@ -542,7 +554,7 @@
                 <section class="form-section" data-tab="entries">
                     <div class="section-heading table-heading">
                         <h2>Import Dogs</h2>
-                        <p>Import Jotform emails, CSV exports, or copied form text. Preview, map fields, choose hound matches, then import.</p>
+                        <p>Import Jotform emails, CSV exports, or copied form text. Preview every row, correct any field, confirm its hound and trial date, then import.</p>
                     </div>
                     <div class="inline-entry">
                         <label>
@@ -560,6 +572,7 @@
                         <label>
                             Import files
                             <input id="jotformImportFiles" type="file" multiple accept=".txt,.eml,.json,.csv,.html,.htm,.pdf,.jpg,.jpeg,.png">
+                            <small>Select one or more email/CSV files. Add PDF or image certificates separately; source email and CSV files are never treated as certificates.</small>
                         </label>
                     </div>
                     <label class="stacked-label">
@@ -570,7 +583,12 @@
                         <button type="button" class="secondary" id="parseJotformImportButton">Preview Import</button>
                         <button type="button" class="secondary" id="applyEntryImportMappingButton">Apply Mapping</button>
                         <button type="button" class="secondary" id="saveEntryImportTemplateButton">Save Mapping Template</button>
-                        <button type="button" class="primary" id="importJotformEntriesButton">Import Previewed Entries</button>
+                        <button type="button" class="secondary" id="createMissingImportTrialsButton" hidden>Create Missing Trials</button>
+                        <button type="button" class="primary" id="importJotformEntriesButton" disabled>Import Previewed Entries</button>
+                    </div>
+                    <div class="import-progress" id="entryImportProgress" role="status" aria-live="polite" hidden>
+                        <span class="import-progress-spinner" aria-hidden="true"></span>
+                        <strong id="entryImportProgressText">Working on the import...</strong>
                     </div>
                     <div class="form-message compact" id="jotformImportSummary"></div>
                     <div class="table-wrap" id="entryImportMappingWrap" hidden>
@@ -798,7 +816,6 @@
                         <label>
                             Were any judges changed from the approved premium list?
                             <select id="secretaryJudgesChanged">
-                                <option value="">Auto/unknown</option>
                                 <option value="yes">Yes</option>
                                 <option value="no">No</option>
                             </select>
@@ -806,7 +823,6 @@
                         <label>
                             Were there any other significant premium-list changes?
                             <select id="secretaryPremiumChanged">
-                                <option value="">Auto/unknown</option>
                                 <option value="yes">Yes</option>
                                 <option value="no">No</option>
                             </select>
@@ -818,7 +834,6 @@
                         <label>
                             Open or Veteran first-time entrants?
                             <select id="secretaryOpenVetFirstTimers">
-                                <option value="">Auto from entries</option>
                                 <option value="yes">Yes</option>
                                 <option value="no">No</option>
                             </select>
@@ -826,7 +841,6 @@
                         <label>
                             Singles first-time entrants?
                             <select id="secretarySinglesFirstTimers">
-                                <option value="">Auto from entries</option>
                                 <option value="yes">Yes</option>
                                 <option value="no">No</option>
                             </select>
@@ -834,7 +848,6 @@
                         <label>
                             Entries marked for working off a dismissal?
                             <select id="secretaryWorkingOffDismissal">
-                                <option value="">Auto/unknown</option>
                                 <option value="yes">Yes</option>
                                 <option value="no">No</option>
                             </select>
@@ -842,7 +855,6 @@
                         <label>
                             Entries marked for change of information?
                             <select id="secretaryChangeOfInfo">
-                                <option value="">Auto/unknown</option>
                                 <option value="yes">Yes</option>
                                 <option value="no">No</option>
                             </select>
@@ -860,10 +872,14 @@
                             <input id="secretarySpecialBenchCount" type="number" min="0" step="1" placeholder="0">
                         </label>
                         <label>
+                            LCI registrations requested ($10 each)
+                            <input id="secretaryLciRegistrationCount" type="number" min="0" step="1" value="0">
+                        </label>
+                        <label>
                             Breed per-capita rate
                             <select id="secretaryPerCapitaRate">
-                                <option value="4.00">$4.00 standard</option>
                                 <option value="3.50">$3.50 electronic records</option>
+                                <option value="4.00">$4.00 standard</option>
                             </select>
                         </label>
                         <label>
@@ -882,7 +898,7 @@
                     <div class="info-panel">
                         <p>The report also fills club, region, chair, secretary email, trial date, location, entry counts, and calculated ASFA fees from the active trial.</p>
                     </div>
-                    <div class="stats-grid" id="secretaryFeeSummary"></div>
+                    <div class="secretary-fee-summary" id="secretaryFeeSummary"></div>
                 </section>
 
                 <section class="form-section" data-tab="wrapup">
@@ -945,21 +961,24 @@
                     <div class="form-message compact" id="runPlanMessage"></div>
                     <details class="inline-tool-panel">
                         <summary>Import Premium Judge Assignments</summary>
-                        <p class="field-note">Paste the premium judge assignment grid. Tab-delimited text copied from a spreadsheet/PDF table works best. The importer applies only breeds or LCI/Singles groups that have trial entries.</p>
+                        <p class="field-note">Paste a judge table or load a clear picture of the Judges & Assignments grid. Review and correct the matrix before saving. Only breeds, LCI divisions, Provisional, or Singles groups with entries are applied to the running order.</p>
                         <p class="field-note" id="premiumJudgeAssignmentsStatus">No premium judge matrix loaded.</p>
-                        <textarea id="premiumJudgeAssignmentsText" rows="7" placeholder="Example: paste the premium Judges & Assignments table here, including day names, judge names, breed headers, and S/X/* marks."></textarea>
+                        <textarea id="premiumJudgeAssignmentsText" rows="7" placeholder="Paste a tab-delimited table here. Include day names, judge names, breed headers, and S/X/* marks. You may also paste an image directly into this box."></textarea>
                         <div class="button-row">
                             <label class="secondary small file-button">
-                                Load Grid Image
+                                Choose Grid Image
                                 <input id="premiumJudgeGridImage" type="file" accept="image/*" hidden>
                             </label>
+                            <button type="button" class="secondary small" id="readPremiumJudgesButton">Read & Preview</button>
+                            <button type="button" class="secondary small" id="addPremiumJudgeRowButton">Add Judge</button>
                         </div>
                         <div class="premium-grid-preview" id="premiumJudgeGridPreview"></div>
+                        <div class="premium-matrix-review" id="premiumJudgeMatrixReview"></div>
                         <div class="button-row">
-                            <button type="button" class="secondary small" id="importPremiumJudgesButton">Save Premium Matrix</button>
+                            <button type="button" class="secondary small" id="importPremiumJudgesButton" disabled>Save & Apply Matrix</button>
                             <button type="button" class="secondary small" id="applyPremiumJudgesButton">Apply Saved Matrix</button>
                             <button type="button" class="secondary small" id="removePremiumJudgesButton">Remove Saved Matrix</button>
-                            <button type="button" class="secondary small" id="clearPremiumJudgesButton">Clear Paste</button>
+                            <button type="button" class="secondary small" id="clearPremiumJudgesButton">Clear Import</button>
                         </div>
                     </details>
                     <div class="run-order-controls">
@@ -1074,28 +1093,87 @@
                 </section>
 
                 <section class="form-section" data-tab="admin" data-admin-page="Judges & Workers">
-                    <div class="section-heading with-action">
-                        <div>
-                            <h2>Judge Database</h2>
-                            <p>Master judge records available for any trial.</p>
-                        </div>
-                        <button type="button" class="secondary small" id="addMasterJudgeButton">Save Judge</button>
+                    <div class="section-heading">
+                        <h2>Judge Directory</h2>
+                        <p>Find and contact licensed judges while planning a trial. Directory imports never change past trial assignments.</p>
                     </div>
                     <div class="form-message compact" id="masterJudgeMessage"></div>
-                    <div class="inline-entry">
-                        <input id="masterJudgeName" placeholder="Judge name">
-                        <input id="masterJudgeNumber" placeholder="Judge number">
-                        <input id="masterJudgeEmail" type="email" placeholder="Email">
-                        <input id="masterJudgePhone" placeholder="Phone">
+                    <details class="inline-tool-panel" id="judgeDirectoryImportPanel">
+                        <summary>Import Or Update Judge Directory</summary>
+                        <p class="field-note">The included ASFA directory is current as of July 2026 and works offline. To refresh it later, download the newest Approved Judges PDF from ASFA and import that file here.</p>
+                        <div class="button-row judge-import-actions">
+                            <button type="button" class="secondary small" id="importIncludedAsfaJudgesButton">Import Included ASFA List</button>
+                            <label class="secondary small file-button">
+                                Choose Newer ASFA PDF
+                                <input id="asfaJudgeDirectoryFile" type="file" accept="application/pdf,.pdf" hidden>
+                            </label>
+                            <button type="button" class="secondary small" id="importAsfaJudgePdfButton" disabled>Import Selected PDF</button>
+                            <a class="text-link" href="https://www.asfa.org/judges/index.htm" target="_blank" rel="noopener">Open ASFA Judges Website</a>
+                        </div>
+                        <p class="field-note" id="asfaJudgeDirectoryFileName">No newer PDF selected.</p>
+                        <div class="import-progress" id="asfaJudgeImportProgress" role="status" aria-live="polite" hidden>
+                            <span class="import-progress-spinner" aria-hidden="true"></span>
+                            <strong>Reading and matching the judge directory...</strong>
+                        </div>
+                    </details>
+                    <div class="judge-directory-toolbar">
+                        <label class="field-label">Search judges
+                            <input id="masterJudgeSearch" type="search" placeholder="Name, city, state, email, phone, or license">
+                        </label>
+                        <label class="field-label">License
+                            <select id="masterJudgeLicenseFilter">
+                                <option value="">All licenses</option>
+                                <option value="All-Breed">All-Breed</option>
+                                <option value="Provisional">Provisional</option>
+                                <option value="Apprentice">Apprentice</option>
+                            </select>
+                        </label>
+                        <label class="field-label">Region
+                            <select id="masterJudgeRegionFilter">
+                                <option value="">All regions</option>
+                                <option value="1">Region 1</option>
+                                <option value="2">Region 2</option>
+                                <option value="3">Region 3</option>
+                                <option value="4">Region 4</option>
+                                <option value="5">Region 5</option>
+                                <option value="6">Region 6</option>
+                                <option value="7">Region 7</option>
+                                <option value="8">Region 8</option>
+                                <option value="9">Region 9</option>
+                                <option value="10">Region 10</option>
+                            </select>
+                        </label>
+                        <label class="field-label">Availability
+                            <select id="masterJudgeAvailabilityFilter">
+                                <option value="">Any availability</option>
+                                <option value="travel">Will travel</option>
+                                <option value="lure">Lure operator</option>
+                                <option value="travel-lure">Will travel + lure operator</option>
+                            </select>
+                        </label>
+                        <strong class="judge-directory-count" id="masterJudgeDirectoryCount">0 judges</strong>
                     </div>
-                    <div class="table-wrap">
-                        <table>
+                    <details class="inline-tool-panel">
+                        <summary>Add A Judge Manually</summary>
+                        <div class="inline-entry judge-manual-fields">
+                            <input id="masterJudgeName" placeholder="Judge name">
+                            <input id="masterJudgeNumber" placeholder="Judge number">
+                            <input id="masterJudgeEmail" type="email" placeholder="Email">
+                            <input id="masterJudgePhone" placeholder="Phone">
+                        </div>
+                        <button type="button" class="secondary small" id="addMasterJudgeButton">Save Judge</button>
+                    </details>
+                    <div class="table-wrap judge-directory-table-wrap">
+                        <table class="judge-directory-table">
                             <thead>
                                 <tr>
                                     <th>Name</th>
-                                    <th>Number</th>
-                                    <th>Email</th>
-                                    <th>Phone</th>
+                                    <th>License</th>
+                                    <th>Location</th>
+                                    <th>Region</th>
+                                    <th>Contact</th>
+                                    <th>Lure Operator</th>
+                                    <th>Travel</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -1103,7 +1181,6 @@
                         </table>
                     </div>
                 </section>
-
                 <section class="form-section" data-tab="admin" data-admin-page="Judges & Workers">
                     <div class="section-heading with-action">
                         <div>
@@ -1551,7 +1628,8 @@
         </section>
     </main>
 
+    <script src="vendor/tesseract/tesseract.min.js"></script>
     <script src="asfa_recent_hounds.js"></script>
-    <script src="script.js?v=20260723-trial-workflow-fixes"></script>
+    <script src="script.js?v=20260801-asfa-judges"></script>
 </body>
 </html>

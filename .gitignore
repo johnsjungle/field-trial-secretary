@@ -23,3 +23,9 @@ tmp/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Bundled offline reference data
+!app/data/
+!app/data/asfa-judge-directory-07-26.json
+.codex-remote-attachments/
+mac-test-builds/

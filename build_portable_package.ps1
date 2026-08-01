@@ -1,7 +1,8 @@
 param(
     [switch]$SkipPyInstallerInstall,
     [switch]$Clean,
-    [switch]$NoZip
+    [switch]$NoZip,
+    [switch]$PublicRelease
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,7 +49,7 @@ if (-not $safeAppVersion) {
 }
 
 if (-not $SkipPyInstallerInstall) {
-    foreach ($package in @("pyinstaller", "pypdfium2", "pypdf", "reportlab", "pillow")) {
+    foreach ($package in @("pyinstaller", "pypdfium2", "pdfplumber", "pypdf", "reportlab", "pillow")) {
         $packageInstalled = $false
         try {
             & $python -m pip show $package *> $null
@@ -84,7 +85,9 @@ $pyInstallerArgs = @(
     "--onedir",
     "--console",
     "--name", "FieldTrialSecretary",
-    "--collect-all", "pypdfium2"
+    "--collect-all", "pypdfium2",
+    "--collect-all", "pdfplumber",
+    "--collect-all", "pdfminer"
 )
 if (Test-Path -LiteralPath $iconPath) {
     $pyInstallerArgs += @("--icon", $iconPath)
@@ -114,7 +117,7 @@ foreach ($folder in @("app", "database")) {
 foreach ($folder in @("data")) {
     $source = Join-Path $root $folder
     $destination = Join-Path $packageRoot $folder
-    if (Test-Path -LiteralPath $source) {
+    if (-not $PublicRelease -and (Test-Path -LiteralPath $source)) {
         Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
     } else {
         New-Item -ItemType Directory -Path $destination | Out-Null
@@ -141,6 +144,10 @@ if (Test-Path -LiteralPath $schemaPath) {
     if ($LASTEXITCODE -ne 0) {
         throw "Blank SQLite database creation failed."
     }
+}
+
+if ($PublicRelease) {
+    Copy-Item -LiteralPath $blankDb -Destination (Join-Path $packageRoot "data\field_trial_secretary.sqlite") -Force
 }
 
 $startBat = Join-Path $packageRoot "Start Field Trial Secretary.bat"
@@ -234,6 +241,7 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
         if (Test-Path -LiteralPath $zipPath) {
             Remove-Item -LiteralPath $zipPath -Force
         }
+
         Start-Sleep -Seconds $attempt
         Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -Force
         $zipCreated = $true
