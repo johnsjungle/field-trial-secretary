@@ -1,9 +1,9 @@
 {
   "name": "Field Trial Secretary",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "releaseDate": "2026-08-01",
   "channel": "release",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.0",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.1",
   "latestVersionUrl": "",
-  "notes": "Trial-day workflow refinements, improved imports and reports, ASFA judge directory, and Windows and macOS release packaging."
+  "notes": "Intel macOS packaging compatibility fix; trial-day workflow refinements, improved imports and reports, ASFA judge directory, and Windows and macOS release packaging."
 }
