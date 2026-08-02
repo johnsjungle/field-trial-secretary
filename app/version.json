@@ -1,9 +1,9 @@
 {
   "name": "Field Trial Secretary",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "releaseDate": "2026-08-01",
   "channel": "release",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.1",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.2",
   "latestVersionUrl": "",
-  "notes": "Intel macOS packaging compatibility fix; trial-day workflow refinements, improved imports and reports, ASFA judge directory, and Windows and macOS release packaging."
+  "notes": "Adds reusable hound database importing with mapping templates, automatic and manual hound matching, preview controls, and protected SQLite saving."
 }

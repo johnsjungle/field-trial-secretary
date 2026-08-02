@@ -348,6 +348,59 @@
                     <div class="inline-entry">
                         <input id="masterDam" placeholder="Dam">
                     </div>
+                    <datalist id="houndDatabaseImportMatchOptions"></datalist>
+                    <details class="hound-database-import" id="houndDatabaseImportPanel">
+                        <summary>Import Hound Database</summary>
+                        <p>Bring hounds from another program into the reusable database without adding them to a trial. Preview matches and choose how each record is handled before saving.</p>
+                        <div class="inline-entry">
+                            <label>
+                                Import file(s)
+                                <input id="houndDatabaseImportFiles" type="file" multiple accept=".csv,.tsv,.txt,.json">
+                                <small>Use CSV, tab-delimited text, JSON, or a Field Trial Secretary JSON backup.</small>
+                            </label>
+                            <label>
+                                Import template
+                                <select id="houndDatabaseImportTemplateSelect"></select>
+                            </label>
+                            <label>
+                                Save mapping as
+                                <input id="houndDatabaseImportTemplateName" placeholder="Previous Program Hounds">
+                            </label>
+                        </div>
+                        <label class="stacked-label">
+                            Or paste CSV, tab-delimited, or JSON data
+                            <textarea id="houndDatabaseImportText" rows="5" placeholder="Paste exported hound data here"></textarea>
+                        </label>
+                        <div class="button-row">
+                            <button type="button" class="secondary" id="previewHoundDatabaseImportButton">Preview Import</button>
+                            <button type="button" class="secondary" id="applyHoundDatabaseImportMappingButton">Apply Mapping</button>
+                            <button type="button" class="secondary" id="saveHoundDatabaseImportTemplateButton">Save Mapping Template</button>
+                            <button type="button" class="primary" id="importHoundDatabaseButton" disabled>Import Selected Hounds</button>
+                        </div>
+                        <div class="import-progress" id="houndDatabaseImportProgress" role="status" aria-live="polite" hidden>
+                            <span class="import-progress-spinner" aria-hidden="true"></span>
+                            <strong id="houndDatabaseImportProgressText">Reading hound records...</strong>
+                        </div>
+                        <div class="form-message compact" id="houndDatabaseImportMessage"></div>
+                        <div class="table-wrap" id="houndDatabaseImportMappingWrap" hidden>
+                            <table>
+                                <thead><tr><th>Hound Database Field</th><th>Source Column</th></tr></thead>
+                                <tbody id="houndDatabaseImportMappingTable"></tbody>
+                            </table>
+                        </div>
+                        <div class="table-wrap hound-database-import-preview" id="houndDatabaseImportPreviewWrap" hidden>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Import</th><th>Source</th><th>Decision</th><th>Database Match</th>
+                                        <th>Call Name</th><th>Registered Name</th><th>Breed</th>
+                                        <th>Registration</th><th>Registry</th><th>Owner</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="houndDatabaseImportPreviewTable"></tbody>
+                            </table>
+                        </div>
+                    </details>
                     <div class="section-heading table-heading">
                         <h2>Hounds In Database</h2>
                         <p>This is the reusable hound list. Trial entries are assigned separately on the Trial Entries tab.</p>
@@ -1631,5 +1684,6 @@
     <script src="vendor/tesseract/tesseract.min.js"></script>
     <script src="asfa_recent_hounds.js"></script>
     <script src="script.js?v=20260801-asfa-judges"></script>
+    <script src="hound_database_import.js?v=20260801"></script>
 </body>
 </html>
