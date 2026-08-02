@@ -1,9 +1,9 @@
 {
   "name": "Field Trial Secretary",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "releaseDate": "2026-08-01",
   "channel": "release",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.2",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.3",
   "latestVersionUrl": "",
-  "notes": "Adds reusable hound database importing with mapping templates, automatic and manual hound matching, preview controls, and protected SQLite saving."
+  "notes": "Preserves calibrated paperwork alignment in clean Windows and macOS installations while keeping trial, hound, and personnel data out of the starter database."
 }

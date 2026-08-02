@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+if [[ ! -f "app/default_form_alignment.js" ]]; then
+  echo "Paperwork alignment defaults are missing."
+  exit 1
+fi
+
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 

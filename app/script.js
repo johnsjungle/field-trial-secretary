@@ -391,7 +391,7 @@ const officialFormTemplates = [
     }
 ];
 
-const defaultFormAlignment = {
+const defaultFormAlignment = window.FIELD_TRIAL_DEFAULT_FORM_ALIGNMENT || {
     asfaRecordSheet: {
         headerFontSize: 10,
         bodyFontSize: 8.5,

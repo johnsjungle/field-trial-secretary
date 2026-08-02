@@ -114,6 +114,11 @@ foreach ($folder in @("app", "database")) {
     Copy-Item -LiteralPath (Join-Path $root $folder) -Destination (Join-Path $packageRoot $folder) -Recurse -Force
 }
 
+$alignmentDefaultsPath = Join-Path $packageRoot "app\default_form_alignment.js"
+if (-not (Test-Path -LiteralPath $alignmentDefaultsPath)) {
+    throw "Paperwork alignment defaults were not included in the portable package."
+}
+
 foreach ($folder in @("data")) {
     $source = Join-Path $root $folder
     $destination = Join-Path $packageRoot $folder
