@@ -3081,6 +3081,53 @@ button.danger-button {
     margin: 0 0 14px;
 }
 
+.hound-import-review-tools {
+    align-items: flex-end;
+    background: #f3f8f7;
+    border: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    justify-content: space-between;
+    margin-top: 14px;
+    padding: 12px;
+}
+
+.hound-import-review-group {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.hound-import-review-group select {
+    min-width: 220px;
+}
+
+.hound-import-selection-count {
+    color: var(--accent-dark);
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.table-sort-button {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+    padding: 0;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.table-sort-button:hover,
+.table-sort-button:focus-visible {
+    color: var(--accent-dark);
+    text-decoration: underline;
+}
+
 .hound-database-import-preview {
     max-height: 560px;
     margin-top: 14px;

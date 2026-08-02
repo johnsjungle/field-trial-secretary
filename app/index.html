@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260801-asfa-judges">
+    <link rel="stylesheet" href="styles.css?v=20260802-hound-import-review">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -355,8 +355,8 @@
                         <div class="inline-entry">
                             <label>
                                 Import file(s)
-                                <input id="houndDatabaseImportFiles" type="file" multiple accept=".csv,.tsv,.txt,.json">
-                                <small>Use CSV, tab-delimited text, JSON, or a Field Trial Secretary JSON backup.</small>
+                                <input id="houndDatabaseImportFiles" type="file" multiple accept=".xlsx,.xls,.csv,.tsv,.txt,.json">
+                                <small>Use Excel (.xlsx or .xls), CSV, tab-delimited text, JSON, or a Field Trial Secretary JSON backup.</small>
                             </label>
                             <label>
                                 Import template
@@ -388,13 +388,41 @@
                                 <tbody id="houndDatabaseImportMappingTable"></tbody>
                             </table>
                         </div>
+                        <div class="hound-import-review-tools" id="houndDatabaseImportBulkTools" hidden>
+                            <div class="hound-import-review-group" role="group" aria-label="Select hound import rows">
+                                <strong>Select rows</strong>
+                                <button type="button" class="secondary small" data-hound-import-selection="all">All</button>
+                                <button type="button" class="secondary small" data-hound-import-selection="matched">Existing</button>
+                                <button type="button" class="secondary small" data-hound-import-selection="new">New</button>
+                                <button type="button" class="secondary small" data-hound-import-selection="none">None</button>
+                            </div>
+                            <div class="hound-import-review-group">
+                                <label for="houndDatabaseImportBulkDecision"><strong>Checked row decision</strong></label>
+                                <select id="houndDatabaseImportBulkDecision">
+                                    <option value="">Choose a decision</option>
+                                    <option value="fill">Fill missing fields</option>
+                                    <option value="update">Update with imported values</option>
+                                    <option value="create">Create as new hounds</option>
+                                    <option value="skip">Skip</option>
+                                </select>
+                                <button type="button" class="secondary small" id="applyHoundDatabaseImportBulkDecision">Apply to Checked</button>
+                            </div>
+                            <strong class="hound-import-selection-count" id="houndDatabaseImportSelectionCount">0 rows checked</strong>
+                        </div>
                         <div class="table-wrap hound-database-import-preview" id="houndDatabaseImportPreviewWrap" hidden>
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>Import</th><th>Source</th><th>Decision</th><th>Database Match</th>
-                                        <th>Call Name</th><th>Registered Name</th><th>Breed</th>
-                                        <th>Registration</th><th>Registry</th><th>Owner</th>
+                                        <th>Import</th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="sourceName">Source</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="decision">Decision</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="match">Database Match</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="callName">Call Name</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="registeredName">Registered Name</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="breed">Breed</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="registrationNumber">Registration</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="registry">Registry</button></th>
+                                        <th><button type="button" class="table-sort-button" data-hound-import-sort="owner">Owner</button></th>
                                     </tr>
                                 </thead>
                                 <tbody id="houndDatabaseImportPreviewTable"></tbody>
@@ -1682,9 +1710,10 @@
     </main>
 
     <script src="vendor/tesseract/tesseract.min.js"></script>
+    <script src="vendor/sheetjs/xlsx.full.min.js"></script>
     <script src="asfa_recent_hounds.js"></script>
     <script src="default_form_alignment.js?v=20260802"></script>
     <script src="script.js?v=20260802-alignment-defaults"></script>
-    <script src="hound_database_import.js?v=20260801"></script>
+    <script src="hound_database_import.js?v=20260802-review"></script>
 </body>
 </html>

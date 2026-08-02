@@ -4,6 +4,7 @@ let houndDatabaseImportSourceRows = [];
 let houndDatabaseImportHeaders = [];
 let houndDatabaseImportMapping = {};
 let stagedHoundDatabaseImports = [];
+let houndDatabaseImportSort = { key: '', direction: 'asc' };
 
 const houndDatabaseImportFieldDefinitions = [
     { key: 'callName', label: 'Call Name', aliases: ['call name', 'hound call name', 'dog call name', 'callname'] },
@@ -44,6 +45,9 @@ function setHoundImportBusy(busy, message = 'Working on the hound database impor
     ['previewHoundDatabaseImportButton', 'applyHoundDatabaseImportMappingButton', 'saveHoundDatabaseImportTemplateButton'].forEach((id) => {
         const button = houndImportElement(id);
         if (button) button.disabled = busy;
+    });
+    document.querySelectorAll('#houndDatabaseImportBulkTools button, #houndDatabaseImportBulkTools select, [data-hound-import-sort]').forEach((control) => {
+        control.disabled = busy;
     });
     updateHoundImportButton();
 }
@@ -161,7 +165,7 @@ function stageHoundImportRow(row) {
 
 function applyHoundImportMapping() {
     if (!houndDatabaseImportSourceRows.length) {
-        showHoundImportMessage('Preview a CSV, text, or JSON hound file before applying a mapping.');
+        showHoundImportMessage('Preview an Excel, CSV, text, or JSON hound file before applying a mapping.');
         return;
     }
     readHoundImportMappingControls();
@@ -214,6 +218,51 @@ function parseHoundImportText(text, sourceName) {
     return rows.map((row) => ({ ...row, __sourceName: sourceName }));
 }
 
+function isHoundImportWorkbook(fileName) {
+    return /\.(xlsx|xls)$/i.test(String(fileName || ''));
+}
+
+function uniqueWorkbookHeaders(values) {
+    const counts = new Map();
+    return values.map((value, index) => {
+        const base = String(value ?? '').trim() || `Column ${index + 1}`;
+        const count = (counts.get(base) || 0) + 1;
+        counts.set(base, count);
+        return count === 1 ? base : `${base} (${count})`;
+    });
+}
+
+function parseHoundImportWorkbook(arrayBuffer, sourceName, xlsxApi = globalThis.XLSX) {
+    if (!xlsxApi?.read || !xlsxApi?.utils?.sheet_to_json) {
+        throw new Error('The offline Excel reader did not load. Refresh the application and try again.');
+    }
+    let workbook;
+    try {
+        workbook = xlsxApi.read(arrayBuffer, { type: 'array', cellDates: true });
+    } catch (error) {
+        throw new Error(`${sourceName} could not be read as an Excel workbook: ${error.message}`);
+    }
+    const rows = [];
+    workbook.SheetNames.forEach((sheetName) => {
+        const matrix = xlsxApi.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd', blankrows: false,
+        });
+        const populated = matrix.filter((line) => Array.isArray(line) && line.some((value) => String(value ?? '').trim()));
+        if (populated.length < 2) return;
+        const headers = uniqueWorkbookHeaders(populated[0]);
+        populated.slice(1).forEach((values) => {
+            const row = Object.fromEntries(headers.map((header, index) => [header, String(values[index] ?? '').trim()]));
+            if (Object.values(row).some((value) => value)) rows.push({ ...row, __sourceName: `${sourceName} / ${sheetName}` });
+        });
+    });
+    return rows;
+}
+
+async function parseHoundImportFile(file) {
+    if (isHoundImportWorkbook(file.name)) return parseHoundImportWorkbook(await file.arrayBuffer(), file.name);
+    return parseHoundImportText(await readTextFile(file), file.name);
+}
+
 async function previewHoundImport() {
     setHoundImportBusy(true, 'Reading hound database files and detecting columns...');
     showHoundImportMessage('Reading the selected hound database export. Large files may take a few seconds.');
@@ -222,14 +271,14 @@ async function previewHoundImport() {
         const pasted = houndImportElement('houndDatabaseImportText')?.value || '';
         const files = Array.from(houndImportElement('houndDatabaseImportFiles')?.files || []);
         const rows = pasted.trim() ? parseHoundImportText(pasted, 'Pasted data') : [];
-        for (const file of files) rows.push(...parseHoundImportText(await readTextFile(file), file.name));
+        for (const file of files) rows.push(...await parseHoundImportFile(file));
         houndDatabaseImportSourceRows = rows;
         houndDatabaseImportHeaders = uniqueNames(rows.flatMap((row) => Object.keys(row).filter((key) => !key.startsWith('__'))));
         if (!rows.length) {
             stagedHoundDatabaseImports = [];
             renderHoundImportMapping();
             renderHoundImportPreview();
-            showHoundImportMessage('No hound records were found. Select a CSV, tab-delimited, or JSON export first.');
+            showHoundImportMessage('No hound records were found. Select an Excel, CSV, tab-delimited, or JSON export first.');
             return;
         }
         const template = entryImportTemplates.find((item) => item.id === (houndImportElement('houndDatabaseImportTemplateSelect')?.value || ''));
@@ -352,12 +401,106 @@ function appendImportCell(row, content) {
     row.appendChild(cell);
 }
 
+function houndImportDecisionAllowed(item, decision) {
+    if (!item || item.imported) return false;
+    if (['fill', 'update'].includes(decision)) return Boolean(item.match);
+    return ['create', 'skip'].includes(decision);
+}
+
+function selectHoundImportRows(mode) {
+    let selected = 0;
+    stagedHoundDatabaseImports.forEach((item) => {
+        if (item.imported) return;
+        item.selected = mode === 'all'
+            || (mode === 'matched' && Boolean(item.match))
+            || (mode === 'new' && !item.match);
+        if (item.selected) selected += 1;
+    });
+    renderHoundImportPreview();
+    const labels = { all: 'all available hound rows', matched: 'existing matched hounds', new: 'new unmatched hounds', none: 'no hound rows' };
+    showHoundImportMessage('Selected ' + (labels[mode] || 'hound rows') + ' (' + selected + ' checked).');
+}
+
+function applyBulkHoundImportDecision() {
+    const decision = houndImportElement('houndDatabaseImportBulkDecision')?.value || '';
+    if (!decision) {
+        showHoundImportMessage('Choose a decision to apply to the checked hounds.');
+        return;
+    }
+    const checked = stagedHoundDatabaseImports.filter((item) => item.selected !== false && !item.imported);
+    if (!checked.length) {
+        showHoundImportMessage('Check at least one hound row before applying a decision.');
+        return;
+    }
+    let changed = 0;
+    let skipped = 0;
+    checked.forEach((item) => {
+        if (!houndImportDecisionAllowed(item, decision)) {
+            skipped += 1;
+            return;
+        }
+        item.decision = decision;
+        item.decisionTouched = true;
+        changed += 1;
+    });
+    renderHoundImportPreview();
+    const labels = {
+        fill: 'Fill missing fields',
+        update: 'Update with imported values',
+        create: 'Create as new hounds',
+        skip: 'Skip',
+    };
+    const skippedMessage = skipped
+        ? ' ' + skipped + ' unmatched row' + (skipped === 1 ? ' was' : 's were') + ' left unchanged because that decision requires an existing database match.'
+        : '';
+    showHoundImportMessage(labels[decision] + ' was applied to ' + changed + ' checked row' + (changed === 1 ? '' : 's') + '.' + skippedMessage, changed ? 'success' : 'warning');
+}
+
+function houndImportSortValue(item, key) {
+    if (key === 'match') return item.match ? 'Existing ' + houndLabel(item.match) : 'New no match';
+    if (key === 'decision') return item.decision || '';
+    return item[key] || '';
+}
+
+function updateHoundImportSortHeaders() {
+    document.querySelectorAll('[data-hound-import-sort]').forEach((button) => {
+        if (!button.dataset.sortLabel) button.dataset.sortLabel = button.textContent.trim();
+        const active = button.dataset.houndImportSort === houndDatabaseImportSort.key;
+        button.textContent = button.dataset.sortLabel + (active ? (houndDatabaseImportSort.direction === 'asc' ? ' [ASC]' : ' [DESC]') : '');
+        button.setAttribute('aria-sort', active ? (houndDatabaseImportSort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+}
+
+function sortHoundImportRows(key) {
+    if (!key) return;
+    houndDatabaseImportSort = {
+        key,
+        direction: houndDatabaseImportSort.key === key && houndDatabaseImportSort.direction === 'asc' ? 'desc' : 'asc',
+    };
+    const direction = houndDatabaseImportSort.direction === 'asc' ? 1 : -1;
+    stagedHoundDatabaseImports = stagedHoundDatabaseImports
+        .map((item, index) => ({ item, index }))
+        .sort((left, right) => {
+            const comparison = String(houndImportSortValue(left.item, key)).localeCompare(
+                String(houndImportSortValue(right.item, key)),
+                undefined,
+                { numeric: true, sensitivity: 'base' },
+            );
+            return comparison ? comparison * direction : left.index - right.index;
+        })
+        .map(({ item }) => item);
+    renderHoundImportPreview();
+}
+
 function renderHoundImportPreview() {
     const wrap = houndImportElement('houndDatabaseImportPreviewWrap');
+    const tools = houndImportElement('houndDatabaseImportBulkTools');
     const body = houndImportElement('houndDatabaseImportPreviewTable');
     if (!wrap || !body) return;
     wrap.hidden = !stagedHoundDatabaseImports.length;
+    if (tools) tools.hidden = !stagedHoundDatabaseImports.length;
     body.innerHTML = '';
+    updateHoundImportSortHeaders();
     renderHoundImportMatchOptions();
     stagedHoundDatabaseImports.forEach((item, index) => {
         const row = document.createElement('tr');
@@ -387,7 +530,11 @@ function updateHoundImportButton() {
     if (!button) return;
     const count = stagedHoundDatabaseImports.filter((item) => item.selected !== false && !item.imported && item.decision !== 'skip').length;
     button.disabled = !count || !houndImportElement('houndDatabaseImportProgress')?.hidden;
-    button.textContent = count ? `Import ${count} Selected Hound${count === 1 ? '' : 's'}` : 'Import Selected Hounds';
+    button.textContent = count ? 'Import ' + count + ' Selected Hound' + (count === 1 ? '' : 's') : 'Import Selected Hounds';
+    const available = stagedHoundDatabaseImports.filter((item) => !item.imported);
+    const selectedCount = available.filter((item) => item.selected !== false).length;
+    const countLabel = houndImportElement('houndDatabaseImportSelectionCount');
+    if (countLabel) countLabel.textContent = selectedCount + ' of ' + available.length + ' rows checked';
 }
 
 function buildImportedMasterHound(imported) {
@@ -518,6 +665,13 @@ function initializeHoundDatabaseImport() {
     houndImportElement('applyHoundDatabaseImportMappingButton')?.addEventListener('click', applyHoundImportMapping);
     houndImportElement('saveHoundDatabaseImportTemplateButton')?.addEventListener('click', saveHoundImportTemplate);
     houndImportElement('houndDatabaseImportTemplateSelect')?.addEventListener('change', applySelectedHoundImportTemplate);
+    document.querySelectorAll('[data-hound-import-selection]').forEach((button) => {
+        button.addEventListener('click', () => selectHoundImportRows(button.dataset.houndImportSelection));
+    });
+    document.querySelectorAll('[data-hound-import-sort]').forEach((button) => {
+        button.addEventListener('click', () => sortHoundImportRows(button.dataset.houndImportSort));
+    });
+    houndImportElement('applyHoundDatabaseImportBulkDecision')?.addEventListener('click', applyBulkHoundImportDecision);
     houndImportElement('importHoundDatabaseButton')?.addEventListener('click', () => importSelectedHoundsToDatabase().catch((error) => { setHoundImportBusy(false); showHoundImportMessage(`Hound database import failed: ${error.message}`); }));
 }
 
