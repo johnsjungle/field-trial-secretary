@@ -834,6 +834,7 @@ let currentWrapUpPage = 'ASFA Secretary Report';
 let currentAdminPage = 'Judges & Workers';
 let editingHoundId = '';
 let editingEntryId = '';
+let entryDocumentIdsMarkedForRemoval = new Set();
 let selectedEntryHoundId = '';
 let selectedRunPlanRowId = '';
 let selectedRunoffItemId = '';
@@ -893,7 +894,7 @@ const entryImportFieldDefinitions = [
     { key: 'certRequired', label: 'Cert/Docs Required', aliases: ['certificate', 'cert required', 'documentation', 'registration certificate'] },
     { key: 'ownerSeparationRequested', label: 'Separate Hounds', aliases: ['separate hounds', 'separate my hounds', 'please separate my entries'] },
     { key: 'paid', label: 'Paid', aliases: ['paid', 'paid via paypal', 'payment received', 'entry paid', 'fee paid'] },
-    { key: 'needsLciRegistration', label: 'Needs LCI Registration', aliases: ['needs lci registration', 'lci registration', 'lci reg fee'] },
+    { key: 'needsLciRegistration', label: 'Needs ASFA LCI Number', aliases: ['needs lci registration', 'needs asfa lci registration number', 'request asfa lci number', 'lci registration fee', 'lci reg fee'] },
     { key: 'infoChanged', label: 'Information Changed', aliases: ['info changed', 'information changed'] },
     { key: 'dismissedLastSix', label: 'Dismissed in Last 6 Trials', aliases: ['dismissed last 6', 'dismissed (last 6)', 'dismissed within last 6 trials'] },
     { key: 'documents', label: 'Document Links/Names', aliases: ['documents', 'document links', 'attachments'] },
@@ -1196,6 +1197,26 @@ async function apiRequest(path, options = {}) {
         throw new Error(payload.error || `Request failed: ${path}`);
     }
     return payload;
+}
+
+function logClientEvent(eventName, details = {}) {
+    if (!isLocalServerMode()) {
+        return;
+    }
+    fetch('/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            event: String(eventName || 'client-event').slice(0, 80),
+            details,
+        }),
+    }).catch(() => {});
+}
+
+function stopEntrySave(reason, message) {
+    logClientEvent('entry-save-stopped', { reason, editingEntryId: editingEntryId || '' });
+    showMessage(entryMessage, message, 'warning');
+    entryMessage?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function renderAppVersion() {
@@ -2177,7 +2198,8 @@ function writeForm(trial) {
                 : {};
             value = overrides[field] || secretarySuggestedAnswers(trial || {})[field] || 'no';
         } else if (field === 'secretaryPerCapitaRate') {
-            value = value || '3.50';
+            const numericRate = Number(value || 3.5);
+            value = Number.isFinite(numericRate) ? numericRate.toFixed(2) : '3.50';
         } else if (field === 'secretaryLciRegistrationCount') {
             value = String(effectiveSecretaryLciRegistrationCount(trial || {}));
         }
@@ -2268,8 +2290,7 @@ function effectiveSecretaryLciRegistrationCount(trial) {
 }
 
 function calculateSecretaryFees(trial) {
-    const dismissedEntryIds = secretaryDismissedEntryIds(trial || {});
-    const breedEntries = (trial.entries || []).filter((entry) => secretaryEntryCountsForPerCapita(entry, dismissedEntryIds)).length;
+    const breedEntries = (trial.entries || []).filter(secretaryEntryCountsForPerCapita).length;
     const rate = Number(trial.secretaryPerCapitaRate || 3.5);
     const specialTotal = positiveNumber(trial.secretarySpecialBreederCount)
         + positiveNumber(trial.secretarySpecialKennelCount)
@@ -2325,7 +2346,7 @@ function secretaryPaymentStatus(trial) {
     };
 }
 
-function secretaryEntryCountsForPerCapita(entry, dismissedEntryIds = new Set()) {
+function secretaryEntryCountsForPerCapita(entry) {
     const status = clean(entry.rollCallStatus);
     const notes = clean(entry.rollCallNotes);
     if (['LAME', 'INSEASON', 'SEASON', 'BREEDDQ', 'BREEDDISQUALIFIED', 'SCRATCHED', 'SCRATCH'].includes(status)) {
@@ -2334,33 +2355,7 @@ function secretaryEntryCountsForPerCapita(entry, dismissedEntryIds = new Set()) 
     if (['LAME', 'INSEASON', 'SEASON', 'BREEDDQ', 'BREEDDISQUALIFIED', 'SCRATCHED', 'SCRATCH'].some((value) => notes.includes(value))) {
         return false;
     }
-    return !dismissedEntryIds.has(String(entry.id || ''));
-}
-
-function secretaryDismissedEntryIds(trial) {
-    const dismissed = new Set();
-    (((trial.preliminaryDraw || {}).groups || [])).forEach((group) => {
-        (group.courses || []).forEach((course) => {
-            (course.hounds || []).forEach((hound) => {
-                if (rowOutcomeIsDismissed(hound.prelimOutcome)) {
-                    dismissed.add(String(hound.entryId || ''));
-                }
-            });
-        });
-        (((group.finalDraw || {}).courses || [])).forEach((course) => {
-            (course.hounds || []).forEach((hound) => {
-                if (rowOutcomeIsDismissed(hound.finalOutcome)) {
-                    dismissed.add(String(hound.entryId || ''));
-                }
-            });
-        });
-    });
-    dismissed.delete('');
-    return dismissed;
-}
-
-function rowOutcomeIsDismissed(outcome) {
-    return clean(outcome) === 'DIS' || clean(outcome) === 'DISMISSED';
+    return true;
 }
 
 function positiveNumber(value) {
@@ -5319,9 +5314,13 @@ function renderRosterTables(trial) {
         paidLabel: entry.paid ? 'Paid' : 'Unpaid',
         ownerSeparationLabel: entry.ownerSeparationRequested ? (entry.ownerSeparationGroup || 'Yes') : '',
         documentLabel: entryDocumentLabel(entry),
+        handlerOwnerLabel: [
+            entry.handler || '',
+            entry.owner ? `Owner: ${entry.owner}` : '',
+        ].filter(Boolean).join('\n'),
         rowClass: entryNeedsDocuments(entry) ? 'entry-needs-documents' : '',
     }));
-    renderRows('entriesTable', entryRows, ['callName', 'registeredName', 'breed', 'registrationNumber', 'registry', 'className', 'entryDatesLabel', 'trialMembershipLabel', 'handler', 'paidLabel', 'ownerSeparationLabel', 'documentLabel'], { actions: 'entries' });
+    renderRows('entriesTable', entryRows, ['callName', 'registeredName', 'breed', 'registrationNumber', 'registry', 'className', 'entryDatesLabel', 'trialMembershipLabel', 'handlerOwnerLabel', 'paidLabel', 'ownerSeparationLabel', 'documentLabel'], { actions: 'entries' });
     renderMasterJudgeDirectory();
     renderRows('judgesTable', trial.judges || [], ['name', 'number', 'assignment'], { actions: 'trialJudges' });
     renderRows('masterWorkersTable', masterWorkers, ['name', 'email', 'phone', 'notes'], { actions: 'masterWorkers' });
@@ -8654,13 +8653,22 @@ function renderRunoffBoard(trial) {
 
         const tbody = document.createElement('tbody');
         let lastRunoffCourse = '';
+        let lastRunoffAttempt = '';
         rows.forEach((row) => {
+            const runoffAttempt = item.type === 'tie' ? String(row.reason || '') : '';
+            const beginsNewRunoffAttempt = Boolean(runoffAttempt && lastRunoffAttempt && runoffAttempt !== lastRunoffAttempt);
+            if (runoffAttempt) {
+                lastRunoffAttempt = runoffAttempt;
+            }
             const courseNumber = row.course && row.course.number ? String(row.course.number) : '';
             if (courseNumber && courseNumber !== lastRunoffCourse) {
                 tbody.appendChild(courseHeaderRow(courseNumber, headers.length));
                 lastRunoffCourse = courseNumber;
             }
             const tr = document.createElement('tr');
+            if (beginsNewRunoffAttempt) {
+                tr.classList.add('runoff-attempt-divider');
+            }
             const code = document.createElement('td');
             if (row.code) {
                 const badge = document.createElement('span');
@@ -17682,6 +17690,52 @@ function getFormValue(id) {
     return field ? String(field.value || '').trim() : '';
 }
 
+function updateHoundFromEntryForm(existingHound) {
+    const registrationNumber = getFormValue('entryRegNumber');
+    const alternateRegistrationNumber = getFormValue('entryAltRegNumber');
+    const registry = getFormValue('entryRegistry');
+    const registrationType = getFormValue('entryRegType');
+    const alternateRegistry = getFormValue('entryAltRegistry');
+    const primaryRegistrationChanged = clean(existingHound.registrationNumber) !== clean(registrationNumber)
+        || clean(existingHound.registry) !== clean(registry);
+    const alternateRegistrationChanged = clean(existingHound.alternateRegistrationNumber) !== clean(alternateRegistrationNumber)
+        || clean(existingHound.alternateRegistry) !== clean(alternateRegistry);
+
+    return normalizeLciHoundShape({
+        ...existingHound,
+        callName: getFormValue('entryCallName'),
+        registeredName: getFormValue('entryRegName'),
+        breed: getFormValue('entryBreed'),
+        registrationNumber,
+        registry,
+        registrationType,
+        registrationDisplay: formatRegistration(registry, registrationNumber, registrationType),
+        alternateRegistry,
+        alternateRegistrationNumber,
+        alternateRegistrationDisplay: formatRegistration(alternateRegistry, alternateRegistrationNumber, ''),
+        registrationVerificationStatus: primaryRegistrationChanged
+            ? 'not_checked'
+            : (existingHound.registrationVerificationStatus || 'not_checked'),
+        alternateVerificationStatus: alternateRegistrationNumber
+            ? (alternateRegistrationChanged ? 'not_checked' : (existingHound.alternateVerificationStatus || 'not_checked'))
+            : '',
+        sex: getFormValue('entrySex'),
+        dob: getFormValue('entryDob'),
+        owner: getFormValue('entryOwner'),
+        ownerEmail: getFormValue('entryOwnerEmail'),
+        ownerPhone: getFormValue('entryOwnerPhone'),
+        ownerAddress: getFormValue('entryOwnerAddress'),
+        ownerCity: getFormValue('entryOwnerCity'),
+        ownerState: getFormValue('entryOwnerState'),
+        ownerPostalCode: getFormValue('entryOwnerPostalCode'),
+        ownerCountry: getFormValue('entryOwnerCountry'),
+        breeder: getFormValue('entryBreeder'),
+        sire: getFormValue('entrySire'),
+        dam: getFormValue('entryDam'),
+        updatedAt: new Date().toISOString(),
+    });
+}
+
 function importAsfaRecentHounds() {
     const seed = Array.isArray(window.ASFA_RECENT_HOUNDS) ? window.ASFA_RECENT_HOUNDS : [];
     if (seed.length === 0) {
@@ -17801,7 +17855,7 @@ function removeMasterHound(houndId) {
     render();
 }
 
-function updateTrialEntriesForHound(hound) {
+function updateTrialEntriesForHound(hound, previousHound = hound) {
     trials = trials.map((trial) => ({
         ...trial,
         entries: (trial.entries || []).map((entry) => {
@@ -17809,7 +17863,8 @@ function updateTrialEntriesForHound(hound) {
                 return entry;
             }
 
-            const usingPrimary = !entry.registrationNumber || clean(entry.registrationNumber) === clean(hound.registrationNumber);
+            const usingPrimary = !entry.registrationNumber
+                || clean(entry.registrationNumber) === clean(previousHound.registrationNumber);
             const registration = usingPrimary
                 ? { number: hound.registrationNumber, registry: hound.registry, type: hound.registrationType, verificationStatus: hound.registrationVerificationStatus }
                 : { number: hound.alternateRegistrationNumber || entry.registrationNumber, registry: hound.alternateRegistry || entry.registry, type: entry.registrationType, verificationStatus: hound.alternateVerificationStatus || entry.registrationVerificationStatus };
@@ -17855,8 +17910,20 @@ function getAsfaRecentCount() {
 
 async function addTrialEntry() {
     let hound = getSelectedEntryHound();
+    const originalSelectedHound = hound;
     let createdHoundFromEntry = false;
     let masterHoundEditedFromEntry = false;
+    let selectedRegistrationIndex = 0;
+
+    if (hound) {
+        const currentRegistration = parseRegistrationChoice(document.getElementById('entryRegistrationUsed').value, hound);
+        const currentRegistrations = getHoundRegistrations(hound);
+        const matchingIndex = currentRegistrations.findIndex((registration) => (
+            clean(registration.number) === clean(currentRegistration.number)
+            && clean(registration.registry) === clean(currentRegistration.registry)
+        ));
+        selectedRegistrationIndex = matchingIndex >= 0 ? matchingIndex : 0;
+    }
 
     if (!hound) {
         hound = addMasterHoundFromForm('entry');
@@ -17864,28 +17931,18 @@ async function addTrialEntry() {
     }
 
     if (!hound) {
+        stopEntrySave('hound-not-selected', 'Choose an existing hound or enter the new hound information before updating the entry.');
         return;
     }
 
     if (editingEntryId && selectedEntryHoundId) {
-        hound = {
-            ...hound,
-            owner: getFormValue('entryOwner'),
-            ownerEmail: getFormValue('entryOwnerEmail'),
-            ownerPhone: getFormValue('entryOwnerPhone'),
-            ownerAddress: getFormValue('entryOwnerAddress'),
-            ownerCity: getFormValue('entryOwnerCity'),
-            ownerState: getFormValue('entryOwnerState'),
-            ownerPostalCode: getFormValue('entryOwnerPostalCode'),
-            ownerCountry: getFormValue('entryOwnerCountry'),
-            updatedAt: new Date().toISOString(),
-        };
+        hound = updateHoundFromEntryForm(hound);
         masterHoundEditedFromEntry = true;
     }
 
     const className = document.getElementById('entryClass').value;
     if (!className) {
-        showMessage(entryMessage, 'Choose a class before adding the entry.', 'warning');
+        stopEntrySave('class-missing', 'Choose a stake/class before updating the entry.');
         return;
     }
     const entryBreed = document.getElementById('entryBreed')?.value.trim() || '';
@@ -17903,15 +17960,18 @@ async function addTrialEntry() {
         document.getElementById('entryOwnerSeparationGroup').value = suggestOwnerSeparationGroup();
     }
 
-    if (createdHoundFromEntry) {
+    if (createdHoundFromEntry || masterHoundEditedFromEntry) {
         renderEntryRegistrationOptions(hound);
     }
-    const selectedRegistration = parseRegistrationChoice(document.getElementById('entryRegistrationUsed').value, hound);
+    const houndRegistrations = getHoundRegistrations(hound);
+    const selectedRegistration = houndRegistrations[selectedRegistrationIndex]
+        || parseRegistrationChoice(document.getElementById('entryRegistrationUsed').value, hound);
     let documentResult;
     try {
         documentResult = await collectManualEntryDocuments(className);
     } catch (error) {
-        showMessage(entryMessage, error.message || 'Could not upload the entry paperwork.', 'warning');
+        logClientEvent('entry-save-error', { stage: 'documents', message: error.message || 'Unknown document error' });
+        stopEntrySave('document-upload', error.message || 'Could not upload the entry paperwork.');
         return;
     }
     if (!documentResult.ok) {
@@ -17922,14 +17982,12 @@ async function addTrialEntry() {
             primaryText: 'Save With Paperwork Needed',
         });
         if (!proceed) {
-            showMessage(entryMessage, 'Entry not saved. Upload the required paperwork or confirm the override to save it as needed.', 'warning');
+            stopEntrySave('paperwork-confirmation-cancelled', 'Entry not saved. Upload the required paperwork or confirm the override to save it as needed.');
             return;
         }
         documentResult = {
+            ...documentResult,
             ok: true,
-            documents: [],
-            registrationCert: null,
-            coursingCert: null,
             overrideMissingDocuments: true,
             missingDocumentMessage: documentResult.message,
         };
@@ -17937,22 +17995,23 @@ async function addTrialEntry() {
 
     const currentTrial = readForm();
     const problem = validateTrialBasics(currentTrial);
-    if (problem) {
-        showMessage(entryMessage, problem, 'warning');
+    if (problem && !editingEntryId) {
+        stopEntrySave('trial-validation', problem);
         return;
     }
     const eligibilityProblem = asfaEntryEligibilityProblem(hound, className, currentTrial.association);
     if (eligibilityProblem) {
-        showMessage(entryMessage, eligibilityProblem, 'warning');
+        stopEntrySave('entry-eligibility', eligibilityProblem);
         return;
     }
 
     upsertTrial(currentTrial);
 
     if (editingEntryId) {
+        logClientEvent('entry-update-persisting', { entryId: editingEntryId, houndId: hound.id || '' });
         if (masterHoundEditedFromEntry) {
             masterHounds = masterHounds.map((item) => item.id === hound.id ? hound : item);
-            updateTrialEntriesForHound(hound);
+            updateTrialEntriesForHound(hound, originalSelectedHound);
             saveMasterHounds();
         }
         const updatedEntryId = editingEntryId;
@@ -18015,6 +18074,7 @@ async function addTrialEntry() {
         );
         render();
         if (updated) {
+            logClientEvent('entry-update-complete', { entryId: updatedEntryId, houndId: hound.id || '' });
             scrollToEntryRow(updatedEntryId);
         }
         return;
@@ -18058,6 +18118,11 @@ async function addTrialEntry() {
 }
 
 function preserveEntryDocumentsOnEdit(existing, updated) {
+    if (updated.documentSetEdited) {
+        const exact = { ...updated };
+        delete exact.documentSetEdited;
+        return exact;
+    }
     const updatedRecords = Array.isArray(updated.documentRecords) ? updated.documentRecords : [];
     const existingRecords = Array.isArray(existing.documentRecords) ? existing.documentRecords : [];
     const documentRecords = [...existingRecords, ...updatedRecords].filter((record, index, rows) => (
@@ -18204,6 +18269,7 @@ function buildTrialEntry(hound, selectedRegistration, className, id = crypto.ran
         documentStatus: certRequired ? (documentRecords.length ? 'received' : 'needed') : '',
         documentStorageStatus: documentRecords.length ? 'stored' : '',
         needsDocumentUpload: certRequired && documentRecords.length === 0,
+        documentSetEdited: Boolean(documentResult && documentResult.explicitDocumentSet),
         missingDocumentOverride,
         missingDocumentOverrideAt: missingDocumentOverride ? new Date().toISOString() : '',
         missingDocumentMessage: missingDocumentOverride ? (documentResult.missingDocumentMessage || '') : '',
@@ -18235,46 +18301,74 @@ async function collectManualEntryDocuments(className) {
     const existingEntry = editingEntryId && trial
         ? (trial.entries || []).find((entry) => entry.id === editingEntryId)
         : null;
-    const hasExistingRegistrationCert = Boolean(existingEntry && (existingEntry.registrationCertDocumentId || (existingEntry.documentIds || []).length));
-    const hasExistingCoursingCert = Boolean(existingEntry && existingEntry.coursingCertDocumentId);
-    const hasExistingLciRegistration = Boolean(existingEntry && existingEntry.lciRegistrationDocumentId);
+
+    let retainedDocuments = existingEntry
+        ? entryDocumentLinks(existingEntry).filter((record) => !entryDocumentIdsMarkedForRemoval.has(record.id))
+        : [];
+    if (registrationFile) {
+        retainedDocuments = retainedDocuments.filter((record) => record.documentType !== 'registration');
+    }
+    if (coursingFile) {
+        retainedDocuments = retainedDocuments.filter((record) => record.documentType !== 'coursing');
+    }
+    if (lciRegistrationFile) {
+        retainedDocuments = retainedDocuments.filter((record) => record.documentType !== 'lci-registration');
+    }
+
+    const retainedRegistrationCert = retainedDocuments.find((record) => record.documentType === 'registration') || null;
+    const retainedCoursingCert = retainedDocuments.find((record) => record.documentType === 'coursing') || null;
+    const retainedLciRegistration = retainedDocuments.find((record) => record.documentType === 'lci-registration') || null;
+    const pendingResult = {
+        documents: retainedDocuments,
+        registrationCert: retainedRegistrationCert,
+        coursingCert: retainedCoursingCert,
+        lciRegistrationDocument: retainedLciRegistration,
+        explicitDocumentSet: Boolean(existingEntry),
+    };
 
     if (needsLciRegistration && !isLciEntryData(selectedBreed, className)) {
-        return { ok: false, message: 'Needs LCI Registration can only be used for an LCI Large, LCI Small, or LCI Sighthound Mix entry.' };
+        return { ...pendingResult, ok: false, message: 'Needs ASFA LCI Registration Number can only be used for an LCI Large, LCI Small, or LCI Sighthound Mix entry.' };
     }
-    if (!certRequired && !registrationFile && !coursingFile && !lciRegistrationFile) {
-        return { ok: true, documents: [] };
+    if (firstTime && !registrationFile && !retainedRegistrationCert) {
+        return { ...pendingResult, ok: false, message: 'Attach the registration certificate for this first-time entry.' };
     }
-    if (firstTime && !registrationFile && !hasExistingRegistrationCert) {
-        return { ok: false, message: 'Attach the registration certificate for this first-time entry.' };
+    if (needsCoursingCert && !coursingFile && !retainedCoursingCert) {
+        return { ...pendingResult, ok: false, message: 'Attach the coursing certification for this first-time regular breed entry.' };
     }
-    if (needsCoursingCert && !coursingFile && !hasExistingCoursingCert) {
-        return { ok: false, message: 'Attach the coursing certification for this first-time regular breed entry.' };
-    }
-    if (needsLciRegistration && !lciRegistrationFile && !hasExistingLciRegistration) {
-        return { ok: false, message: 'Attach the ASFA LCI registration paperwork for this entry.' };
+    if (needsLciRegistration && !lciRegistrationFile && !retainedLciRegistration) {
+        return { ...pendingResult, ok: false, message: 'Attach the ASFA LCI registration paperwork for this entry.' };
     }
     if (!isLocalServerMode() && (registrationFile || coursingFile || lciRegistrationFile)) {
-        return { ok: false, message: 'Document uploads require SQLite/server mode. Start the app with start_field_trial_secretary.ps1.' };
+        return { ...pendingResult, ok: false, message: 'Document uploads require SQLite/server mode. Start the app with start_field_trial_secretary.ps1.' };
     }
 
     const uploaded = [];
-    let registrationCert = null;
-    let coursingCert = null;
-    let lciRegistrationDocument = null;
+    let registrationCert = retainedRegistrationCert;
+    let coursingCert = retainedCoursingCert;
+    let lciRegistrationDocument = retainedLciRegistration;
     if (registrationFile) {
         registrationCert = await uploadEntryDocumentFile(registrationFile, 'Registration certificate');
+        registrationCert.documentType = 'registration';
         uploaded.push(registrationCert);
     }
     if (coursingFile) {
         coursingCert = await uploadEntryDocumentFile(coursingFile, 'Coursing certification');
+        coursingCert.documentType = 'coursing';
         uploaded.push(coursingCert);
     }
     if (lciRegistrationFile) {
         lciRegistrationDocument = await uploadEntryDocumentFile(lciRegistrationFile, 'ASFA LCI registration paperwork');
+        lciRegistrationDocument.documentType = 'lci-registration';
         uploaded.push(lciRegistrationDocument);
     }
-    return { ok: true, documents: uploaded, registrationCert, coursingCert, lciRegistrationDocument };
+    return {
+        ok: true,
+        documents: uniqueDocumentRecords([...retainedDocuments, ...uploaded]),
+        registrationCert,
+        coursingCert,
+        lciRegistrationDocument,
+        explicitDocumentSet: Boolean(existingEntry),
+    };
 }
 
 async function uploadEntryDocumentFile(file, source) {
@@ -18422,6 +18516,13 @@ function renderEntryImportTemplateOptions() {
     }
 }
 
+function setEntryImportMappingExpanded(expanded) {
+    const wrap = document.getElementById('entryImportMappingWrap');
+    if (wrap instanceof HTMLDetailsElement) {
+        wrap.open = Boolean(expanded);
+    }
+}
+
 function renderEntryImportMapping() {
     const wrap = document.getElementById('entryImportMappingWrap');
     const body = document.getElementById('entryImportMappingTable');
@@ -18430,6 +18531,13 @@ function renderEntryImportMapping() {
     }
     wrap.hidden = currentImportHeaders.length === 0;
     body.innerHTML = '';
+    const summary = document.getElementById('entryImportMappingSummary');
+    const mappedCount = Object.values(currentImportMapping).filter(Boolean).length;
+    if (summary) {
+        summary.textContent = currentImportHeaders.length
+            ? `${mappedCount} of ${entryImportFieldDefinitions.length} fields mapped`
+            : 'Review source columns';
+    }
     if (currentImportHeaders.length === 0) {
         return;
     }
@@ -18535,6 +18643,7 @@ function saveCurrentEntryImportTemplateCore() {
     saveEntryImportTemplates();
     renderEntryImportTemplateOptions();
     document.getElementById('entryImportTemplateSelect').value = template.id;
+    setEntryImportMappingExpanded(false);
     showMessage(entryImportMessageElement(), `Saved import mapping template "${name}".`, 'success');
 }
 
@@ -18554,7 +18663,7 @@ function renderJotformImportPreview() {
     if (stagedJotformEntries.length === 0) {
         const row = document.createElement('tr');
         const cell = document.createElement('td');
-        cell.colSpan = 13;
+        cell.colSpan = 14;
         cell.textContent = 'No entries previewed yet.';
         row.appendChild(cell);
         body.appendChild(row);
@@ -18571,6 +18680,7 @@ function renderJotformImportPreview() {
             row.classList.add('import-row-complete');
         }
         const docs = uniqueNames([...(item.documents || []), ...(item.attachmentNames || [])]);
+        const documentUrls = importedDocumentUrls([...(item.documentUrls || []), ...docs]);
         const destinations = importDestinationTrials(item, document.getElementById('jotformTargetTrial')?.value || selectedTrialId);
         const notes = [];
         if (!item.className) {
@@ -18579,8 +18689,18 @@ function renderJotformImportPreview() {
         if (!item.breed) {
             notes.push('Breed required.');
         }
-        if (item.firstTime && docs.length === 0) {
+        const attachedDocumentCount = (item.sourceFileIndexes || [])
+            .map((fileIndex) => stagedJotformFiles[fileIndex])
+            .filter((file) => file && /\.(pdf|png|jpe?g)$/i.test(file.name)).length;
+        const usableLinkedDocumentCount = (item.documentDownloadErrors || []).length ? 0 : documentUrls.length;
+        if (item.firstTime && attachedDocumentCount + usableLinkedDocumentCount + (item.uploadedDocuments || []).length === 0) {
             notes.push('First-time docs needed.');
+        }
+        if (documentUrls.length && !(item.uploadedDocuments || []).length) {
+            notes.push(`${documentUrls.length} linked document${documentUrls.length === 1 ? '' : 's'} will be saved locally.`);
+        }
+        if ((item.documentDownloadErrors || []).length) {
+            notes.push(`${item.documentDownloadErrors.length} document link${item.documentDownloadErrors.length === 1 ? '' : 's'} could not be saved.`);
         }
         if (!item.match) {
             notes.push('Will create hound.');
@@ -18636,7 +18756,24 @@ function renderJotformImportPreview() {
         firstTimeCell.appendChild(firstTime);
         row.appendChild(firstTimeCell);
 
-        appendImportPreviewTextCell(row, docs.length ? docs.join(', ') : '');
+        const lciRegistrationCell = document.createElement('td');
+        const needsLciRegistration = document.createElement('input');
+        needsLciRegistration.type = 'checkbox';
+        needsLciRegistration.checked = Boolean(item.needsLciRegistration);
+        needsLciRegistration.disabled = Boolean(item.imported) || !isLciEntryData(item.breed, item.className);
+        needsLciRegistration.title = 'Request an ASFA registration number for this LCI hound';
+        needsLciRegistration.addEventListener('change', () => {
+            stagedJotformEntries[index].needsLciRegistration = needsLciRegistration.checked;
+            if (needsLciRegistration.checked) {
+                stagedJotformEntries[index].firstTime = true;
+                stagedJotformEntries[index].certRequired = true;
+            }
+            renderJotformImportPreview();
+        });
+        lciRegistrationCell.appendChild(needsLciRegistration);
+        row.appendChild(lciRegistrationCell);
+
+        appendImportPreviewDocumentsCell(row, item, docs, documentUrls);
         appendImportPreviewTextCell(row, notes.join(' '), 'import-preview-notes');
         body.appendChild(row);
     });
@@ -18645,6 +18782,37 @@ function renderJotformImportPreview() {
         importButton.disabled = !stagedJotformEntries.some((item) => item.selected !== false && !item.imported);
     }
     updateMissingImportTrialsButton();
+}
+
+function appendImportPreviewDocumentsCell(row, item, docs, documentUrls) {
+    const cell = document.createElement('td');
+    const uploaded = uniqueDocumentRecords(item.uploadedDocuments || []);
+    uploaded.forEach((documentInfo, index) => {
+        const link = document.createElement('a');
+        link.href = `/api/document/${encodeURIComponent(documentInfo.id)}`;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = documentInfo.fileName || `Saved document ${index + 1}`;
+        cell.appendChild(link);
+        cell.appendChild(document.createElement('br'));
+    });
+    documentUrls.forEach((url, index) => {
+        if (uploaded.length) {
+            return;
+        }
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = `Source link ${index + 1}`;
+        cell.appendChild(link);
+        cell.appendChild(document.createElement('br'));
+    });
+    const names = docs.filter((value) => !importedDocumentUrls(value).length);
+    if (names.length) {
+        cell.appendChild(document.createTextNode(names.join(', ')));
+    }
+    row.appendChild(cell);
 }
 
 function appendImportPreviewTextCell(row, value, className = '') {
@@ -18975,6 +19143,8 @@ function applyEntryImportMapping() {
     });
     renderJotformImportPreview();
     const mappedCount = Object.values(currentImportMapping).filter(Boolean).length;
+    setEntryImportMappingExpanded(false);
+    renderEntryImportMapping();
     showMessage(
         document.getElementById('jotformImportSummary') || entryMessage,
         `Mapping applied to ${stagedJotformEntries.length} row${stagedJotformEntries.length === 1 ? '' : 's'} using ${mappedCount} mapped field${mappedCount === 1 ? '' : 's'}. Review the rows below, then import when ready.`,
@@ -19024,6 +19194,14 @@ function normalizeImportedTrialDatesWithSubmission(value, submissionValue = '') 
     }).filter(Boolean));
 }
 
+function parseImportedLciRegistrationRequest(value, sourceLabel = '') {
+    const label = String(sourceLabel || '');
+    if (!/(?:need|request|apply|fee|asfa.*(?:number|registration)|registration.*through.*asfa)/i.test(label)) {
+        return false;
+    }
+    return parseYesNo(value);
+}
+
 function parseImportedPaid(value) {
     const text = String(value || '').trim();
     if (parseYesNo(text)) {
@@ -19044,9 +19222,14 @@ function normalizeMappedImportRow(row) {
     const lciParts = normalizeImportedLciParts(rawBreed, rawClassName);
     const registration = splitImportedRegistration(pick('registrationNumber'), pick('registry'), pick('registrationType'));
     const normalizedTrialDates = normalizeImportedTrialDatesWithSubmission(pick('trialDates'), pick('submissionDate'));
-    const needsLciRegistration = parseYesNo(pick('needsLciRegistration'));
+    const needsLciRegistration = parseImportedLciRegistrationRequest(
+        pick('needsLciRegistration'),
+        currentImportMapping.needsLciRegistration
+    );
     const firstTime = parseYesNo(pick('firstTime')) || parseYesNo(pick('firstAsfaTrial')) || parseYesNo(pick('lciFirstEntry')) || needsLciRegistration;
-    const mappedDocuments = uniqueNames(String(pick('documents') || '').split(/[;,\n]+/).map((value) => value.trim()).filter(Boolean));
+    const rawDocuments = String(pick('documents') || '');
+    const mappedDocuments = uniqueNames(rawDocuments.split(/[;\n]+/).map((value) => value.trim()).filter(Boolean));
+    const documentUrls = importedDocumentUrls(rawDocuments);
     return {
         callName: pick('callName'),
         registeredName: pick('registeredName'),
@@ -19081,6 +19264,7 @@ function normalizeMappedImportRow(row) {
         infoChanged: parseYesNo(pick('infoChanged')),
         dismissedLastSix: parseYesNo(pick('dismissedLastSix')),
         documents: mappedDocuments,
+        documentUrls,
         importSource: 'Mapped CSV import',
         sourceName: row.__sourceName || 'CSV row',
         sourceFileIndexes,
@@ -19276,6 +19460,49 @@ function readFileBase64(file) {
     });
 }
 
+function importedDocumentUrls(values) {
+    return uniqueNames((Array.isArray(values) ? values : [values])
+        .flatMap((value) => String(value || '').match(/https?:\/\/[^\s<>"']+/gi) || [])
+        .map((url) => url.replace(/[),.;]+$/, '')));
+}
+
+function uniqueDocumentRecords(records) {
+    const seen = new Set();
+    return (records || []).filter((record) => {
+        const key = record?.id || `${record?.fileName || ''}|${record?.sizeBytes || 0}`;
+        if (!key || seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+}
+
+async function downloadImportedDocumentLinks(values) {
+    const urls = importedDocumentUrls(values);
+    const documents = [];
+    const errors = [];
+    if (!isLocalServerMode()) {
+        return { documents, errors: urls.map((url) => ({ url, message: 'Linked documents require the local app server.' })) };
+    }
+    for (const url of urls) {
+        try {
+            const payload = await apiRequest('/api/document-from-url', {
+                method: 'POST',
+                body: JSON.stringify({
+                    url,
+                    source: 'Entry import link',
+                }),
+            });
+            if (payload.document) {
+                documents.push(payload.document);
+            }
+        } catch (error) {
+            errors.push({ url, message: error.message || 'The linked document could not be saved.' });
+        }
+    }
+    return { documents: uniqueDocumentRecords(documents), errors };
+}
 async function uploadJotformDocuments(files) {
     if (!isLocalServerMode() || files.length === 0) {
         return [];
@@ -19449,8 +19676,14 @@ function normalizeJotformPairs(pairs, raw) {
     const registry = value(/^registry$/i) || inferRegistry(registrationType, registrationNumber);
     const firstTime = parseYesNo(value(/first[-\s]*time/i, /first[-\s]*time\s*entry/i));
     const certRequired = parseYesNo(value(/cert/i, /registration\s*certificate/i, /documentation/i));
+    const needsLciRegistration = parseYesNo(value(
+        /need.*lci.*registration/i,
+        /request.*asfa.*(?:number|registration)/i,
+        /apply.*asfa.*lci/i,
+        /lci.*registration.*fee/i
+    ));
     const documents = pairs
-        .filter((pair) => /attachment|document|file/i.test(pair.label))
+        .filter((pair) => /attachment|document|file|certificate|registration proof|coursing cert/i.test(pair.label))
         .flatMap((pair) => String(pair.value || '').split(/[,;]+/).map((item) => item.trim()).filter(Boolean));
     const exactTrialDates = pairs.filter((pair) => /^date$/i.test(String(pair.label || '').trim()));
     const trialDates = exactTrialDates.length
@@ -19488,8 +19721,9 @@ function normalizeJotformPairs(pairs, raw) {
         sire: cleanImportedEntryField(value(/^sire$/i)),
         dam: cleanImportedEntryField(value(/^dam$/i)),
         entryNumber: value(/entry\s*(number|#)/i),
-        firstTime,
-        certRequired: certRequired || firstTime,
+        firstTime: firstTime || needsLciRegistration,
+        certRequired: certRequired || firstTime || needsLciRegistration,
+        needsLciRegistration,
         ownerSeparationRequested: parseYesNo(value(/separate\s*my\s*(?:entries|hounds)/i, /separate\s*hounds/i)),
         paid: parseYesNo(value(/^paid$/i, /payment\s*received/i)),
         documents,
@@ -19620,46 +19854,92 @@ function entryTrialMembershipLabel(entry) {
     return memberships.join('; ');
 }
 
+function inferredEntryDocumentType(entry, record, genericIndex) {
+    const documentId = String(record?.id || '');
+    if (documentId && documentId === String(entry.registrationCertDocumentId || '')) {
+        return 'registration';
+    }
+    if (documentId && documentId === String(entry.coursingCertDocumentId || '')) {
+        return 'coursing';
+    }
+    if (documentId && documentId === String(entry.lciRegistrationDocumentId || '')) {
+        return 'lci-registration';
+    }
+    const name = clean(record?.fileName || '');
+    if (name.includes('COURS')) {
+        return 'coursing';
+    }
+    if (name.includes('LCI') && (name.includes('REG') || name.includes('NUMBER'))) {
+        return 'lci-registration';
+    }
+    if (name.includes('REG') || name.includes('CERT')) {
+        return 'registration';
+    }
+    if (entry.firstTime || entry.certRequired) {
+        if (isLciEntryData(entry.breed, entry.className) || isQuasiBreedClass(entry.className)) {
+            return genericIndex === 0 ? 'registration' : 'other';
+        }
+        if (genericIndex === 0) {
+            return 'registration';
+        }
+        if (genericIndex === 1) {
+            return 'coursing';
+        }
+    }
+    return 'other';
+}
+
 function entryDocumentLinks(entry) {
     const links = [];
-    if (entry.registrationCertDocumentId) {
+    const seen = new Set();
+    const add = (id, label, fileName, type = 'other', record = null) => {
+        const documentId = String(id || '');
+        if (!documentId || seen.has(documentId)) {
+            return;
+        }
+        seen.add(documentId);
         links.push({
-            id: entry.registrationCertDocumentId,
-            label: `Registration: ${entry.registrationCertFileName || 'certificate'}`,
+            ...(record || {}),
+            id: documentId,
+            label,
+            fileName: fileName || record?.fileName || 'document',
+            documentType: type,
         });
-    }
-    if (entry.coursingCertDocumentId) {
-        links.push({
-            id: entry.coursingCertDocumentId,
-            label: `Coursing: ${entry.coursingCertFileName || 'certification'}`,
-        });
-    }
-    if (entry.lciRegistrationDocumentId) {
-        links.push({
-            id: entry.lciRegistrationDocumentId,
-            label: `LCI registration: ${entry.lciRegistrationFileName || 'paperwork'}`,
-        });
-    }
-    if (links.length === 0 && Array.isArray(entry.documentRecords)) {
-        entry.documentRecords.forEach((documentRecord, index) => {
-            if (documentRecord.id) {
-                links.push({
-                    id: documentRecord.id,
-                    label: documentRecord.fileName || `Document ${index + 1}`,
-                });
-            }
-        });
-    }
-    if (links.length === 0 && Array.isArray(entry.documentIds)) {
-        entry.documentIds.forEach((documentId, index) => {
-            if (documentId) {
-                links.push({
-                    id: documentId,
-                    label: `Document ${index + 1}`,
-                });
-            }
-        });
-    }
+    };
+
+    add(
+        entry.registrationCertDocumentId,
+        `Registration: ${entry.registrationCertFileName || 'certificate'}`,
+        entry.registrationCertFileName || 'registration-certificate',
+        'registration'
+    );
+    add(
+        entry.coursingCertDocumentId,
+        `Coursing: ${entry.coursingCertFileName || 'certification'}`,
+        entry.coursingCertFileName || 'coursing-certification',
+        'coursing'
+    );
+    add(
+        entry.lciRegistrationDocumentId,
+        `LCI registration: ${entry.lciRegistrationFileName || 'paperwork'}`,
+        entry.lciRegistrationFileName || 'lci-registration-paperwork',
+        'lci-registration'
+    );
+
+    (entry.documentRecords || []).forEach((record, index) => {
+        const type = inferredEntryDocumentType(entry, record, index);
+        const prefix = type === 'registration'
+            ? 'Registration'
+            : type === 'coursing'
+                ? 'Coursing'
+                : type === 'lci-registration'
+                    ? 'LCI registration'
+                    : 'Document';
+        add(record.id, `${prefix}: ${record.fileName || `Document ${index + 1}`}`, record.fileName, type, record);
+    });
+    (entry.documentIds || []).forEach((documentId, index) => {
+        add(documentId, `Document ${index + 1}`, `Document ${index + 1}`, 'other');
+    });
     return links;
 }
 
@@ -20007,6 +20287,8 @@ async function importStagedJotformEntries() {
     let addedEntries = 0;
     let skipped = 0;
     let needsDocs = 0;
+    let linkedDocumentsSaved = 0;
+    let linkedDocumentFailures = 0;
     const importedEntries = [];
 
     if (importButton) {
@@ -20022,7 +20304,11 @@ async function importStagedJotformEntries() {
                 .map((fileIndex) => stagedJotformFiles[fileIndex])
                 .filter((file) => file && /\.(pdf|png|jpe?g)$/i.test(file.name));
             const uploadedDocuments = await uploadJotformDocuments(sourceFiles);
-            item.uploadedDocuments = uploadedDocuments;
+            const linkedDocuments = await downloadImportedDocumentLinks([...(item.documentUrls || []), ...(item.documents || [])]);
+            item.uploadedDocuments = uniqueDocumentRecords([...uploadedDocuments, ...linkedDocuments.documents]);
+            item.documentDownloadErrors = linkedDocuments.errors;
+            linkedDocumentsSaved += linkedDocuments.documents.length;
+            linkedDocumentFailures += linkedDocuments.errors.length;
             const hound = item.match || createHoundFromImportedEntry(item);
             if (!item.match && hound) {
                 item.match = hound;
@@ -20086,7 +20372,7 @@ async function importStagedJotformEntries() {
         renderJotformImportPreview();
         showMessage(
             entryImportMessageElement(),
-            `Imported ${addedEntries} entr${addedEntries === 1 ? 'y' : 'ies'} to ${targetNames.size ? [...targetNames].join(', ') : target.trialName || 'the trial'}. Created ${createdHounds} hound${createdHounds === 1 ? '' : 's'}. ${skipped ? `${skipped} duplicate${skipped === 1 ? '' : 's'} skipped. ` : ''}${needsDocs ? `${needsDocs} first-time entr${needsDocs === 1 ? 'y still needs' : 'ies still need'} documentation.` : 'Import saved successfully.'}`,
+            `Imported ${addedEntries} entr${addedEntries === 1 ? 'y' : 'ies'} to ${targetNames.size ? [...targetNames].join(', ') : target.trialName || 'the trial'}. Created ${createdHounds} hound${createdHounds === 1 ? '' : 's'}. ${skipped ? `${skipped} duplicate${skipped === 1 ? '' : 's'} skipped. ` : ''}${linkedDocumentsSaved ? `${linkedDocumentsSaved} linked document${linkedDocumentsSaved === 1 ? '' : 's'} saved locally. ` : ''}${linkedDocumentFailures ? `${linkedDocumentFailures} document link${linkedDocumentFailures === 1 ? '' : 's'} could not be saved. ` : ''}${needsDocs ? `${needsDocs} first-time entr${needsDocs === 1 ? 'y still needs' : 'ies still need'} documentation.` : 'Import saved successfully.'}`,
             addedEntries ? 'success' : 'warning'
         );
     } catch (error) {
@@ -20171,6 +20457,7 @@ function entryHoundFieldIds() {
 function clearEntryForm() {
     editingEntryId = '';
     selectedEntryHoundId = '';
+    entryDocumentIdsMarkedForRemoval = new Set();
     clearValues(entryHoundFieldIds());
     document.getElementById('entryClass').value = '';
     document.getElementById('entryBreed').value = '';
@@ -20254,6 +20541,7 @@ function editTrialEntry(entryId) {
 
     editingEntryId = entryId;
     selectedEntryHoundId = entry.houndId || '';
+    entryDocumentIdsMarkedForRemoval = new Set();
     document.getElementById('entryHoundSearch').value = [entry.callName, entry.registeredName, entry.registrationNumber].filter(Boolean).join(' | ');
     document.getElementById('entryCallName').value = entry.callName || '';
     document.getElementById('entryRegName').value = entry.registeredName || '';
@@ -20295,7 +20583,7 @@ function updateEntryDocumentNote(entry) {
     }
     note.innerHTML = '';
     if (!entry) {
-        note.textContent = 'Attach first-time entry paperwork here. LCI and Singles need the registration certificate; regular breed stakes also need the coursing certification. If Needs LCI Registration is checked, attach the ASFA LCI registration paperwork too.';
+        note.textContent = 'Attach first-time entry paperwork here. LCI and Singles need the registration certificate; regular breed stakes also need the coursing certification. Check Needs LCI Registration only when requesting an ASFA registration number.';
         return;
     }
     const documents = entryDocumentLinks(entry);
@@ -20303,14 +20591,48 @@ function updateEntryDocumentNote(entry) {
         note.textContent = 'No first-time documents are attached yet. Choose files before updating if this entry needs paperwork.';
         return;
     }
-    note.append('Attached documents: ');
-    documents.forEach((documentInfo, index) => {
-        if (index > 0) {
-            note.append(' | ');
+
+    const heading = document.createElement('strong');
+    heading.textContent = 'Attached documents';
+    note.appendChild(heading);
+    const list = document.createElement('div');
+    list.className = 'entry-document-list';
+    documents.forEach((documentInfo) => {
+        const row = document.createElement('div');
+        row.className = 'entry-document-item';
+        if (entryDocumentIdsMarkedForRemoval.has(documentInfo.id)) {
+            row.classList.add('marked-for-removal');
         }
-        note.appendChild(documentViewLink(documentInfo));
+        row.appendChild(documentViewLink(documentInfo));
+        const type = document.createElement('span');
+        type.className = 'entry-document-type';
+        type.textContent = documentInfo.documentType === 'registration'
+            ? 'Registration certificate'
+            : documentInfo.documentType === 'coursing'
+                ? 'Coursing certification'
+                : documentInfo.documentType === 'lci-registration'
+                    ? 'ASFA LCI registration'
+                    : 'Other document';
+        row.appendChild(type);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'text-button danger';
+        remove.textContent = entryDocumentIdsMarkedForRemoval.has(documentInfo.id) ? 'Undo remove' : 'Remove';
+        remove.addEventListener('click', () => {
+            if (entryDocumentIdsMarkedForRemoval.has(documentInfo.id)) {
+                entryDocumentIdsMarkedForRemoval.delete(documentInfo.id);
+            } else {
+                entryDocumentIdsMarkedForRemoval.add(documentInfo.id);
+            }
+            updateEntryDocumentNote(entry);
+        });
+        row.appendChild(remove);
+        list.appendChild(row);
     });
-    note.append('. Choose a new file only if replacing or adding paperwork.');
+    note.appendChild(list);
+    const help = document.createElement('small');
+    help.textContent = 'Removed files leave this trial entry when you click Update Entry. Uploading a new file replaces that paperwork type.';
+    note.appendChild(help);
 }
 
 function removeTrialEntry(entryId) {
@@ -21538,7 +21860,35 @@ document.getElementById('entryOwnerSeparationGroup').addEventListener('input', (
     event.target.value = event.target.value.toUpperCase();
 });
 document.getElementById('houndDatabaseSearch').addEventListener('input', render);
-document.getElementById('addEntryButton').addEventListener('click', addTrialEntry);
+document.getElementById('addEntryButton').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) {
+        return;
+    }
+    const originalText = button.textContent;
+    const busyText = editingEntryId ? 'Updating...' : 'Adding...';
+    button.disabled = true;
+    button.textContent = busyText;
+    button.setAttribute('aria-busy', 'true');
+    showMessage(entryMessage, editingEntryId ? 'Updating entry...' : 'Adding entry...', 'warning');
+    logClientEvent('entry-save-clicked', {
+        editingEntryId: editingEntryId || '',
+        selectedEntryHoundId: selectedEntryHoundId || '',
+    });
+    try {
+        await addTrialEntry();
+    } catch (error) {
+        console.error('Entry update failed', error);
+        logClientEvent('entry-save-error', { stage: 'unexpected', message: error.message || 'Unknown error' });
+        stopEntrySave('unexpected-error', `Entry could not be saved: ${error.message || 'Unknown error'}`);
+    } finally {
+        button.disabled = false;
+        if (button.textContent === busyText) {
+            button.textContent = originalText;
+        }
+        button.removeAttribute('aria-busy');
+    }
+});
 document.getElementById('parseJotformImportButton')?.addEventListener('click', () => {
     previewJotformImport().catch((error) => {
         showMessage(entryImportMessageElement(), `Jotform preview failed: ${error.message}`, 'warning');

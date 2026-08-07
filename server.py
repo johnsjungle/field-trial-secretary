@@ -4,11 +4,13 @@ import argparse
 import base64
 import copy
 import io
+import ipaddress
 import json
 import os
 import re
 import subprocess
 import shutil
+import socket
 import sqlite3
 import sys
 import threading
@@ -20,7 +22,9 @@ from datetime import datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse, urlunparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import pypdfium2 as pdfium
 from asfa_judges import parse_asfa_judge_directory
@@ -681,7 +685,7 @@ def create_trial_archive_package(payload: dict) -> tuple[bytes, str, str]:
             try:
                 entry_layout = payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None
                 lci_entry_layout = payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None
-                archive.writestr("reports/asfa-record-packet.pdf", generate_asfa_record_sheet_pdf(trial, "", "", record_layout, "alpha", entry_layout, lci_entry_layout, secretary_layout, True, True))
+                archive.writestr("reports/asfa-record-packet.pdf", generate_asfa_record_sheet_pdf(trial, "", "", record_layout, "alpha", entry_layout, lci_entry_layout, secretary_layout, True, True, False, True))
             except Exception as exc:
                 notes.append(f"ASFA record packet was not generated: {exc}")
             try:
@@ -1162,20 +1166,92 @@ def render_template_half_page_png(template_path: Path, cache_key: str, split_x: 
             document.close()
 
 
-def save_entry_document(payload: dict) -> dict:
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _public_document_url(url: object) -> str:
+    value = str(url or "").strip()
+    parsed = urlparse(value)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Document links must use http:// or https://.")
+    try:
+        addresses = {
+            result[4][0].split("%", 1)[0]
+            for result in socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme.lower() == "https" else 80))
+        }
+    except socket.gaierror as exc:
+        raise ValueError("The document link host could not be found.") from exc
+    if not addresses:
+        raise ValueError("The document link host could not be found.")
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise ValueError("Private or local-network document links are not allowed.")
+    return value
+
+
+def _normalized_document_download_url(url: object) -> str:
+    value = str(url or "").strip()
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
+    if host in {"drive.google.com", "www.drive.google.com"}:
+        match = re.search(r"/file/d/([^/]+)", parsed.path)
+        query = parse_qs(parsed.query)
+        file_id = match.group(1) if match else (query.get("id") or [""])[0]
+        if file_id:
+            return f"https://drive.google.com/uc?{urlencode({'export': 'download', 'id': file_id})}"
+    if host in {"dropbox.com", "www.dropbox.com"}:
+        query = parse_qs(parsed.query)
+        query["dl"] = ["1"]
+        return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+    return value
+
+
+def _document_type(content: bytes) -> tuple[str, str]:
+    if content.startswith(b"%PDF-"):
+        return "application/pdf", ".pdf"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", ".png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", ".jpg"
+    raise ValueError("The link did not return a PDF, JPEG, or PNG file. It may require a login or permission change.")
+
+
+def _download_file_name(url: str, headers, extension: str) -> str:
+    disposition = str(headers.get("Content-Disposition") or "")
+    match = re.search(r"filename\*?=(?:UTF-8''|[\"']?)([^\"';]+)", disposition, flags=re.IGNORECASE)
+    candidate = unquote(match.group(1).strip()) if match else unquote(Path(urlparse(url).path).name)
+    candidate = re.sub(r"[^A-Za-z0-9._ -]+", "_", candidate).strip(" ._") or "entry-document"
+    if Path(candidate).suffix.lower() not in {".pdf", ".png", ".jpg", ".jpeg"}:
+        candidate = f"{candidate}{extension}"
+    return candidate
+
+
+def save_entry_document_bytes(
+    content: bytes,
+    file_name: object,
+    mime_type: object,
+    source: object,
+    document_id: object = None,
+) -> dict:
     ensure_database()
-    file_name = str(payload.get("fileName") or "entry-document").strip()
-    mime_type = str(payload.get("mimeType") or "application/octet-stream").strip()
-    source = str(payload.get("source") or "Jotform email").strip()
-    encoded = str(payload.get("contentBase64") or "")
-    if "," in encoded and encoded.split(",", 1)[0].startswith("data:"):
-        encoded = encoded.split(",", 1)[1]
-    if not encoded:
-        raise ValueError("contentBase64 is required")
-    content = base64.b64decode(encoded, validate=True)
+    if not content:
+        raise ValueError("The document is empty.")
     if len(content) > MAX_DOCUMENT_BYTES:
-        raise ValueError("document is larger than the 20 MB limit")
-    document_id = str(payload.get("id") or f"doc-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}")
+        raise ValueError("Document is larger than the 20 MB limit.")
+    saved_id = str(document_id or f"doc-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}")
+    saved_name = str(file_name or "entry-document").strip()
+    saved_mime = str(mime_type or "application/octet-stream").strip()
+    saved_source = str(source or "Entry document").strip()
     created_at = utc_now()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -1183,17 +1259,75 @@ def save_entry_document(payload: dict) -> dict:
             INSERT INTO entry_documents (id, file_name, mime_type, content, size_bytes, source, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (document_id, file_name, mime_type, sqlite3.Binary(content), len(content), source, created_at),
+            (saved_id, saved_name, saved_mime, sqlite3.Binary(content), len(content), saved_source, created_at),
         )
         conn.commit()
     return {
-        "id": document_id,
-        "fileName": file_name,
-        "mimeType": mime_type,
+        "id": saved_id,
+        "fileName": saved_name,
+        "mimeType": saved_mime,
         "sizeBytes": len(content),
-        "source": source,
+        "source": saved_source,
         "createdAt": created_at,
     }
+
+
+def save_entry_document(payload: dict) -> dict:
+    encoded = str(payload.get("contentBase64") or "")
+    if "," in encoded and encoded.split(",", 1)[0].startswith("data:"):
+        encoded = encoded.split(",", 1)[1]
+    if not encoded:
+        raise ValueError("contentBase64 is required")
+    content = base64.b64decode(encoded, validate=True)
+    return save_entry_document_bytes(
+        content,
+        payload.get("fileName") or "entry-document",
+        payload.get("mimeType") or "application/octet-stream",
+        payload.get("source") or "Jotform email",
+        payload.get("id"),
+    )
+
+
+def save_linked_entry_document(payload: dict) -> dict:
+    requested_url = _normalized_document_download_url(payload.get("url"))
+    current_url = requested_url
+    opener = build_opener(_NoRedirectHandler())
+    response = None
+    for _ in range(5):
+        current_url = _public_document_url(current_url)
+        request = Request(
+            current_url,
+            headers={
+                "User-Agent": "Field-Trial-Secretary/0.3",
+                "Accept": "application/pdf,image/png,image/jpeg",
+            },
+        )
+        try:
+            response = opener.open(request, timeout=20)
+            break
+        except HTTPError as exc:
+            if exc.code in {301, 302, 303, 307, 308} and exc.headers.get("Location"):
+                current_url = urljoin(current_url, exc.headers["Location"])
+                continue
+            raise ValueError(f"The document link could not be downloaded (HTTP {exc.code}).") from exc
+        except URLError as exc:
+            raise ValueError("The document link could not be downloaded.") from exc
+    if response is None:
+        raise ValueError("The document link redirected too many times.")
+    with response:
+        content_length = response.headers.get("Content-Length")
+        if content_length and int(content_length) > MAX_DOCUMENT_BYTES:
+            raise ValueError("Document is larger than the 20 MB limit.")
+        content = response.read(MAX_DOCUMENT_BYTES + 1)
+        mime_type, extension = _document_type(content)
+        file_name = _download_file_name(current_url, response.headers, extension)
+    source_host = urlparse(requested_url).hostname or "linked document"
+    return save_entry_document_bytes(
+        content,
+        file_name,
+        mime_type,
+        f"Entry import link from {source_host}",
+    )
 
 
 def read_entry_document(document_id: object) -> dict | None:
@@ -1638,6 +1772,7 @@ def generate_asfa_record_sheet_pdf(
     include_secretary_report: bool = False,
     include_first_time_documents: bool = False,
     combine_mixed_posting: bool = False,
+    include_signed_judge_sheets: bool = False,
 ) -> bytes:
     template_path = RECORD_TEMPLATES["ASFA"]
     if not template_path.exists():
@@ -1675,7 +1810,8 @@ def generate_asfa_record_sheet_pdf(
             ))).pages[0]
             page.merge_page(overlay)
             writer.add_page(page)
-        append_signed_judge_sheets_for_group(writer, group)
+        if include_signed_judge_sheets:
+            append_signed_judge_sheets_for_group(writer, group)
         if include_first_time_documents and clean_text(group.get("breed")) != "BIF":
             append_first_time_documents_for_group(writer, trial, group, entry_layout, lci_entry_layout)
 
@@ -2345,6 +2481,8 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
             placement = final_placement_by_entry.get(entry_id) or ""
             if placement and not combined_score_qualifies(combined_by_entry.get(entry_id), qualifying_minimum):
                 placement = ""
+            if "TIE" in clean_text(placement):
+                placement = ""
             rows.append({
                 "callName": asfa_record_call_name(hound, entry, group),
                 "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
@@ -2514,7 +2652,7 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                 code = runoff_record_value(
                     hound.get("tieBreakOutcome"),
                     hound.get("tieBreakScore"),
-                    hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor")),
+                    "",
                     suppress_pending_codes,
                 )
                 if entry_id and (code or label):
@@ -2543,7 +2681,7 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                 code = runoff_record_value(
                     outcome_value,
                     score_value,
-                    hound.get("tieBreakCode") or course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("blanketColor")),
+                    "",
                     suppress_pending_codes,
                 )
                 if (
@@ -2843,13 +2981,14 @@ def asfa_record_refund_reason(row: dict) -> str:
         return "BREED DQ"
     if status in {"SCRATCHED", "SCRATCH"} or "SCRATCHED" in notes or "SCRATCH" in notes:
         return "SCRATCHED"
-    if row_outcome_is_dismissed(row.get("prelimOutcome")) or row_outcome_is_dismissed(row.get("finalOutcome")):
-        return "DISMISSED"
     return ""
 
 
-def row_outcome_is_dismissed(outcome: object) -> bool:
-    return clean_text(outcome) in {"DIS", "DISMISSED"}
+def asfa_record_strike_reason(row: dict) -> str:
+    reason = asfa_record_refund_reason(row)
+    if clean_text(reason) in {"DISMISSED", "EXCUSED"}:
+        return ""
+    return reason
 
 
 def final_codes_by_entry(group: dict) -> dict[str, str]:
@@ -3159,14 +3298,20 @@ def draw_asfa_record_rows(pdf: canvas.Canvas, rows: list[dict], layout: dict) ->
         pdf.drawCentredString(layout["finalJudge2X"], y_from_top(asfa_record_y(layout, "finalJudge2Y", row_offset)), safe_text(row.get("finalJudge2"), 8))
         pdf.drawCentredString(layout["finalScoreX"], y_from_top(asfa_record_y(layout, "finalScoreY", row_offset)), safe_text(row.get("finalScore"), 8))
         pdf.drawCentredString(layout["combinedScoreX"], y_from_top(asfa_record_y(layout, "combinedScoreY", row_offset)), safe_text(row.get("combinedScore"), 8))
-        pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(asfa_record_y(layout, "stakesRunoffLabelY", row_offset)), safe_text(row.get("stakesRunoffLabel"), 8))
+        stakes_runoff_label = safe_text(row.get("stakesRunoffLabel"), 8)
+        stakes_runoff_font_size = float(layout["codeFontSize"])
+        if len(stakes_runoff_label) > 6:
+            stakes_runoff_font_size = max(6.0, stakes_runoff_font_size - 1.5)
+        pdf.setFont("Helvetica-Bold", stakes_runoff_font_size)
+        pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(asfa_record_y(layout, "stakesRunoffLabelY", row_offset)), stakes_runoff_label)
+        pdf.setFont("Helvetica-Bold", layout["codeFontSize"])
         pdf.drawCentredString(layout["stakesRunoffCodeX"], y_from_top(asfa_record_y(layout, "stakesRunoffCodeY", row_offset)), safe_text(row.get("stakesRunoffCode"), 5))
         pdf.drawCentredString(layout["secondRunoffLabelX"], y_from_top(asfa_record_y(layout, "secondRunoffLabelY", row_offset)), safe_text(row.get("secondRunoffLabel"), 8))
         pdf.drawCentredString(layout["secondRunoffCodeX"], y_from_top(asfa_record_y(layout, "secondRunoffCodeY", row_offset)), safe_text(row.get("secondRunoffCode"), 5))
         pdf.drawCentredString(layout["bobRunoffLabelX"], y_from_top(asfa_record_y(layout, "bobRunoffLabelY", row_offset)), safe_text(row.get("bobRunoffLabel"), 8))
         pdf.drawCentredString(layout["bobRunoffCodeX"], y_from_top(asfa_record_y(layout, "bobRunoffCodeY", row_offset)), safe_text(row.get("bobRunoffCode"), 5))
         draw_record_placement(pdf, row.get("placement"), layout, row_offset)
-        reason = asfa_record_refund_reason(row)
+        reason = asfa_record_strike_reason(row)
         if reason:
             strike_y = y_from_top(asfa_record_y(layout, "callNameY", row_offset) + layout.get("scratchLineYOffset", -5))
             pdf.saveState()
@@ -3402,9 +3547,8 @@ def draw_wrapped_lines(pdf: canvas.Canvas, text: str, x: float, y: float, max_wi
 
 def asfa_secretary_entry_counts(trial: dict) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = {}
-    dismissed_entry_ids = secretary_dismissed_entry_ids(trial)
     for entry in trial.get("entries") or []:
-        if not secretary_entry_counts_for_per_capita(entry, dismissed_entry_ids):
+        if not secretary_entry_counts_for_per_capita(entry):
             continue
         key = secretary_breed_key(entry)
         if not key:
@@ -3435,33 +3579,14 @@ def secretary_breed_key(entry: dict) -> str:
     return secretary_breed_code(entry.get("breed"))
 
 
-def secretary_entry_counts_for_per_capita(entry: dict, dismissed_entry_ids: set[str] | None = None) -> bool:
+def secretary_entry_counts_for_per_capita(entry: dict) -> bool:
     status = clean_text(entry.get("rollCallStatus"))
     notes = clean_text(entry.get("rollCallNotes"))
     if status in {"LAME", "INSEASON", "SEASON", "BREEDDQ", "BREEDDISQUALIFIED", "SCRATCHED", "SCRATCH"}:
         return False
     if any(value in notes for value in ("LAME", "INSEASON", "SEASON", "BREEDDQ", "BREEDDISQUALIFIED", "SCRATCHED", "SCRATCH")):
         return False
-    return str(entry.get("id") or "") not in (dismissed_entry_ids or set())
-
-
-def secretary_dismissed_entry_ids(trial: dict) -> set[str]:
-    dismissed: set[str] = set()
-    for group in ((trial.get("preliminaryDraw") or {}).get("groups") or []):
-        for course in group.get("courses") or []:
-            for hound in course.get("hounds") or []:
-                if row_outcome_is_dismissed(hound.get("prelimOutcome")):
-                    entry_id = str(hound.get("entryId") or "")
-                    if entry_id:
-                        dismissed.add(entry_id)
-        final_draw = group.get("finalDraw") or {}
-        for course in final_draw.get("courses") or []:
-            for hound in course.get("hounds") or []:
-                if row_outcome_is_dismissed(hound.get("finalOutcome")):
-                    entry_id = str(hound.get("entryId") or "")
-                    if entry_id:
-                        dismissed.add(entry_id)
-    return dismissed
+    return True
 
 
 def secretary_breed_code(breed: object) -> str:
@@ -3529,7 +3654,8 @@ def secretary_per_capita_rate(trial: dict) -> float:
         rate = float(trial.get("secretaryPerCapitaRate") or 3.5)
     except (TypeError, ValueError):
         rate = 3.5
-    return 3.5 if abs(rate - 3.5) < 0.01 else 4.0
+    valid_rates = (3.5, 4.0, 4.5, 5.0, 6.0)
+    return next((valid_rate for valid_rate in valid_rates if abs(rate - valid_rate) < 0.01), 3.5)
 
 
 def positive_int(value: object) -> int:
@@ -4269,6 +4395,22 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/client-log":
+            length = min(int(self.headers.get("Content-Length", "0")), 8192)
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                event = str(payload.get("event") or "client-event")[:80]
+                details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
+                safe_details = {
+                    str(key)[:60]: str(value)[:300]
+                    for key, value in details.items()
+                }
+                app_log(f"CLIENT {event} {json.dumps(safe_details, ensure_ascii=True)}")
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/state":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
@@ -4385,6 +4527,18 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 if not isinstance(payload, dict):
                     raise ValueError("document payload must be an object")
                 document = save_entry_document(payload)
+                self.send_json({"ok": True, "document": document})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/document-from-url":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("document link payload must be an object")
+                document = save_linked_entry_document(payload)
                 self.send_json({"ok": True, "document": document})
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -4540,6 +4694,8 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None,
                     payload.get("secretaryLayout") if isinstance(payload.get("secretaryLayout"), dict) else None,
                     True,
+                    True,
+                    False,
                     True,
                 )
                 self.send_pdf(pdf, "asfa-record-sheet-packet.pdf")

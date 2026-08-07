@@ -1,9 +1,9 @@
 {
   "name": "Field Trial Secretary",
-  "version": "0.3.4",
-  "releaseDate": "2026-08-02",
-  "channel": "release",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.4",
+  "version": "0.3.5",
+  "releaseDate": "2026-08-07",
+  "channel": "beta",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.5",
   "latestVersionUrl": "",
-  "notes": "Adds offline Excel hound database imports with sortable previews, matched/new row selection, and bulk decisions for checked hounds."
+  "notes": "Beta release with improved entry and hound imports, ASFA judge-directory tools, document handling, and record-sheet corrections."
 }

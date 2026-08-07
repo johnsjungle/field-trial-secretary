@@ -841,6 +841,86 @@ body:has(.trial-guide-card[open]) .trial-form {
     color: var(--warn);
 }
 
+#entriesTable td:nth-child(9) {
+    line-height: 1.35;
+    white-space: pre-line;
+}
+
+.entry-document-note {
+    display: block;
+}
+
+.entry-document-list {
+    display: grid;
+    gap: 6px;
+    margin: 8px 0;
+}
+
+.entry-document-item {
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, auto) auto;
+    padding: 7px 9px;
+}
+
+.entry-document-item.marked-for-removal {
+    background: #fff0f3;
+    border-color: #d991a2;
+    opacity: 0.75;
+}
+
+.entry-document-item.marked-for-removal a,
+.entry-document-item.marked-for-removal .entry-document-type {
+    text-decoration: line-through;
+}
+
+.entry-document-type {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+.import-mapping-panel {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    margin: 12px 0;
+}
+
+.import-mapping-panel > summary {
+    align-items: center;
+    background: #f1f6f4;
+    color: var(--ink);
+    cursor: pointer;
+    display: grid;
+    font-weight: 700;
+    gap: 8px;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    padding: 10px 12px;
+}
+
+.import-mapping-panel > summary::before {
+    content: '+';
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.import-mapping-panel[open] > summary::before {
+    content: '-';
+}
+
+.import-mapping-panel > summary small {
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.import-mapping-panel[open] > summary {
+    border-bottom: 1px solid var(--line);
+}
+
+.import-mapping-panel .table-wrap {
+    border: 0;
+}
 .import-progress {
     align-items: center;
     background: #edf8f4;
@@ -1564,6 +1644,11 @@ textarea {
 .runoff-card.selected-row {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.runoff-attempt-divider > td {
+    border-top: 4px solid var(--accent-dark);
+    padding-top: 14px;
 }
 
 .muted-cell {

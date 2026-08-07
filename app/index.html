@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260802-hound-import-review">
+    <link rel="stylesheet" href="styles.css?v=20260806-entry-document-edit">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -565,7 +565,7 @@
                                 <label class="field-label">Handler<input id="entryHandler" placeholder="Handler"></label>
                                 <label class="switch"><input id="entryFirstTime" type="checkbox"> <span>First-time entry</span></label>
                                 <label class="switch"><input id="entryCertRequired" type="checkbox"> <span>Certificate required</span></label>
-                                <label class="switch"><input id="entryNeedsLciRegistration" type="checkbox"> <span>Needs LCI registration</span></label>
+                                <label class="switch"><input id="entryNeedsLciRegistration" type="checkbox"> <span>Needs ASFA LCI registration number</span></label>
                                 <label class="switch"><input id="entryOwnerSeparation" type="checkbox"> <span>Separate owner hounds</span></label>
                             </div>
                             <div class="entry-detail-row entry-detail-secondary">
@@ -588,7 +588,7 @@
                                     LCI registration paperwork
                                     <input id="entryLciRegistrationFile" type="file" accept=".pdf,.jpg,.jpeg,.png">
                                 </label>
-                                <p class="field-note wide" id="entryFirstTimeDocsNote">Attach first-time entry paperwork here. LCI and Singles need the registration certificate only; regular breed stakes also need the coursing certification.</p>
+                                <div class="field-note wide entry-document-note" id="entryFirstTimeDocsNote">Attach first-time entry paperwork here. LCI and Singles need the registration certificate only; regular breed stakes also need the coursing certification.</div>
                             </div>
                             <div class="inline-entry three-cols" id="entryOwnerSeparationGroupRow" hidden>
                                 <label>
@@ -620,7 +620,7 @@
                                     <th>Class</th>
                                     <th>Entry Dates</th>
                                     <th>Trial(s)</th>
-                                    <th>Handler</th>
+                                    <th>Handler/Owner</th>
                                     <th>Paid</th>
                                     <th>Separate</th>
                                     <th>Docs</th>
@@ -672,17 +672,24 @@
                         <strong id="entryImportProgressText">Working on the import...</strong>
                     </div>
                     <div class="form-message compact" id="jotformImportSummary"></div>
-                    <div class="table-wrap" id="entryImportMappingWrap" hidden>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Program Field</th>
-                                    <th>Source Column/Label</th>
-                                </tr>
-                            </thead>
-                            <tbody id="entryImportMappingTable"></tbody>
-                        </table>
-                    </div>
+
+                    <details class="import-mapping-panel" id="entryImportMappingWrap" hidden>
+                        <summary>
+                            <span>Column Mapping</span>
+                            <small id="entryImportMappingSummary">Review source columns</small>
+                        </summary>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Program Field</th>
+                                        <th>Source Column/Label</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="entryImportMappingTable"></tbody>
+                            </table>
+                        </div>
+                    </details>
                     <div class="table-wrap">
                         <table>
                             <thead>
@@ -698,6 +705,7 @@
                                     <th>Stake/Class</th>
                                     <th>Owner</th>
                                     <th>First Time</th>
+                                    <th>Needs ASFA LCI #</th>
                                     <th>Docs</th>
                                     <th>Notes</th>
                                 </tr>
@@ -957,10 +965,13 @@
                             <input id="secretaryLciRegistrationCount" type="number" min="0" step="1" value="0">
                         </label>
                         <label>
-                            Breed per-capita rate
+                            ASFA per-capita rate
                             <select id="secretaryPerCapitaRate">
-                                <option value="3.50">$3.50 electronic records</option>
-                                <option value="4.00">$4.00 standard</option>
+                                <option value="3.50">$3.50 regular trial - electronic</option>
+                                <option value="4.00">$4.00 regular trial - standard</option>
+                                <option value="4.50">$4.50 Regional Invitational - electronic</option>
+                                <option value="5.00">$5.00 Regional Invitational - standard</option>
+                                <option value="6.00">$6.00 International Invitational</option>
                             </select>
                         </label>
                         <label>
@@ -1713,7 +1724,7 @@
     <script src="vendor/sheetjs/xlsx.full.min.js"></script>
     <script src="asfa_recent_hounds.js"></script>
     <script src="default_form_alignment.js?v=20260802"></script>
-    <script src="script.js?v=20260802-alignment-defaults"></script>
+    <script src="script.js?v=20260806-entry-update-validation-fix"></script>
     <script src="hound_database_import.js?v=20260802-review"></script>
 </body>
 </html>
