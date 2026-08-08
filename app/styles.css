@@ -1580,6 +1580,15 @@ textarea {
     padding: 8px;
 }
 
+.tie-prep-entry {
+    grid-template-columns: 64px minmax(180px, 1fr) minmax(120px, 0.55fr) minmax(180px, 0.8fr) minmax(100px, 0.45fr) 90px;
+}
+
+.tie-prep-status {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+}
 .final-score-hound {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2371,6 +2380,14 @@ tbody tr:last-child td {
     box-shadow: inset 4px 0 0 var(--accent);
 }
 
+#runPlanTable tr.worker-assignment-conflict-row td,
+.worker-sheet-table tr.worker-assignment-conflict-row td {
+    background: #ffe1eb;
+    box-shadow: inset 4px 0 0 #d6336c;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
+
 tbody tr.row-flash td {
     animation: rowFlash 1.8s ease-out;
 }
@@ -2415,6 +2432,41 @@ tbody tr.row-flash td {
     page: worker-sheet-landscape;
 }
 
+.worker-sheet-table {
+    table-layout: auto;
+    width: 100%;
+}
+
+.worker-sheet-table th,
+.worker-sheet-table td {
+    vertical-align: middle;
+}
+
+.worker-sheet-breed-row td {
+    padding-bottom: 9px;
+    padding-top: 9px;
+}
+
+.worker-sheet-breed-cell strong,
+.worker-sheet-breed-cell span {
+    display: block;
+}
+
+.worker-sheet-breed-cell span {
+    color: var(--muted);
+    font-size: 0.82em;
+    font-weight: 700;
+    margin-top: 3px;
+    white-space: nowrap;
+}
+
+.worker-sheet-total-row th,
+.worker-sheet-total-row td {
+    background: #edf4f1;
+    border-top: 2px solid var(--accent-dark);
+    font-size: 1.05em;
+    font-weight: 900;
+}
 .print-area h2 {
     margin-bottom: 4px;
 }
@@ -2745,6 +2797,14 @@ tbody tr.row-flash td {
     #judgesMapPrint td {
         padding: 4px 5px;
         line-height: 1.1;
+    }
+    #workerSheetPrint .worker-sheet-breed-row td {
+        padding-bottom: 7px;
+        padding-top: 7px;
+    }
+
+    #workerSheetPrint .worker-sheet-breed-cell span {
+        margin-top: 2px;
     }
 }
 

@@ -3221,7 +3221,7 @@ function trialGuideSteps(trial) {
     const steps = [
         { id: 'trial-set', label: 'Trial Info', tab: 'setup', sectionTitle: 'Event', status: stepStatus(trialBasicsComplete(trial), hasTrial), detail: 'Enter the trial name, club, association, and dates.', action: 'Go To Setup' },
         { id: 'entries-set', label: 'Hound Entry', tab: 'entries', sectionTitle: 'Trial Entries', status: stepStatus(entriesDone, trialBasicsComplete(trial)), detail: entriesDone ? `${(trial.entries || []).length} entries are in this trial.` : 'Add or import the hounds running in this trial.', action: 'Go To Entries' },
-        { id: 'running-order-assignments', label: 'Running Order & Assignments', tab: 'runplan', sectionTitle: 'Running Order & Assignments', status: attentionStatus(runDone, entriesDone, runDone && entriesStaleForRunPlan), detail: runDone && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Build from entries again before printing or drawing.' : (runDone ? 'Running order and assignment rows are set.' : 'Set breed running order, judges, lure operators, and huntmasters.'), action: 'Go To Running Order' },
+        { id: 'running-order-assignments', label: 'Running Order & Assignments', tab: 'runplan', sectionTitle: 'Running Order & Assignments', status: attentionStatus(runDone, entriesDone, runDone && entriesStaleForRunPlan), detail: runDone && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Build from entries again before printing or drawing.' : (runDone ? 'Running order and assignment rows are set.' : 'Set breed running order, judges, lure operators, and huntmasters. Paddock and Field Clerk are optional.'), action: 'Go To Running Order' },
         { id: 'print-roll-call-sheet', label: 'Print Roll Call Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', targetSelector: '#printRollCallButton', status: attentionStatus(printStatus(trial, 'rollCallSheet'), entriesDone, rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan)), detail: rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan) ? 'Entries changed after the roll call sheet was printed. Reprint the roll call sheet for the current entry list.' : (printStatus(trial, 'rollCallSheet') ? 'Roll call sheet has been printed or marked printed.' : 'Print the roll call sheet before checking in hounds at roll call.'), action: 'Go To Roll Call Sheet' },
         { id: 'worker-sheet', label: 'Worker Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', status: attentionStatus(printStatus(trial, 'workerSheet'), runDone && !entriesStaleForRunPlan, workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan)), detail: workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan) ? 'Entries changed after the worker sheet was printed. Rebuild Running Order if needed, then print the worker sheet again.' : (printStatus(trial, 'workerSheet') ? 'Worker sheet has been printed or marked printed.' : 'Print the worker sheet after running order and assignments are ready.'), action: 'Go To Worker Sheet' },
         { id: 'roll-call', label: 'Roll Call Check In', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: attentionStatus(rollDone, entriesDone, rollDone && (entriesStaleForRunPlan || rollCallSheetStale)), detail: rollDone && (entriesStaleForRunPlan || rollCallSheetStale) ? 'Entries changed after setup was built. Review roll call for the current entry list.' : (rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.'), action: 'Go To Roll Call' },
@@ -7876,6 +7876,13 @@ function scorebookActionsForGroup(group, mode) {
                 disabled: finalsLocked,
             },
             {
+                label: 'Reset Placements',
+                handler: () => resetFinalPlacementsForGroup(group.id),
+                className: 'secondary small danger-button',
+                help: "Recovery tool: preserves prelim and finals scores, clears this stake's runoff decisions, and recomputes placements from the entered scores.",
+                disabled: !stakeDrawn,
+            },
+            {
                 label: 'ASFA Stake Sheet',
                 handler: () => printAsfaRecordSheet({ groupId: group.id }),
                 className: 'secondary small report-button',
@@ -8270,8 +8277,13 @@ function tieBreakPanel(group) {
     }
 
     const title = document.createElement('h4');
-    title.textContent = 'Settle Ties';
+    title.textContent = 'Prepare Tie Runoffs';
     panel.appendChild(title);
+
+    const guidance = document.createElement('p');
+    guidance.className = 'field-note';
+    guidance.textContent = 'Draw and print the runoff here. Mark a pre-run forfeit, pull, lame hound, or excusal if needed. Enter judge scores under Run Offs Scoring.';
+    panel.appendChild(guidance);
 
     ties.forEach((tie) => {
         const block = document.createElement('div');
@@ -8304,37 +8316,44 @@ function tieBreakPanel(group) {
         const rows = runoff ? runoffRows(runoff) : tie.rows;
         rows.forEach((row) => {
             const line = document.createElement('label');
-            line.className = 'final-score-entry';
+            line.className = 'final-score-entry tie-prep-entry';
             const code = document.createElement('span');
             code.className = row.hound.tieBreakCode ? `blanket blanket-${clean(row.hound.tieBreakBlanketColor).toLowerCase()}` : 'muted-cell';
             code.textContent = row.hound.tieBreakCode || 'Blank until draw';
             const name = document.createElement('span');
             name.className = 'final-score-hound';
             name.textContent = row.hound.callName || row.hound.registeredName || 'Unnamed hound';
-            const judgeCount = judgeCountForGroup(readForm(), group);
-            const judge1 = scoreNumberInput(row.hound.tieBreakJudge1Score, 'J1', Boolean(row.hound.tieBreakOutcome), (value) => updateTieBreakResult(group.id, row.hound.entryId, tie.label, { judge1: value }, tie.combinedScore));
-            const judge2 = judgeCount > 1 ? scoreNumberInput(row.hound.tieBreakJudge2Score, 'J2', Boolean(row.hound.tieBreakOutcome), (value) => updateTieBreakResult(group.id, row.hound.entryId, tie.label, { judge2: value }, tie.combinedScore)) : null;
-            const total = document.createElement('span');
-            total.className = 'final-score-total';
-            total.textContent = computedScoreDisplay(row.hound.tieBreakScore, row.hound.tieBreakOutcome) || 'Tie';
+            const stake = document.createElement('span');
+            stake.className = 'muted-cell';
+            stake.textContent = row.hound.stake || group.stake || '';
             const outcome = document.createElement('select');
             outcome.className = 'score-outcome';
-            scoreOutcomeOptions().forEach(([value, text]) => {
+            runoffPreparationOutcomeOptions().forEach(([value, optionText]) => {
                 const option = document.createElement('option');
                 option.value = value;
-                option.textContent = text;
+                option.textContent = optionText;
                 outcome.appendChild(option);
             });
             outcome.value = row.hound.tieBreakOutcome || '';
             outcome.addEventListener('change', () => updateTieBreakResult(group.id, row.hound.entryId, tie.label, { outcome: outcome.value }, tie.combinedScore));
+            const status = document.createElement('span');
+            status.className = 'tie-prep-status';
+            if (row.hound.tieBreakOutcome === 'forfeit' && row.hound.tieBreakForfeitOrder) {
+                const order = document.createElement('span');
+                order.className = 'forfeit-order-badge';
+                order.textContent = `FOR #${row.hound.tieBreakForfeitOrder}`;
+                status.appendChild(order);
+            } else if (row.hound.tieBreakOutcome) {
+                status.textContent = scoreOutcomeLabel(row.hound.tieBreakOutcome);
+            } else if (hasScoreValue(row.hound.tieBreakScore)) {
+                status.textContent = 'Scored in Run Offs';
+            } else {
+                status.textContent = 'Ready';
+            }
             const result = document.createElement('span');
             result.className = 'final-score-result';
             result.textContent = row.hound.tieBreakResolvedPlacement || '';
-            line.append(code, name, judge1);
-            if (judge2) {
-                line.appendChild(judge2);
-            }
-            line.append(total, outcome, result);
+            line.append(code, name, stake, outcome, status, result);
             block.appendChild(line);
         });
         panel.appendChild(block);
@@ -8343,6 +8362,15 @@ function tieBreakPanel(group) {
     return panel;
 }
 
+function runoffPreparationOutcomeOptions() {
+    return [
+        ['', 'Running'],
+        ['forfeit', 'FOR - Forfeit'],
+        ['lame', 'LAME - Lame'],
+        ['excused', 'EXC - Excused'],
+        ['pull', 'PUL - Pulled'],
+    ];
+}
 function tieBreakGroups(group) {
     const groups = new Map();
     const addRow = (row, label, combinedScore) => {
@@ -8425,6 +8453,53 @@ function runoffRows(runoff) {
         ));
 }
 
+function unresolvedTieRunoffRows(runoff) {
+    return runoffRows(runoff).filter((row) => String(row.hound.tieBreakResolvedPlacement || '').includes('Tie'));
+}
+
+function runoffHasRecordedDecision(runoff) {
+    return runoffRows(runoff).some((row) => hasScoreValue(row.hound.tieBreakScore) || row.hound.tieBreakOutcome);
+}
+
+function continuationTieRunoffRows(group, tie) {
+    const current = runoffForTie(group, tie);
+    const currentTies = current ? unresolvedTieRunoffRows(current) : [];
+    if (currentTies.length >= 2) {
+        return currentTies;
+    }
+    if (!current || runoffHasRecordedDecision(current)) {
+        return [];
+    }
+    const history = archivedRunoffsForTie(group, tie).slice().reverse();
+    for (const runoff of history) {
+        const tiedRows = unresolvedTieRunoffRows(runoff);
+        if (tiedRows.length >= 2) {
+            return tiedRows;
+        }
+    }
+    return [];
+}
+function resetTieBreakScoresForEntries(finalDraw, entryIds) {
+    if (!finalDraw || !Array.isArray(finalDraw.courses) || entryIds.size === 0) {
+        return finalDraw;
+    }
+    return {
+        ...finalDraw,
+        courses: finalDraw.courses.map((course) => ({
+            ...course,
+            hounds: (course.hounds || []).map((hound) => entryIds.has(hound.entryId) ? {
+                ...hound,
+                tieBreakJudge1Score: '',
+                tieBreakJudge2Score: '',
+                tieBreakScore: '',
+                tieBreakOutcome: '',
+                tieBreakForfeitOrder: '',
+                tieBreakResolvedPlacement: '',
+                tieBreakScoredAt: '',
+            } : hound),
+        })),
+    };
+}
 function createRunoffDrawFromRows(rows, tie) {
     const hounds = rows
         .filter((row) => !row.hound.tieBreakOutcome)
@@ -10168,10 +10243,8 @@ function tieNeedsAnotherRunoff(group, tie) {
     if (!runoff) {
         return false;
     }
-    const rows = runoffRows(runoff);
-    return rows.length >= 2 && rows.every((row) => hasScoreValue(row.hound.tieBreakScore) || row.hound.tieBreakOutcome);
+    return unresolvedTieRunoffRows(runoff).length >= 2;
 }
-
 function bobTieRunoffItems(trial) {
     return (trial.bobRunoffs || [])
         .filter((runoff) => runoffRows(runoff).some((row) => row.hound.bobResult === 'BOB Tie'))
@@ -11308,7 +11381,11 @@ function drawSingleRunoff(itemId) {
     }
 
     if (item.type === 'tie') {
-        const runoff = createRunoffDrawFromRows(item.tie.rows, item.tie);
+        const continuationRows = continuationTieRunoffRows(item.group, item.tie);
+        const isContinuationDraw = continuationRows.length >= 2;
+        const sourceRows = isContinuationDraw ? continuationRows : item.tie.rows;
+        const repeatedEntryIds = new Set(sourceRows.map((row) => row.hound.entryId));
+        const runoff = createRunoffDrawFromRows(sourceRows, item.tie);
         if (!runoff) {
             showMessage(runoffMessage, 'That tie does not have enough active hounds to draw.', 'warning');
             return;
@@ -11320,9 +11397,15 @@ function drawSingleRunoff(itemId) {
                     return group;
                 }
                 const replaceKey = runoffKeyForTie(item.tie);
-                const archivedGroup = runoffForTie(group, item.tie) ? archiveCurrentRunoffForTie(group, item.tie) : group;
+                const existingRunoff = runoffForTie(group, item.tie);
+                const archivedGroup = existingRunoff && runoffHasRecordedDecision(existingRunoff)
+                    ? archiveCurrentRunoffForTie(group, item.tie)
+                    : group;
                 return {
                     ...archivedGroup,
+                    finalDraw: isContinuationDraw
+                        ? resetTieBreakScoresForEntries(archivedGroup.finalDraw, repeatedEntryIds)
+                        : archivedGroup.finalDraw,
                     runoffs: [
                         ...(archivedGroup.runoffs || []).filter((existing) => existing.key !== replaceKey),
                         runoff,
@@ -12667,6 +12750,7 @@ function scoreReportRows(group) {
 
 function scoreOutcomeLabel(value) {
     const labels = {
+        lame: 'LAME',
         excused: 'EXC',
         dismissed: 'DIS',
         disqualified: 'DQ',
@@ -12680,6 +12764,7 @@ function scoreOutcomeLabel(value) {
 function scoreOutcomeOptions() {
     return [
         ['', 'OK'],
+        ['lame', 'LAME'],
         ['excused', 'EXC'],
         ['dismissed', 'DIS'],
         ['disqualified', 'DQ'],
@@ -12987,18 +13072,20 @@ function moveScoreFocusSameColumn(currentInput, direction) {
 
 function moveScoreFocusGrid(currentInput, direction) {
     const table = currentInput.closest('table');
-    if (!table) {
+    const panel = table || currentInput.closest('.tie-break-group, .tie-break-panel, .score-group');
+    if (!panel) {
         return false;
     }
-    const tableInputs = visibleScoreInputs().filter((input) => input.closest('table') === table);
-    const positioned = tableInputs.map((input) => {
+    const panelInputs = visibleScoreInputs().filter((input) => panel.contains(input));
+    const positioned = panelInputs.map((input) => {
         const cell = input.closest('td');
-        const row = input.closest('tr');
+        const row = input.closest('tr') || input.closest('.final-score-entry') || input.parentElement;
+        const inputRect = input.getBoundingClientRect();
         return {
             input,
             row,
-            rowTop: row ? row.getBoundingClientRect().top : 0,
-            cellLeft: cell ? cell.getBoundingClientRect().left : 0,
+            rowTop: row ? row.getBoundingClientRect().top : inputRect.top,
+            cellLeft: cell ? cell.getBoundingClientRect().left : inputRect.left,
         };
     });
     const current = positioned.find((item) => item.input === currentInput);
@@ -13211,6 +13298,101 @@ async function updateFinalResult(groupId, entryId, changes) {
     render();
 }
 
+function clearTieBreakPlacementState(hound) {
+    return {
+        ...hound,
+        tieBreakLabel: '',
+        tieBreakCombinedScore: '',
+        tieBreakJudge1Score: '',
+        tieBreakJudge2Score: '',
+        tieBreakScore: '',
+        tieBreakOutcome: '',
+        tieBreakForfeitOrder: '',
+        tieBreakResolvedPlacement: '',
+        tieBreakScoredAt: '',
+        tieBreakCourse: '',
+        tieBreakBlanketColor: '',
+        tieBreakCode: '',
+    };
+}
+
+function groupResetAffectsBob(group) {
+    return finalsRowsForGroup(group).some((row) => {
+        const labels = [row.hound.placement, row.hound.tieBreakLabel].map(String);
+        return labels.some((label) => label.includes('Tie') && tiePlacementRange(label).start === 1);
+    });
+}
+
+async function resetFinalPlacementsForGroup(groupId) {
+    const trial = readForm();
+    const groups = (((trial || {}).preliminaryDraw || {}).groups || []);
+    const group = groups.find((item) => item.id === groupId);
+    if (!group || !group.finalDraw || !Array.isArray(group.finalDraw.courses)) {
+        showMessage(document.getElementById('scoringMessage'), 'No finals placements are available to reset for that stake.', 'warning');
+        return;
+    }
+
+    const affectsBob = groupResetAffectsBob(group);
+    const confirmed = await showTrialConfirm({
+        title: 'Reset Stake Placements',
+        eyebrow: groupTitle(group),
+        message: `This keeps every preliminary and finals judge score, but clears all tie runoff scores, forfeits, blanket assignments, and resolved placements for this stake. Placements will be recalculated from the entered scores.${affectsBob ? ' Because first place is involved, existing BOB and BIF draws and scores will also be invalidated.' : ''}`,
+        primaryText: 'Reset Placements',
+        secondaryText: 'Cancel',
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    const clearedGroup = recomputeFinalPlacements({
+        ...group,
+        runoffs: [],
+        runoffHistory: [],
+        finalDraw: {
+            ...group.finalDraw,
+            courses: group.finalDraw.courses.map((course) => ({
+                ...course,
+                hounds: (course.hounds || []).map(clearTieBreakPlacementState),
+            })),
+        },
+    });
+    trial.preliminaryDraw = auditDrawChange({
+        ...trial.preliminaryDraw,
+        groups: groups.map((item) => item.id === groupId ? clearedGroup : item),
+    }, `Reset placements for ${groupTitle(group)}; preserved prelim and finals scores.`);
+
+    if (affectsBob) {
+        const breedKey = clean(group.breed);
+        const removedBobKeys = new Set((trial.bobRunoffs || [])
+            .filter((runoff) => clean(runoff.breed) === breedKey || runoffRows(runoff).some((row) => (
+                row.hound.bobSourceGroupId === groupId
+                || clean(row.hound.breed || row.hound.runGroupBreed) === breedKey
+            )))
+            .map((runoff) => runoff.key));
+        trial.bobRunoffs = (trial.bobRunoffs || []).filter((runoff) => !removedBobKeys.has(runoff.key));
+        trial.bobRunoffOutcomes = Object.fromEntries(Object.entries(trial.bobRunoffOutcomes || {})
+            .filter(([key]) => !removedBobKeys.has(key)));
+        const bif = bifState(trial);
+        trial.scorebook = {
+            ...(trial.scorebook || {}),
+            bif: {
+                ...bif,
+                draw: null,
+                outcomes: {},
+                tieRunoff: null,
+                tieRunoffs: [],
+                winnerEntryId: '',
+                result: '',
+            },
+        };
+    }
+
+    trial.resultState = {};
+    upsertTrial(trial);
+    saveTrials();
+    showMessage(document.getElementById('scoringMessage'), `${groupTitle(group)} placements were reset and recalculated. Prelim and finals scores were preserved.`, 'success');
+    render();
+}
 function breedFinalsComplete(trial, breed) {
     const groups = (((trial || {}).preliminaryDraw || {}).groups || [])
         .filter((group) => clean(group.breed) === clean(breed))
@@ -13578,6 +13760,25 @@ function tiePlacementRange(label) {
     };
 }
 
+function latestTimestamp(values) {
+    return values.reduce((latest, value) => {
+        const timestamp = Date.parse(value || '');
+        return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+    }, 0);
+}
+
+function tieBreakResolutionIsCurrent(rows) {
+    const decisionRows = rows.filter((row) => (
+        hasScoreValue(row.hound.tieBreakScore) || row.hound.tieBreakOutcome
+    ));
+    if (decisionRows.length === 0) {
+        return false;
+    }
+    const latestFinalScore = latestTimestamp(rows.map((row) => row.hound.finalScoredAt));
+    const latestTieBreakScore = latestTimestamp(decisionRows.map((row) => row.hound.tieBreakScoredAt));
+    return !latestFinalScore || (latestTieBreakScore && latestTieBreakScore >= latestFinalScore);
+}
+
 function recomputeFinalPlacements(group) {
     if (!group.finalDraw || !Array.isArray(group.finalDraw.courses)) {
         return group;
@@ -13691,16 +13892,52 @@ function resolveCompletedTieBreaks(finals, placementByEntry) {
     });
 
     tieGroups.forEach((tie) => {
-        const activeRows = tie.rows.filter((row) => !row.hound.tieBreakOutcome);
-        const outcomeRows = tie.rows
-            .filter((row) => row.hound.tieBreakOutcome)
-            .sort(compareTieBreakOutcomeRows);
-        const complete = tie.rows.every((row) => hasScoreValue(row.hound.tieBreakScore) || row.hound.tieBreakOutcome)
-            || (activeRows.length === 1 && outcomeRows.length > 0);
-        if (!complete) {
+        const { start, end } = tiePlacementRange(tie.label);
+        if (!Number.isFinite(start) || !Number.isFinite(end)) {
             return;
         }
-        const scored = tie.rows
+
+        const resolutionIsCurrent = tieBreakResolutionIsCurrent(tie.rows);
+        if (!resolutionIsCurrent) {
+            return;
+        }
+        const fixedRows = tie.rows.filter((row) => {
+            const fixedPlacement = String(row.hound.tieBreakResolvedPlacement || '');
+            return fixedPlacement && !fixedPlacement.includes('Tie') && Number.isFinite(placementNumberFromLabel(fixedPlacement));
+        });
+        const fixedEntryIds = new Set(fixedRows.map((row) => row.entryId));
+        const fixedPlacementNumbers = new Set();
+        fixedRows.forEach((row) => {
+            const placementNumber = placementNumberFromLabel(row.hound.tieBreakResolvedPlacement);
+            fixedPlacementNumbers.add(placementNumber);
+            placementByEntry.set(row.entryId, placementNameForNumber(placementNumber));
+        });
+
+        const unresolvedRows = tie.rows.filter((row) => !fixedEntryIds.has(row.entryId));
+        if (unresolvedRows.length === 0) {
+            return;
+        }
+        const availablePlacements = [];
+        for (let placementNumber = start; placementNumber <= end; placementNumber += 1) {
+            if (!fixedPlacementNumbers.has(placementNumber)) {
+                availablePlacements.push(placementNumber);
+            }
+        }
+
+        const activeRows = unresolvedRows.filter((row) => !row.hound.tieBreakOutcome);
+        const outcomeRows = unresolvedRows
+            .filter((row) => row.hound.tieBreakOutcome)
+            .sort(compareTieBreakOutcomeRows);
+        const complete = unresolvedRows.every((row) => hasScoreValue(row.hound.tieBreakScore) || row.hound.tieBreakOutcome)
+            || (activeRows.length === 1 && outcomeRows.length > 0);
+        if (!complete) {
+            if (unresolvedRows.length >= 2 && availablePlacements.length >= 2) {
+                const pendingTieLabel = placementTieLabel(availablePlacements[0], availablePlacements[availablePlacements.length - 1]);
+                unresolvedRows.forEach((row) => placementByEntry.set(row.entryId, pendingTieLabel));
+            }
+            return;
+        }
+        const scored = unresolvedRows
             .filter((row) => hasScoreValue(row.hound.tieBreakScore) && !row.hound.tieBreakOutcome)
             .map((row) => ({
                 entryId: row.entryId,
@@ -13709,19 +13946,15 @@ function resolveCompletedTieBreaks(finals, placementByEntry) {
             .filter((row) => Number.isFinite(row.score))
             .sort((a, b) => b.score - a.score);
 
-        const { start, end } = tiePlacementRange(tie.label);
-        if (!Number.isFinite(start) || !Number.isFinite(end)) {
-            return;
-        }
-
         if (activeRows.length === 1 && scored.length === 0) {
-            placementByEntry.set(activeRows[0].entryId, start <= 4 ? String(start) : (start === 5 ? 'NBQ' : ''));
+            const winnerPlacement = availablePlacements[0];
+            if (Number.isFinite(winnerPlacement)) {
+                placementByEntry.set(activeRows[0].entryId, placementNameForNumber(winnerPlacement));
+            }
             outcomeRows.forEach((row, index) => {
-                const placementNumber = start + index + 1;
-                if (placementNumber <= 4) {
-                    placementByEntry.set(row.entryId, String(placementNumber));
-                } else if (placementNumber === 5) {
-                    placementByEntry.set(row.entryId, 'NBQ');
+                const placementNumber = availablePlacements[index + 1];
+                if (Number.isFinite(placementNumber)) {
+                    placementByEntry.set(row.entryId, placementNameForNumber(placementNumber));
                 }
             });
             return;
@@ -13731,34 +13964,25 @@ function resolveCompletedTieBreaks(finals, placementByEntry) {
         while (rankOffset < scored.length) {
             const score = scored[rankOffset].score;
             const sameScoreRows = scored.slice(rankOffset).filter((row) => row.score === score);
-            const placementStart = start + rankOffset;
-            if (sameScoreRows.length > 1) {
-                const placementEnd = Math.min(end, placementStart + sameScoreRows.length - 1);
-                sameScoreRows.forEach((row) => placementByEntry.set(row.entryId, placementTieLabel(placementStart, placementEnd)));
+            const tiedPlacementNumbers = availablePlacements.slice(rankOffset, rankOffset + sameScoreRows.length);
+            if (sameScoreRows.length > 1 && tiedPlacementNumbers.length > 1) {
+                const tieLabel = placementTieLabel(tiedPlacementNumbers[0], tiedPlacementNumbers[tiedPlacementNumbers.length - 1]);
+                sameScoreRows.forEach((row) => placementByEntry.set(row.entryId, tieLabel));
                 rankOffset += sameScoreRows.length;
                 continue;
             }
-            const row = scored[rankOffset];
-            if (placementStart <= 4) {
-                placementByEntry.set(row.entryId, String(placementStart));
-            } else if (placementStart === 5) {
-                placementByEntry.set(row.entryId, 'NBQ');
-            } else {
-                placementByEntry.set(row.entryId, '');
-            }
+            const placementNumber = availablePlacements[rankOffset];
+            placementByEntry.set(scored[rankOffset].entryId, Number.isFinite(placementNumber) ? placementNameForNumber(placementNumber) : '');
             rankOffset += 1;
         }
         outcomeRows.forEach((row, index) => {
-            const placementNumber = start + scored.length + index;
-            if (placementNumber <= 4) {
-                placementByEntry.set(row.entryId, String(placementNumber));
-            } else if (placementNumber === 5) {
-                placementByEntry.set(row.entryId, 'NBQ');
+            const placementNumber = availablePlacements[scored.length + index];
+            if (Number.isFinite(placementNumber)) {
+                placementByEntry.set(row.entryId, placementNameForNumber(placementNumber));
             }
         });
     });
 }
-
 function compareTieBreakOutcomeRows(a, b) {
     if (a.hound.tieBreakOutcome === 'forfeit' && b.hound.tieBreakOutcome === 'forfeit') {
         const orderA = Number(a.hound.tieBreakForfeitOrder || 999);
@@ -14326,6 +14550,8 @@ function buildRunPlanRowsForTrial(trial) {
         judge2: existing.get(group.key)?.judge2 || '',
         lureOperator: existing.get(group.key)?.lureOperator || '',
         huntmaster: existing.get(group.key)?.huntmaster || '',
+        paddock: existing.get(group.key)?.paddock || '',
+        fieldClerk: existing.get(group.key)?.fieldClerk || '',
     }));
     return applyPremiumJudgeAssignmentsToRunPlan(trial, rows);
 }
@@ -15315,7 +15541,7 @@ function renderRunPlan(trial) {
         renderSelectedRunPlanLabel(rows);
         const empty = document.createElement('tr');
         const cell = document.createElement('td');
-        cell.colSpan = 8;
+        cell.colSpan = 10;
         cell.textContent = 'Build from entries after hounds are entered.';
         empty.appendChild(cell);
         body.appendChild(empty);
@@ -15331,9 +15557,14 @@ function renderRunPlan(trial) {
 
     rows.forEach((row, index) => {
         const tr = document.createElement('tr');
+        const assignmentConflicts = runPlanAssignmentConflicts(row);
         tr.draggable = true;
         tr.dataset.runPlanId = row.id;
         tr.classList.toggle('selected-row', row.id === selectedRunPlanRowId);
+        tr.classList.toggle('worker-assignment-conflict-row', assignmentConflicts.length > 0);
+        if (assignmentConflicts.length > 0) {
+            tr.title = `Worker assignment conflict: ${assignmentConflicts.join('; ')}`;
+        }
         tr.addEventListener('click', (event) => {
             if (event.target.matches('input, select, button')) {
                 return;
@@ -15361,6 +15592,8 @@ function renderRunPlan(trial) {
         tr.appendChild(assignmentCell(row, 'judge2', judgeOptions, 'judge'));
         tr.appendChild(assignmentCell(row, 'lureOperator', workerOptions, 'Lure Operator'));
         tr.appendChild(assignmentCell(row, 'huntmaster', workerOptions, 'Huntmaster'));
+        tr.appendChild(assignmentCell(row, 'paddock', workerOptions, 'Paddock'));
+        tr.appendChild(assignmentCell(row, 'fieldClerk', workerOptions, 'Field Clerk'));
         body.appendChild(tr);
     });
 }
@@ -15492,6 +15725,30 @@ function assignmentCell(row, key, options, role) {
 
     td.appendChild(input);
     return td;
+}
+
+function runPlanAssignmentConflicts(row) {
+    const assignments = [
+        ['Judge 1', row.judge1],
+        ['Judge 2', row.judge2],
+        ['Lure Operator', row.lureOperator],
+        ['Huntmaster', row.huntmaster],
+        ['Paddock', row.paddock],
+        ['Field Clerk', row.fieldClerk],
+    ];
+    const assignmentsByPerson = new Map();
+    assignments.forEach(([role, name]) => {
+        const key = clean(name);
+        if (!key) {
+            return;
+        }
+        const existing = assignmentsByPerson.get(key) || { name: String(name).trim(), roles: [] };
+        existing.roles.push(role);
+        assignmentsByPerson.set(key, existing);
+    });
+    return Array.from(assignmentsByPerson.values())
+        .filter(({ roles }) => roles.length > 1)
+        .map(({ name, roles }) => `${name} is assigned as ${roles.join(' and ')}`);
 }
 
 async function updateRunPlanField(rowId, key, value, role = '') {
@@ -15657,27 +15914,52 @@ function renderPrintableSheets(trial) {
 function renderWorkerSheet(trial) {
     document.getElementById('workerSheetTitle').textContent = trialTitle(trial);
     const rows = sortedRunPlanRows(trial.runPlan || []);
+    const head = document.getElementById('workerSheetHead');
     const body = document.getElementById('workerSheetTable');
+    const foot = document.getElementById('workerSheetFoot');
+    const rowDetails = rows.map((row) => ({ row, stakeRuns: workerSheetStakeRuns(trial, row.breed) }));
+    const showMixed = rowDetails.some(({ stakeRuns }) => Boolean(stakeRuns.mixed));
+    const showPaddock = rows.some((row) => Boolean(String(row.paddock || '').trim()));
+    const showFieldClerk = rows.some((row) => Boolean(String(row.fieldClerk || '').trim()));
+    const headers = ['Order', 'Entries'];
+    if (showMixed) headers.push('Mixed');
+    headers.push('Open', 'Fch/Exc', 'Vet', 'Judges', 'Lure Operator', 'Huntmaster');
+    if (showPaddock) headers.push('Paddock');
+    if (showFieldClerk) headers.push('Field Clerk');
+
+    head.innerHTML = '';
     body.innerHTML = '';
+    foot.innerHTML = '';
+    const headerRow = document.createElement('tr');
+    headers.forEach((header) => {
+        const th = document.createElement('th');
+        th.textContent = header;
+        headerRow.appendChild(th);
+    });
+    head.appendChild(headerRow);
 
     if (rows.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 10;
+        td.colSpan = headers.length;
         td.textContent = 'No worker sheet rows yet.';
         tr.appendChild(td);
         body.appendChild(tr);
         return;
     }
 
-    rows.forEach((row) => {
+    rowDetails.forEach(({ row, stakeRuns }) => {
         const tr = document.createElement('tr');
-        const stakeRuns = workerSheetStakeRuns(trial, row.breed);
+        tr.className = 'worker-sheet-breed-row';
+        const assignmentConflicts = runPlanAssignmentConflicts(row);
+        tr.classList.toggle('worker-assignment-conflict-row', assignmentConflicts.length > 0);
+        if (assignmentConflicts.length > 0) {
+            tr.title = `Worker assignment conflict: ${assignmentConflicts.join('; ')}`;
+        }
+        tr.appendChild(textCell(row.runOrder));
+        tr.appendChild(workerSheetBreedCell(row.breed, stakeRuns.total));
+        if (showMixed) tr.appendChild(textCell(stakeRuns.mixed));
         [
-            row.runOrder,
-            displayBreedCode(row.breed),
-            row.entryCount,
-            stakeRuns.mixed,
             stakeRuns.open,
             stakeRuns.fchExc,
             stakeRuns.vet,
@@ -15685,8 +15967,33 @@ function renderWorkerSheet(trial) {
             row.lureOperator,
             row.huntmaster,
         ].forEach((value) => tr.appendChild(textCell(value)));
+        if (showPaddock) tr.appendChild(textCell(row.paddock));
+        if (showFieldClerk) tr.appendChild(textCell(row.fieldClerk));
         body.appendChild(tr);
     });
+
+    const totalEntries = rowDetails.reduce((sum, { stakeRuns }) => sum + stakeRuns.total, 0);
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'worker-sheet-total-row';
+    const totalLabel = document.createElement('th');
+    totalLabel.textContent = 'Total Entries';
+    const totalValue = document.createElement('th');
+    totalValue.textContent = totalEntries;
+    const remainder = document.createElement('td');
+    remainder.colSpan = Math.max(1, headers.length - 2);
+    totalRow.append(totalLabel, totalValue, remainder);
+    foot.appendChild(totalRow);
+}
+
+function workerSheetBreedCell(breed, entryTotal) {
+    const td = document.createElement('td');
+    td.className = 'worker-sheet-breed-cell';
+    const name = document.createElement('strong');
+    name.textContent = displayBreedCode(breed);
+    const summary = document.createElement('span');
+    summary.textContent = entryTotal;
+    td.append(name, summary);
+    return td;
 }
 
 function workerSheetStakeRuns(trial, breed) {
@@ -15699,6 +16006,7 @@ function workerSheetStakeRuns(trial, breed) {
             open: '',
             fchExc: '',
             vet: '',
+            total: entries.length,
         };
     }
 
@@ -15728,6 +16036,7 @@ function workerSheetStakeRuns(trial, breed) {
         open: formatWorkerSheetRunCount(counts.open),
         fchExc: formatWorkerSheetRunCount(counts.fchExc),
         vet: formatWorkerSheetRunCount(counts.vet),
+        total: entries.length,
     };
 }
 
@@ -17316,6 +17625,8 @@ function buildAdminRunPlan(trial) {
         judge2: judges[(index + 1) % judges.length] || '',
         lureOperator: lureOperators[index % lureOperators.length] || '',
         huntmaster,
+        paddock: trial.workers.find((worker) => worker.role === 'Paddock')?.name || '',
+        fieldClerk: trial.workers.find((worker) => worker.role === 'Field Clerk')?.name || '',
     }));
 }
 
@@ -20757,7 +21068,7 @@ async function removeMasterWorker(workerId) {
     const trialCount = trials.filter((trial) =>
         (trial.workers || []).some((item) => item.workerId === workerId || clean(item.name) === clean(worker.name))
         || (trial.runPlan || []).some((item) =>
-            [item.lureOperator, item.huntmaster].some((name) => clean(name) === clean(worker.name))
+            [item.lureOperator, item.huntmaster, item.paddock, item.fieldClerk].some((name) => clean(name) === clean(worker.name))
         )
     ).length;
     const confirmed = await showTrialConfirm({
@@ -20822,7 +21133,7 @@ async function removeTrialWorker(rowId) {
     }
 
     const runPlanCount = (trial.runPlan || []).filter((row) =>
-        [row.lureOperator, row.huntmaster].some((name) => clean(name) === clean(worker.name))
+        [row.lureOperator, row.huntmaster, row.paddock, row.fieldClerk].some((name) => clean(name) === clean(worker.name))
     ).length;
     const confirmed = await showTrialConfirm({
         title: 'Remove Worker From This Trial',
@@ -20841,6 +21152,8 @@ async function removeTrialWorker(rowId) {
             ...row,
             lureOperator: clean(row.lureOperator) === clean(worker.name) ? '' : row.lureOperator,
             huntmaster: clean(row.huntmaster) === clean(worker.name) ? '' : row.huntmaster,
+            paddock: clean(row.paddock) === clean(worker.name) ? '' : row.paddock,
+            fieldClerk: clean(row.fieldClerk) === clean(worker.name) ? '' : row.fieldClerk,
         })),
         updatedAt: new Date().toISOString(),
     };

@@ -1,9 +1,9 @@
 {
   "name": "Field Trial Secretary",
-  "version": "0.3.5",
-  "releaseDate": "2026-08-07",
+  "version": "0.3.6",
+  "releaseDate": "2026-08-08",
   "channel": "beta",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.5",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.6",
   "latestVersionUrl": "",
-  "notes": "Beta release with improved entry and hound imports, ASFA judge-directory tools, document handling, and record-sheet corrections."
+  "notes": "Beta release with improved runoff recovery and record-sheet handling, hound database exports, and expanded Worker Sheet assignments and conflict warnings."
 }

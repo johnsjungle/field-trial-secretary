@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260806-entry-document-edit">
+    <link rel="stylesheet" href="styles.css?v=20260808-worker-conflicts">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -279,6 +279,7 @@
                             <h2>Hound Database</h2>
                             <p>Add or update master hound records, then review the database list below.</p>
                         </div>
+                        <button type="button" class="secondary small" id="exportHoundDatabaseButton" data-help="Exports the reusable hound and owner records as a CSV file that another Field Trial Secretary installation can import. Trial entries, scores, workers, and paperwork are not included.">Export Hound Database</button>
                         <button type="button" class="secondary small" id="importAsfaHoundsButton">Import ASFA Recent</button>
                         <button type="button" class="secondary small" id="addMasterHoundButton">Save Hound</button>
                     </div>
@@ -1088,6 +1089,8 @@
                                     <th>Judge 2</th>
                                     <th>Lure Operator</th>
                                     <th>Huntmaster</th>
+                                    <th>Paddock</th>
+                                    <th>Field Clerk</th>
                                 </tr>
                             </thead>
                             <tbody id="runPlanTable"></tbody>
@@ -1123,22 +1126,10 @@
                         <h2>Worker Sheet</h2>
                         <p id="workerSheetTitle"></p>
                         <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Order</th>
-                                        <th>Breed</th>
-                                        <th>Entries</th>
-                                        <th>Mixed</th>
-                                        <th>Open</th>
-                                        <th>Fch/Exc</th>
-                                        <th>Vet</th>
-                                        <th>Judges</th>
-                                        <th>Lure Operator</th>
-                                        <th>Huntmaster</th>
-                                    </tr>
-                                </thead>
+                            <table class="worker-sheet-table">
+                                <thead id="workerSheetHead"></thead>
                                 <tbody id="workerSheetTable"></tbody>
+                                <tfoot id="workerSheetFoot"></tfoot>
                             </table>
                         </div>
                     </div>
@@ -1724,7 +1715,7 @@
     <script src="vendor/sheetjs/xlsx.full.min.js"></script>
     <script src="asfa_recent_hounds.js"></script>
     <script src="default_form_alignment.js?v=20260802"></script>
-    <script src="script.js?v=20260806-entry-update-validation-fix"></script>
-    <script src="hound_database_import.js?v=20260802-review"></script>
+    <script src="script.js?v=20260808-worker-conflicts"></script>
+    <script src="hound_database_import.js?v=20260807-export"></script>
 </body>
 </html>

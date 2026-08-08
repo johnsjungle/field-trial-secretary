@@ -2500,6 +2500,7 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
                 "finalScore": final_score_by_entry.get(entry_id) or "",
                 "combinedScore": combined_by_entry.get(entry_id) or "",
                 "stakesRunoffLabel": stake_runoff_by_entry.get(entry_id, {}).get("label", ""),
+                "stakesRunoffColor": stake_runoff_by_entry.get(entry_id, {}).get("color", ""),
                 "stakesRunoffCode": stake_runoff_by_entry.get(entry_id, {}).get("code", ""),
                 "bobRunoffLabel": bob_runoff_by_entry.get(entry_id, {}).get("label", ""),
                 "bobRunoffCode": bob_runoff_by_entry.get(entry_id, {}).get("code", ""),
@@ -2641,30 +2642,68 @@ def asfa_record_placement_text(placement: object, award: object) -> str:
     return award_text
 
 
+def original_stake_tie_labels_by_entry(group: dict) -> dict[str, str]:
+    score_groups: dict[float, list[str]] = {}
+    for course in (group.get("finalDraw") or {}).get("courses") or []:
+        for hound in course.get("hounds") or []:
+            entry_id = str(hound.get("entryId") or "")
+            if not entry_id or hound.get("finalOutcome"):
+                continue
+            try:
+                score = float(str(hound.get("combinedScore") or "").strip())
+            except (TypeError, ValueError):
+                continue
+            score_groups.setdefault(score, []).append(entry_id)
+
+    labels: dict[str, str] = {}
+    placement_start = 1
+    for score in sorted(score_groups, reverse=True):
+        entry_ids = score_groups[score]
+        placement_end = placement_start + len(entry_ids) - 1
+        if len(entry_ids) > 1 and placement_start <= 5:
+            visible_end = min(placement_end, 5)
+            placement_names = ["NBQ" if number == 5 else str(number) for number in range(placement_start, visible_end + 1)]
+            label = "-".join(placement_names)
+            for entry_id in entry_ids:
+                labels[entry_id] = label
+        placement_start = placement_end + 1
+    return labels
+
 def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str, str]]:
     boxes: dict[str, dict[str, str]] = {}
+    original_tie_labels = original_stake_tie_labels_by_entry(group)
+    final_tie_state = {
+        str(hound.get("entryId") or ""): hound
+        for course in (group.get("finalDraw") or {}).get("courses") or []
+        for hound in course.get("hounds") or []
+        if hound.get("entryId")
+    }
     for runoff in group.get("runoffs") or []:
-        label = concise_tie_label(runoff.get("label") or "")
+        fallback_label = concise_tie_label(runoff.get("label") or "")
         suppress_pending_codes = runoff_resolved_without_scores(runoff)
         for course in runoff.get("courses") or []:
             for hound in course.get("hounds") or []:
                 entry_id = str(hound.get("entryId") or "")
+                label = original_tie_labels.get(entry_id) or fallback_label
+                state = final_tie_state.get(entry_id) or {}
                 code = runoff_record_value(
-                    hound.get("tieBreakOutcome"),
-                    hound.get("tieBreakScore"),
+                    state.get("tieBreakOutcome") or hound.get("tieBreakOutcome"),
+                    state.get("tieBreakScore") or hound.get("tieBreakScore"),
                     "",
                     suppress_pending_codes,
+                    state.get("tieBreakForfeitOrder") or hound.get("tieBreakForfeitOrder"),
                 )
                 if entry_id and (code or label):
                     boxes[entry_id] = {
-                        "label": runoff_label_with_blanket(label, hound, course),
+                        "label": label,
+                        "color": runoff_blanket_color_code(hound, course),
                         "code": str(code),
                     }
     group_id = str(group.get("id") or "").split("::", 1)[0]
     for runoff in (trial.get("bobRunoffs") or []):
         if str(runoff.get("tieGroupId") or "") not in {str(group.get("id") or ""), group_id}:
             continue
-        label = concise_tie_label(runoff.get("tieLabel") or runoff.get("label") or "")
+        fallback_label = concise_tie_label(runoff.get("tieLabel") or runoff.get("label") or "")
         suppress_pending_codes = runoff_resolved_without_scores(runoff)
         is_combined = combined_tie_bob_runoff(runoff)
         tie_winner_ids = combined_tie_winner_entry_ids(runoff) if is_combined else set()
@@ -2673,8 +2712,10 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                 if hound.get("runoffRole") != "tie" and clean_text(hound.get("tieBreakLabel")) in {"BOB", ""}:
                     continue
                 entry_id = str(hound.get("entryId") or "")
-                score_value = hound.get("tieBreakScore")
-                outcome_value = hound.get("tieBreakOutcome")
+                label = original_tie_labels.get(entry_id) or fallback_label
+                state = final_tie_state.get(entry_id) or {}
+                score_value = state.get("tieBreakScore") or hound.get("tieBreakScore")
+                outcome_value = state.get("tieBreakOutcome") or hound.get("tieBreakOutcome")
                 if not is_combined:
                     score_value = score_value or hound.get("bobScore")
                     outcome_value = outcome_value or hound.get("bobOutcome")
@@ -2683,6 +2724,7 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                     score_value,
                     "",
                     suppress_pending_codes,
+                    state.get("tieBreakForfeitOrder") or hound.get("tieBreakForfeitOrder"),
                 )
                 if (
                     is_combined
@@ -2695,7 +2737,8 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                     code = ""
                 if entry_id and (code or label):
                     boxes[entry_id] = {
-                        "label": runoff_label_with_blanket(label, hound, course),
+                        "label": label,
+                        "color": runoff_blanket_color_code(hound, course),
                         "code": str(code),
                     }
     return boxes
@@ -2837,9 +2880,16 @@ def runoff_resolved_without_scores(runoff: dict) -> bool:
     return has_outcome and not has_score
 
 
-def runoff_record_value(outcome: object, score: object, code: object, suppress_pending_code: bool = False) -> str:
+def runoff_record_value(
+    outcome: object,
+    score: object,
+    code: object,
+    suppress_pending_code: bool = False,
+    forfeit_order: object = None,
+) -> str:
     if clean_text(outcome) in {"FORFEIT", "FOR"}:
-        return "F"
+        order = str(forfeit_order or "").strip()
+        return f"F{order}" if order else "F"
     if str(score or "").strip():
         return str(score).strip()
     if outcome:
@@ -2856,6 +2906,11 @@ def concise_tie_label(value: object) -> str:
 
 def runoff_label_with_blanket(label: object, hound: dict, course: dict) -> str:
     text = str(label or "").strip()
+    color_code = runoff_blanket_color_code(hound, course)
+    return f"{text}({color_code})" if text and color_code else text
+
+
+def runoff_blanket_color_code(hound: dict, course: dict) -> str:
     color = (
         hound.get("tieBreakBlanketColor")
         or hound.get("bobBlanketColor")
@@ -2866,7 +2921,7 @@ def runoff_label_with_blanket(label: object, hound: dict, course: dict) -> str:
         draw_code = str(hound.get("tieBreakCode") or hound.get("bobCode") or "").strip().upper()
         if draw_code.endswith(("Y", "P", "B")):
             color_code = draw_code[-1]
-    return f"{text}({color_code})" if text and color_code else text
+    return color_code
 
 
 def normalized_record_outcome(value: object) -> dict[str, str]:
@@ -3298,12 +3353,16 @@ def draw_asfa_record_rows(pdf: canvas.Canvas, rows: list[dict], layout: dict) ->
         pdf.drawCentredString(layout["finalJudge2X"], y_from_top(asfa_record_y(layout, "finalJudge2Y", row_offset)), safe_text(row.get("finalJudge2"), 8))
         pdf.drawCentredString(layout["finalScoreX"], y_from_top(asfa_record_y(layout, "finalScoreY", row_offset)), safe_text(row.get("finalScore"), 8))
         pdf.drawCentredString(layout["combinedScoreX"], y_from_top(asfa_record_y(layout, "combinedScoreY", row_offset)), safe_text(row.get("combinedScore"), 8))
-        stakes_runoff_label = safe_text(row.get("stakesRunoffLabel"), 8)
-        stakes_runoff_font_size = float(layout["codeFontSize"])
-        if len(stakes_runoff_label) > 6:
-            stakes_runoff_font_size = max(6.0, stakes_runoff_font_size - 1.5)
+        stakes_runoff_label = safe_text(row.get("stakesRunoffLabel"), 16)
+        stakes_runoff_font_size = min(float(layout["codeFontSize"]), 6.5)
+        while stakes_runoff_font_size > 4.0 and pdf.stringWidth(stakes_runoff_label, "Helvetica-Bold", stakes_runoff_font_size) > 40:
+            stakes_runoff_font_size -= 0.5
+        stakes_label_y = asfa_record_y(layout, "stakesRunoffLabelY", row_offset) - 5
         pdf.setFont("Helvetica-Bold", stakes_runoff_font_size)
-        pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(asfa_record_y(layout, "stakesRunoffLabelY", row_offset)), stakes_runoff_label)
+        pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(stakes_label_y), stakes_runoff_label)
+        stakes_runoff_color = safe_text(row.get("stakesRunoffColor"), 2)
+        pdf.setFont("Helvetica-Bold", 5.5)
+        pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(stakes_label_y + 6), stakes_runoff_color)
         pdf.setFont("Helvetica-Bold", layout["codeFontSize"])
         pdf.drawCentredString(layout["stakesRunoffCodeX"], y_from_top(asfa_record_y(layout, "stakesRunoffCodeY", row_offset)), safe_text(row.get("stakesRunoffCode"), 5))
         pdf.drawCentredString(layout["secondRunoffLabelX"], y_from_top(asfa_record_y(layout, "secondRunoffLabelY", row_offset)), safe_text(row.get("secondRunoffLabel"), 8))

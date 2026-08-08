@@ -32,6 +32,37 @@ const houndDatabaseImportFieldDefinitions = [
 
 const houndImportElement = (id) => document.getElementById(id);
 
+function houndExportCsvValue(value) {
+    const text = String(value ?? '');
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function exportHoundDatabase() {
+    if (!Array.isArray(masterHounds) || masterHounds.length === 0) {
+        showMessage(masterHoundMessage, 'There are no hounds in the database to export.', 'warning');
+        return;
+    }
+
+    const fields = houndDatabaseImportFieldDefinitions.map(({ key, label }) => ({ key, label }));
+    const hounds = [...masterHounds].sort((left, right) => {
+        const leftName = left.registeredName || left.callName || '';
+        const rightName = right.registeredName || right.callName || '';
+        return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
+    });
+    const rows = [
+        fields.map(({ label }) => houndExportCsvValue(label)).join(','),
+        ...hounds.map((hound) => fields.map(({ key }) => houndExportCsvValue(hound[key])).join(',')),
+    ];
+    const date = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([`\uFEFF${rows.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' });
+    downloadBlob(blob, `field-trial-secretary-hounds-${date}.csv`);
+    showMessage(
+        masterHoundMessage,
+        `Exported ${hounds.length} hound${hounds.length === 1 ? '' : 's'}. No trial entries, scores, workers, or paperwork were included.`,
+        'success'
+    );
+}
+
 function showHoundImportMessage(message, type = 'warning') {
     const target = houndImportElement('houndDatabaseImportMessage');
     if (target) showMessage(target, message, type);
@@ -658,6 +689,7 @@ function saveHoundImportTemplate() {
 
 function initializeHoundDatabaseImport() {
     if (!houndImportElement('houndDatabaseImportPanel')) return;
+    houndImportElement('exportHoundDatabaseButton')?.addEventListener('click', exportHoundDatabase);
     renderHoundImportTemplateOptions();
     renderHoundImportMapping();
     renderHoundImportPreview();
