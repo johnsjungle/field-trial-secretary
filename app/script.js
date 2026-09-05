@@ -22,6 +22,8 @@ const buttonHelpText = {
     populateAdminScoresButton: 'Fills preliminary Judge 1 and Judge 2 scores for testing, following the judges assigned in the run plan.',
     populateAdminFinalsScoresButton: 'Fills finals Judge 1 and Judge 2 scores for testing, then recomputes combined scores and placements.',
     removeAdminTestRecordsButton: 'Removes generated test hounds, judges, and workers from the reusable databases without deleting any trials.',
+    buildCatalogEntriesButton: 'Builds a detailed catalog of the selected trials, grouped by breed and stake, with hound, pedigree, breeder, owner, and contact information.',
+    buildCatalogFinalButton: "Builds a combined final catalog showing each selected trial's placement, BOB/BIF award, or recorded outcome for every hound.",
     redrawAllRunoffsButton: 'Builds or redraws all current tie runoff and BOB draws, assigning course numbers and blanket colors.',
     printRunoffDrawSheetButton: 'Prints the runoff running order sheet after colors have been drawn.',
     printAllRunoffJudgeSheetsButton: 'Prints judge sheets for the current runoff order after colors have been drawn.',
@@ -56,6 +58,15 @@ const trialGuideCard = document.getElementById('trialGuideCard');
 const trialGuideSummary = document.getElementById('trialGuideSummary');
 const trialGuideNext = document.getElementById('trialGuideNext');
 const trialGuideList = document.getElementById('trialGuideList');
+const compactHeaderQuery = window.matchMedia('(max-width: 900px)');
+if (compactHeaderQuery.matches && trialGuideCard) {
+    trialGuideCard.open = false;
+}
+compactHeaderQuery.addEventListener?.('change', (event) => {
+    if (event.matches && trialGuideCard) {
+        trialGuideCard.open = false;
+    }
+});
 const subTabs = document.getElementById('subTabs');
 const newTrialButton = document.getElementById('newTrialButton');
 const setActiveButton = document.getElementById('setActiveButton');
@@ -161,7 +172,52 @@ const lciStakes = ['Open', 'Excellent', 'Veteran'];
 const lciClassOptions = lciDivisions.flatMap((division) => lciStakes.map((stake) => `${division} ${stake}`));
 const regularClassOptions = ['Open', 'Field Champion', 'Veteran', 'Provisional', 'Singles'];
 const defaultClassOptions = regularClassOptions;
-const adminPageTabs = ['Judges & Workers', 'Paperwork', 'Hound DB', 'Tools'];
+const associationRules = window.FTSAssociationRules;
+
+function rulesForAssociation(value) {
+    return associationRules.profileForAssociation(value);
+}
+
+function rulesForTrial(trial) {
+    return associationRules.profileForTrial(trial || getSelectedTrial() || { association: document.getElementById('association')?.value || 'ASFA' });
+}
+
+function currentAssociation() {
+    return rulesForTrial().association;
+}
+
+function normalizeTrialRuleset(trial) {
+    return associationRules.normalizeTrialRuleset(trial || {});
+}
+
+function associationHasStarted(trial) {
+    return Boolean(trial && (
+        (trial.entries || []).length
+        || trial.preliminaryDraw
+        || (trial.runPlan || []).length
+        || (trial.bobRunoffs || []).length
+    ));
+}
+
+function applyAssociationControlState(trial = getSelectedTrial()) {
+    const select = document.getElementById('association');
+    if (!select) return;
+    const started = associationHasStarted(trial);
+    select.disabled = Boolean(started);
+    const profile = rulesForTrial(trial);
+    const lciCheckbox = document.getElementById('lciOffered');
+    if (lciCheckbox) {
+        if (!profile.lciAllowed) {
+            lciCheckbox.checked = false;
+            lciCheckbox.disabled = true;
+        } else {
+            lciCheckbox.disabled = Boolean(started);
+        }
+    }
+    populateEntryBreedSelect(trial);
+    renderClassOptions(trial);
+}
+const adminPageTabs = ['Judges & Workers', 'Paperwork', 'Hound DB', 'Reports', 'Tools'];
 
 let stagedPremiumJudgeMatrix = null;
 let premiumJudgeGridImageFile = null;
@@ -391,7 +447,7 @@ const officialFormTemplates = [
     }
 ];
 
-const defaultFormAlignment = window.FIELD_TRIAL_DEFAULT_FORM_ALIGNMENT || {
+const fallbackFormAlignment = {
     asfaRecordSheet: {
         headerFontSize: 10,
         bodyFontSize: 8.5,
@@ -486,6 +542,7 @@ const defaultFormAlignment = window.FIELD_TRIAL_DEFAULT_FORM_ALIGNMENT || {
         mixedTextX: 292,
         mixedTextY: 169,
         flightCircleX: 58,
+        flightCircleStepX: 31.5,
         flightCircleY: 167,
         flightCircleW: 8,
         flightCircleH: 7,
@@ -762,6 +819,91 @@ const defaultFormAlignment = window.FIELD_TRIAL_DEFAULT_FORM_ALIGNMENT || {
         asfaEntryForm: false,
         asfaLciEntryForm: false,
         asfaDrawSheet: false,
+        akcDrawSheet: false,
+    },
+    akcDrawSheet: {
+        templateRevision: 3,
+        globalXAdjust: 0,
+        globalYAdjust: 0,
+        prelimChkX: 52.4,
+        prelimChkY: 89.9,
+        finalChkX: 96.4,
+        finalChkY: 89.9,
+        runoffChkX: 158.4,
+        runoffChkY: 89.9,
+        bifChkX: 202.4,
+        bifChkY: 89.9,
+        sheetNumberX: 166,
+        sheetNumberY: 58,
+        sheetNumberFontSize: 12,
+        blockStartY: 132,
+        blockYStep: 91,
+        houndFontSize: 9.5,
+        breedCircleXAdjust: 0,
+        breedCircleYOffset: 4.78,
+        breedCircleRx: 10,
+        breedCircleRy: 6,
+        breedCircleWeight: 1.4,
+        breedCenterA: 7.82,
+        breedCenterBA: 26.94,
+        breedCenterB: 46.06,
+        breedCenterG: 61.85,
+        breedCenterIB: 79.03,
+        breedCenterIG: 97.6,
+        breedCenterIW: 117.35,
+        breedCenterP: 135.14,
+        breedCenterR: 150.38,
+        breedCenterS: 165.67,
+        breedCenterSD: 184.3,
+        breedCenterW: 201.5,
+        unlistedBreedX: 8,
+        unlistedBreedY: 29,
+        unlistedBreedFontSize: 9.5,
+        courseNumX: 8,
+        courseNumY: 48,
+        courseNumberFontSize: 10,
+        yellowX: 52,
+        yellowY: 20,
+        pinkX: 52,
+        pinkY: 33,
+        blueX: 52,
+        blueY: 46,
+    },
+    akcRecordSheet: {
+        globalXAdjust: 0,
+        globalYAdjust: 0,
+        clubNameX: 95,
+        clubNameY: 88,
+        startsOnX: 355,
+        startsOnY: 88,
+        eventNumX: 495,
+        eventNumY: 88,
+        entriesCountX: 615,
+        entriesCountY: 88,
+        startersCountX: 730,
+        startersCountY: 88,
+        rowTop: 175,
+        rowHeight: 24,
+        judge1X: 115,
+        judge1Y: 544,
+        judge2X: 520,
+        judge2Y: 544,
+        fieldClerkX: 115,
+        fieldClerkY: 566,
+        fieldSecretaryX: 390,
+        fieldSecretaryY: 566,
+        chairNameX: 670,
+        chairNameY: 565,
+    },
+};
+
+const configuredFormAlignment = window.FIELD_TRIAL_DEFAULT_FORM_ALIGNMENT || {};
+const defaultFormAlignment = {
+    ...fallbackFormAlignment,
+    ...configuredFormAlignment,
+    alignmentLocks: {
+        ...fallbackFormAlignment.alignmentLocks,
+        ...(configuredFormAlignment.alignmentLocks || {}),
     },
 };
 
@@ -789,6 +931,13 @@ const fields = [
     'rollCallAt',
     'secretaryName',
     'secretaryEmail',
+    'akcSecretaryMisconduct',
+    'akcSecretaryJudgesChanged',
+    'akcSecretaryJudgeChangeNotes',
+    'akcSecretaryJudgeComplaints',
+    'akcSecretaryLocationSatisfactory',
+    'akcSecretaryDogProtest',
+    'akcSecretaryCommitteeNotes',
     'secretaryJudgesChanged',
     'secretaryPremiumChanged',
     'secretaryJudgeChangeNotes',
@@ -809,6 +958,11 @@ const fields = [
 ];
 
 const secretaryAnswerFields = [
+    'akcSecretaryMisconduct',
+    'akcSecretaryJudgesChanged',
+    'akcSecretaryJudgeComplaints',
+    'akcSecretaryLocationSatisfactory',
+    'akcSecretaryDogProtest',
     'secretaryJudgesChanged',
     'secretaryPremiumChanged',
     'secretaryOpenVetFirstTimers',
@@ -832,6 +986,8 @@ let currentTab = 'setup';
 let currentScoringPage = 'Prelim Scoring';
 let currentWrapUpPage = 'ASFA Secretary Report';
 let currentAdminPage = 'Judges & Workers';
+let selectedCatalogTrialIds = new Set();
+let catalogSelectionInitialized = false;
 let editingHoundId = '';
 let editingEntryId = '';
 let entryDocumentIdsMarkedForRemoval = new Set();
@@ -988,6 +1144,49 @@ function normalizeFormAlignment(value) {
             ...defaultFormAlignment.alignmentLocks,
             ...(source.alignmentLocks || {}),
         },
+        akcDrawSheet: (() => {
+            const defaults = defaultFormAlignment.akcDrawSheet;
+            const saved = { ...(source.akcDrawSheet || {}) };
+            if ('headerTextX' in saved || 'headerTextY' in saved) {
+                return { ...defaults };
+            }
+            const legacyHoundX = Number.isFinite(Number(saved.houndTextX)) ? Number(saved.houndTextX) : defaults.yellowX;
+            const legacyHoundY = Number.isFinite(Number(saved.houndYStart)) ? Number(saved.houndYStart) : defaults.yellowY;
+            const legacyStep = Number.isFinite(Number(saved.houndYStep)) ? Number(saved.houndYStep) : (defaults.pinkY - defaults.yellowY);
+            if (Number(saved.templateRevision || 0) < defaults.templateRevision) {
+                [
+                    'prelimChkX', 'prelimChkY', 'finalChkX', 'finalChkY',
+                    'runoffChkX', 'runoffChkY', 'bifChkX', 'bifChkY',
+                    'breedCircleYOffset', 'breedCenterA', 'breedCenterBA',
+                    'breedCenterB', 'breedCenterG', 'breedCenterIB',
+                    'breedCenterIG', 'breedCenterIW', 'breedCenterP',
+                    'breedCenterR', 'breedCenterS', 'breedCenterSD',
+                    'breedCenterW', 'unlistedBreedX', 'unlistedBreedY',
+                    'unlistedBreedFontSize',
+                ].forEach((key) => {
+                    saved[key] = defaults[key];
+                });
+                saved.templateRevision = defaults.templateRevision;
+            }
+            return {
+                ...defaults,
+                ...saved,
+                prelimChkY: Number.isFinite(Number(saved.prelimChkY)) ? Number(saved.prelimChkY) : Number(saved.phaseChkY ?? defaults.prelimChkY),
+                finalChkY: Number.isFinite(Number(saved.finalChkY)) ? Number(saved.finalChkY) : Number(saved.phaseChkY ?? defaults.finalChkY),
+                runoffChkY: Number.isFinite(Number(saved.runoffChkY)) ? Number(saved.runoffChkY) : Number(saved.phaseChkY ?? defaults.runoffChkY),
+                bifChkY: Number.isFinite(Number(saved.bifChkY)) ? Number(saved.bifChkY) : Number(saved.phaseChkY ?? defaults.bifChkY),
+                yellowX: Number.isFinite(Number(saved.yellowX)) ? Number(saved.yellowX) : legacyHoundX,
+                yellowY: Number.isFinite(Number(saved.yellowY)) ? Number(saved.yellowY) : legacyHoundY,
+                pinkX: Number.isFinite(Number(saved.pinkX)) ? Number(saved.pinkX) : legacyHoundX,
+                pinkY: Number.isFinite(Number(saved.pinkY)) ? Number(saved.pinkY) : legacyHoundY + legacyStep,
+                blueX: Number.isFinite(Number(saved.blueX)) ? Number(saved.blueX) : legacyHoundX,
+                blueY: Number.isFinite(Number(saved.blueY)) ? Number(saved.blueY) : legacyHoundY + (legacyStep * 2),
+            };
+        })(),
+        akcRecordSheet: {
+            ...defaultFormAlignment.akcRecordSheet,
+            ...(source.akcRecordSheet || {}),
+        },
     };
 }
 
@@ -1025,6 +1224,11 @@ function normalizeLoadedTrials(rows) {
         if (trial.id !== id || trial.trialId !== id) {
             changed = true;
         }
+        const rulesetTrial = normalizeTrialRuleset(trial);
+        if (trial.rulesetId !== rulesetTrial.rulesetId || trial.rulesetVersion !== rulesetTrial.rulesetVersion || trial.association !== rulesetTrial.association) {
+            changed = true;
+        }
+        trial = rulesetTrial;
         const normalizedEntries = normalizeLciEntries(trial.entries || trial.hounds || []);
         if (JSON.stringify(normalizedEntries) !== JSON.stringify(trial.entries || trial.hounds || [])) {
             changed = true;
@@ -1097,26 +1301,43 @@ function isBlankPlaceholderTrial(trial) {
         && (!Array.isArray(trial.workers) || trial.workers.length === 0);
 }
 
+function saveBrowserCacheValue(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+    } catch (error) {
+        const quotaExceeded = error?.name === 'QuotaExceededError'
+            || error?.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+            || error?.code === 22
+            || error?.code === 1014;
+        if (!isLocalServerMode() || !quotaExceeded) {
+            throw error;
+        }
+        logClientEvent('browser-cache-quota-exceeded', { key });
+        return false;
+    }
+}
+
 function saveTrials() {
-    localStorage.setItem(storageKey, JSON.stringify(trials));
+    saveBrowserCacheValue(storageKey, trials);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
 
 function saveMasterHounds() {
-    localStorage.setItem(houndStorageKey, JSON.stringify(masterHounds));
+    saveBrowserCacheValue(houndStorageKey, masterHounds);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
 
 function saveMasterJudges() {
-    localStorage.setItem(judgeStorageKey, JSON.stringify(masterJudges));
+    saveBrowserCacheValue(judgeStorageKey, masterJudges);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
 
 function saveMasterWorkers() {
-    localStorage.setItem(workerStorageKey, JSON.stringify(masterWorkers));
+    saveBrowserCacheValue(workerStorageKey, masterWorkers);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
@@ -2131,6 +2352,124 @@ function importDataBackup(file) {
     reader.readAsText(file);
 }
 
+function normalizedNamedOperationalGroups(source, prefix, fallbackLabel) {
+    const rows = Array.isArray(source) && source.length ? source.slice(0, 3) : [{}];
+    return rows.map((row, index) => ({
+        id: String(row && row.id || prefix + '-' + (index + 1)),
+        name: String(row && row.name || fallbackLabel + ' ' + (index + 1)).trim() || fallbackLabel + ' ' + (index + 1),
+    }));
+}
+
+function eventFieldsForTrial(trial) {
+    return normalizedNamedOperationalGroups(trial && trial.eventFields, 'field', 'Field');
+}
+
+function rollCallLanesForTrial(trial) {
+    return normalizedNamedOperationalGroups(trial && trial.rollCallLanes, 'lane', 'Lane');
+}
+
+function readNamedOperationalGroups(countId, containerId, prefix, fallbackLabel, existingRows = []) {
+    const count = Math.max(1, Math.min(3, Number(document.getElementById(countId)?.value || existingRows.length || 1)));
+    const inputs = Array.from(document.querySelectorAll('#' + containerId + ' input[data-operational-name]'));
+    return Array.from({ length: count }, (_, index) => ({
+        id: String(existingRows[index]?.id || prefix + '-' + (index + 1)),
+        name: String(inputs[index]?.value || existingRows[index]?.name || fallbackLabel + ' ' + (index + 1)).trim() || fallbackLabel + ' ' + (index + 1),
+    }));
+}
+
+function renderNamedOperationalGroups(countId, containerId, groups, fallbackLabel) {
+    const countSelect = document.getElementById(countId);
+    const container = document.getElementById(containerId);
+    if (!countSelect || !container) return;
+    countSelect.value = String(groups.length);
+    container.innerHTML = '';
+    groups.forEach((group, index) => {
+        const label = document.createElement('label');
+        label.textContent = fallbackLabel + ' ' + (index + 1) + ' name';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.dataset.operationalName = 'true';
+        input.value = group.name;
+        input.placeholder = fallbackLabel + ' ' + (index + 1);
+        label.appendChild(input);
+        container.appendChild(label);
+    });
+}
+
+function renderOperationalSetup(trial) {
+    renderNamedOperationalGroups('eventFieldCount', 'eventFieldNames', eventFieldsForTrial(trial || {}), 'Field');
+    renderNamedOperationalGroups('rollCallLaneCount', 'rollCallLaneNames', rollCallLanesForTrial(trial || {}), 'Lane');
+}
+
+function resizeOperationalSetup(countId, containerId, prefix, fallbackLabel) {
+    const selected = getSelectedTrial() || {};
+    const existing = prefix === 'field' ? eventFieldsForTrial(selected) : rollCallLanesForTrial(selected);
+    const groups = readNamedOperationalGroups(countId, containerId, prefix, fallbackLabel, existing);
+    renderNamedOperationalGroups(countId, containerId, groups, fallbackLabel);
+}
+function saveOperationalSetupFromControls() {
+    const trial = getSelectedTrial();
+    if (!trial) return;
+    trial.eventFields = readNamedOperationalGroups(
+        'eventFieldCount',
+        'eventFieldNames',
+        'field',
+        'Field',
+        eventFieldsForTrial(trial)
+    );
+    trial.rollCallLanes = readNamedOperationalGroups(
+        'rollCallLaneCount',
+        'rollCallLaneNames',
+        'lane',
+        'Lane',
+        rollCallLanesForTrial(trial)
+    );
+    normalizeTrialOperationalState(trial);
+    trial.updatedAt = new Date().toISOString();
+    upsertTrial(trial);
+    saveTrials();
+    render();
+}
+function normalizeTrialOperationalState(trial) {
+    if (!trial) return false;
+    let changed = false;
+    const fields = eventFieldsForTrial(trial);
+    const lanes = rollCallLanesForTrial(trial);
+    if (!Array.isArray(trial.eventFields) || JSON.stringify(trial.eventFields) !== JSON.stringify(fields)) {
+        trial.eventFields = fields;
+        changed = true;
+    }
+    if (!Array.isArray(trial.rollCallLanes) || JSON.stringify(trial.rollCallLanes) !== JSON.stringify(lanes)) {
+        trial.rollCallLanes = lanes;
+        changed = true;
+    }
+    const fieldIds = new Set(fields.map((row) => row.id));
+    const laneIds = new Set(lanes.map((row) => row.id));
+    const assignedRows = (trial.runPlan || []).map((row) => {
+        const fieldId = fieldIds.has(row.fieldId) ? row.fieldId : fields[0].id;
+        const rollCallLaneId = laneIds.has(row.rollCallLaneId) ? row.rollCallLaneId : lanes[0].id;
+        return fieldId === row.fieldId && rollCallLaneId === row.rollCallLaneId
+            ? row
+            : { ...row, fieldId, rollCallLaneId };
+    });
+    const normalizedRows = renumberRunPlanOrders(assignedRows, fields);
+    if (JSON.stringify(trial.runPlan || []) !== JSON.stringify(normalizedRows)) changed = true;
+    trial.runPlan = normalizedRows;
+    return changed;
+}
+
+function operationalGroupName(groups, id, fallback = '') {
+    return groups.find((group) => group.id === id)?.name || fallback;
+}
+
+function rollCallLaneForEntry(trial, entry) {
+    const lanes = rollCallLanesForTrial(trial);
+    const row = (trial.runPlan || []).find((item) => clean(item.breed) === clean(runGroupBreedForEntry(entry)));
+    return {
+        id: row?.rollCallLaneId || lanes[0].id,
+        name: operationalGroupName(lanes, row?.rollCallLaneId, lanes[0].name),
+    };
+}
 function readForm() {
     const data = {};
 
@@ -2139,6 +2478,11 @@ function readForm() {
         data[field] = element.type === 'checkbox' ? element.checked : element.value.trim();
     });
 
+    const profile = rulesForAssociation(data.association);
+    data.association = profile.association;
+    data.rulesetId = profile.rulesetId;
+    data.rulesetVersion = profile.rulesetVersion;
+    if (!profile.lciAllowed) data.lciOffered = false;
     const existing = getSelectedTrial();
     const answerOverrides = existing && existing.secretaryAnswerOverrides && typeof existing.secretaryAnswerOverrides === 'object'
         ? { ...existing.secretaryAnswerOverrides }
@@ -2159,6 +2503,10 @@ function readForm() {
     data.breedsOffered = deriveBreedsFromEntries(data.entries, existing ? existing.breedsOffered : '');
     data.judges = getSelectedArray('judges');
     data.workers = getSelectedArray('workers');
+    const existingFields = eventFieldsForTrial(existing || {});
+    const existingLanes = rollCallLanesForTrial(existing || {});
+    data.eventFields = readNamedOperationalGroups('eventFieldCount', 'eventFieldNames', 'field', 'Field', existingFields);
+    data.rollCallLanes = readNamedOperationalGroups('rollCallLaneCount', 'rollCallLaneNames', 'lane', 'Lane', existingLanes);
     data.runPlan = getSelectedArray('runPlan');
     data.runPlanEntriesFingerprint = existing && existing.runPlanEntriesFingerprint ? existing.runPlanEntriesFingerprint : '';
     data.preliminaryDraw = existing && existing.preliminaryDraw ? existing.preliminaryDraw : null;
@@ -2171,6 +2519,7 @@ function readForm() {
     data.printStatusFingerprints = existing && existing.printStatusFingerprints ? existing.printStatusFingerprints : {};
     data.ownerSeparationReviewedAt = existing && existing.ownerSeparationReviewedAt ? existing.ownerSeparationReviewedAt : '';
     data.mixedStakeBreeds = existing && Array.isArray(existing.mixedStakeBreeds) ? existing.mixedStakeBreeds : [];
+    data.splitStakeReview = existing && existing.splitStakeReview ? existing.splitStakeReview : {};
     data.premiumJudgeAssignments = existing && existing.premiumJudgeAssignments ? existing.premiumJudgeAssignments : null;
     data.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
     data.archivedAt = existing && existing.archivedAt ? existing.archivedAt : '';
@@ -2202,6 +2551,8 @@ function writeForm(trial) {
             value = Number.isFinite(numericRate) ? numericRate.toFixed(2) : '3.50';
         } else if (field === 'secretaryLciRegistrationCount') {
             value = String(effectiveSecretaryLciRegistrationCount(trial || {}));
+        } else if (field === 'akcSecretaryCommitteeNotes' && !value) {
+            value = defaultAkcCommitteeNotes(trial || {});
         }
 
         if (element.type === 'checkbox') {
@@ -2212,6 +2563,8 @@ function writeForm(trial) {
         element.value = value || '';
     });
 
+    applyAssociationControlState(trial || {});
+    renderOperationalSetup(trial || {});
     document.getElementById('trialId').value = trial ? trial.id : '';
     if (document.getElementById('rollCallSort')) {
         document.getElementById('rollCallSort').value = trial && trial.rollCallSort ? trial.rollCallSort : 'breedClass';
@@ -2234,6 +2587,11 @@ function secretarySuggestedAnswers(trial) {
     const firstTime = (entry) => Boolean(entry.firstTime);
     const stake = (entry) => clean(entry.className || entry.stake);
     return {
+        akcSecretaryMisconduct: 'no',
+        akcSecretaryJudgesChanged: 'no',
+        akcSecretaryJudgeComplaints: 'no',
+        akcSecretaryLocationSatisfactory: 'yes',
+        akcSecretaryDogProtest: 'no',
         secretaryJudgesChanged: 'no',
         secretaryPremiumChanged: 'no',
         secretaryOpenVetFirstTimers: entries.some((entry) => firstTime(entry) && ['OPEN', 'VETERAN'].includes(stake(entry))) ? 'yes' : 'no',
@@ -2243,28 +2601,58 @@ function secretarySuggestedAnswers(trial) {
     };
 }
 
+function defaultAkcCommitteeNotes(trial) {
+    const names = [];
+    [trial.trialChair, trial.secretaryName].forEach((value) => {
+        const name = String(value || '').trim();
+        if (name && !names.includes(name)) {
+            names.push(name);
+        }
+    });
+    (trial.workers || []).forEach((worker) => {
+        const role = clean(worker.role || worker.assignment);
+        if (!role.includes('COMMITTEE')) {
+            return;
+        }
+        const name = String(worker.name || worker.workerName || '').trim();
+        if (name && !names.includes(name)) {
+            names.push(name);
+        }
+    });
+    return names.join(', ');
+}
+
 function renderSecretaryFeeSummary(trial) {
     const container = document.getElementById('secretaryFeeSummary');
     if (!container) {
         return;
     }
     const summary = calculateSecretaryFees(trial || {});
+    const isAkc = rulesForTrial(trial || {}).association === 'AKC';
+    const akcEntryCount = (trial.entries || []).length;
+    const rows = isAkc
+        ? [
+            ['Total entries', akcEntryCount],
+            ['AKC recording fee', currency(4.5)],
+            ['Total service fees', currency(akcEntryCount * 4.5)],
+        ]
+        : [
+            ['Breed entries', summary.breedEntries],
+            ['Per-capita rate', currency(summary.rate)],
+            ['Breed per capita', currency(summary.breedFee)],
+            ['Special stakes', currency(summary.specialFee)],
+            ['LCI registrations', summary.lciRegistrationCount],
+            ['LCI registration fees', currency(summary.lciRegistrationFee)],
+            ['Records fee', currency(summary.recordsFee)],
+            ['Total due', currency(summary.totalDue)],
+            ['Paid', currency(summary.paid)],
+            ['Remaining', currency(summary.remaining)],
+        ];
     container.innerHTML = '';
-    [
-        ['Breed entries', summary.breedEntries],
-        ['Per-capita rate', currency(summary.rate)],
-        ['Breed per capita', currency(summary.breedFee)],
-        ['Special stakes', currency(summary.specialFee)],
-        ['LCI registrations', summary.lciRegistrationCount],
-        ['LCI registration fees', currency(summary.lciRegistrationFee)],
-        ['Records fee', currency(summary.recordsFee)],
-        ['Total due', currency(summary.totalDue)],
-        ['Paid', currency(summary.paid)],
-        ['Remaining', currency(summary.remaining)],
-    ].forEach(([label, value]) => {
+    rows.forEach(([label, value]) => {
         const row = document.createElement('div');
         row.className = 'secretary-fee-row';
-        if (label === 'Total due' || label === 'Remaining') {
+        if (label === 'Total due' || label === 'Remaining' || label === 'Total service fees') {
             row.classList.add('secretary-fee-row-emphasis');
         }
         const labelElement = document.createElement('span');
@@ -2368,7 +2756,9 @@ function currency(value) {
 }
 
 function normalizeTrialDerivedState(trial) {
-    return recalculateTrialResults(trial);
+    const operationalChanged = normalizeTrialOperationalState(trial);
+    const resultChanged = recalculateTrialResults(trial);
+    return operationalChanged || resultChanged;
 }
 
 function populateStateProvinceOptions() {
@@ -2420,34 +2810,50 @@ function bindOwnerPhoneFormatter(id) {
 }
 
 function populateBreedSelects() {
-    ['masterBreed', 'entryBreed'].forEach((id) => {
-        const select = document.getElementById(id);
-        if (!select) {
-            return;
-        }
-        const current = select.value;
-        select.innerHTML = '';
-        breedOptions.forEach(([value, label]) => {
+    const master = document.getElementById('masterBreed');
+    if (master) {
+        const current = master.value;
+        master.innerHTML = '';
+        [...breedOptions, ...lciDivisions.map((division) => [division, division])].forEach(([value, label]) => {
             const option = document.createElement('option');
             option.value = value;
             option.textContent = breedOptionLabel(value, label);
-            select.appendChild(option);
+            master.appendChild(option);
         });
-        lciDivisions.forEach((division) => {
-            const option = document.createElement('option');
-            option.value = division;
-            option.textContent = division;
-            select.appendChild(option);
-        });
-        select.value = current || '';
-    });
+        master.value = current || '';
+    }
+    populateEntryBreedSelect();
     populateAdminPlanBreedSelect();
+}
+
+function populateEntryBreedSelect(trial = getSelectedTrial()) {
+    const select = document.getElementById('entryBreed');
+    if (!select) return;
+    const current = select.value;
+    const profile = rulesForTrial(trial);
+    const allowed = new Set(profile.eligibleBreedCodes);
+    const options = breedOptions.filter(([value]) => !value || allowed.has(clean(value)));
+    if (profile.lciAllowed) {
+        options.push(...lciDivisions.map((division) => [division, division]));
+    }
+    if (current && !options.some(([value]) => value === current)) {
+        const known = breedOptions.find(([value]) => value === current);
+        options.push(known || [current, current]);
+    }
+    select.innerHTML = '';
+    options.forEach(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = breedOptionLabel(value, label);
+        select.appendChild(option);
+    });
+    select.value = current || '';
 }
 
 function renderAdminTools() {
     const selected = getSelectedTrial();
     const scoreToolsEnabled = Boolean(selected && selected.testTrial);
-    ['populateAdminScoresButton', 'populateAdminFinalsScoresButton'].forEach((id) => {
+    ['populateAdminScoresButton', 'populateAdminFinalsScoresButton', 'populateAdminRunoffScoresButton'].forEach((id) => {
         const button = document.getElementById(id);
         if (!button) {
             return;
@@ -2482,14 +2888,16 @@ function populateAdminPlanBreedSelect() {
         return;
     }
     const current = select.value;
+    const association = document.getElementById('adminTestAssociation')?.value || 'ASFA';
+    const profile = rulesForAssociation(association);
     select.innerHTML = '';
-    breedOptions.forEach(([value, label]) => {
+    breedOptions.filter(([value]) => !value || profile.eligibleBreedCodes.includes(clean(value))).forEach(([value, label]) => {
         const option = document.createElement('option');
         option.value = value;
         option.textContent = value ? breedOptionLabel(value, label) : 'Run group / breed';
         select.appendChild(option);
     });
-    lciDivisions.forEach((division) => {
+    (profile.lciAllowed ? lciDivisions : []).forEach((division) => {
         const option = document.createElement('option');
         option.value = division;
         option.textContent = division;
@@ -2499,7 +2907,7 @@ function populateAdminPlanBreedSelect() {
     singles.value = 'Singles';
     singles.textContent = 'Singles';
     select.appendChild(singles);
-    select.value = [...breedOptions.map(([value]) => value), ...lciDivisions, 'Singles'].includes(current) ? current : '';
+    select.value = [...profile.eligibleBreedCodes, ...(profile.lciAllowed ? lciDivisions : []), 'Singles'].includes(current) ? current : '';
 }
 
 function populateAdminPlanClassSelect() {
@@ -2509,11 +2917,12 @@ function populateAdminPlanClassSelect() {
     }
     const current = select.value;
     const runGroup = document.getElementById('adminPlanBreed')?.value || '';
+    const profile = rulesForAssociation(document.getElementById('adminTestAssociation')?.value || 'ASFA');
     const options = lciDivisions.includes(runGroup)
         ? lciStakes
         : clean(runGroup) === 'SINGLES'
             ? ['Singles']
-            : ['Open', 'Field Champion', 'Veteran', 'Singles'];
+            : profile.regularStakes.filter((stake) => stake !== 'Provisional');
     select.innerHTML = '';
     options.forEach((className) => {
         const option = document.createElement('option');
@@ -3265,6 +3674,50 @@ function trialWrapUpGuideSteps(trial) {
     const recordPacketPrinted = printStatus(trial, 'asfaRecordPacket');
     const paperworkSubmitted = Boolean(trial && trial.paperworkSubmittedAt);
     const archived = Boolean(trial && trial.archivedAt);
+    if (rulesForTrial(trial || {}).association === 'AKC') {
+        return [
+            {
+                id: 'wrap-secretary-report',
+                label: 'AKC Secretary Report',
+                tab: 'wrapup',
+                wrapUpPage: 'AKC Secretary Report',
+                sectionTitle: 'AKC Secretary Report',
+                status: stepStatus(secretaryPrinted, secretaryReady),
+                detail: secretaryPrinted ? 'AKC Event Secretary Report has been printed or marked created.' : 'Answer the AKC event questions and print the Event Secretary Report.',
+                action: 'Go To Secretary Report',
+            },
+            {
+                id: 'wrap-record-packet',
+                label: 'Print & Review AKC Submission Packet',
+                tab: 'wrapup',
+                wrapUpPage: 'AKC Submission Packet',
+                sectionTitle: 'AKC Submission Packet',
+                status: stepStatus(recordPacketPrinted, secretaryPrinted),
+                detail: recordPacketPrinted ? 'AKC submission packet has been printed or marked created.' : 'Print and review the AKC submission packet after completing the Secretary Report.',
+                action: 'Go To Submission Packet',
+            },
+            {
+                id: 'wrap-submit-paperwork',
+                label: 'Submit AKC Paperwork',
+                tab: 'wrapup',
+                wrapUpPage: 'Submit Paperwork',
+                sectionTitle: 'Submit Paperwork',
+                status: stepStatus(paperworkSubmitted, recordPacketPrinted),
+                detail: paperworkSubmitted ? 'Paperwork marked submitted ' + formatTimestamp(trial.paperworkSubmittedAt) + '.' : 'Email the event results to performanceresults@akc.org and handle service-fee payment as directed on the AKC report.',
+                action: 'Go To Submission',
+            },
+            {
+                id: 'wrap-archive-trial',
+                label: 'Archive Trial',
+                tab: 'wrapup',
+                wrapUpPage: 'Archive Trial',
+                sectionTitle: 'Archive Trial',
+                status: stepStatus(archived, paperworkSubmitted),
+                detail: archived ? 'Trial archived ' + formatTimestamp(trial.archivedAt) + '.' : 'Create the final archive package and lock the trial after submission.',
+                action: 'Go To Archive',
+            },
+        ];
+    }
     return [
         {
             id: 'wrap-secretary-report',
@@ -3540,6 +3993,7 @@ function renderOfficialForms(trial) {
         officialFormsMessage.textContent = `Official ${currentAssociation} PDFs will be used as print templates, then filled from trial data.`;
     }
     renderAsfaRecordAlignmentTool(trial);
+    renderAkcRecordAlignmentTool(trial);
 }
 
 function renderAsfaRecordAlignmentTool(trial) {
@@ -3623,7 +4077,7 @@ function renderAsfaRecordAlignmentTool(trial) {
 
     const tool = document.getElementById('asfaRecordAlignmentTool');
     if (tool) {
-        tool.hidden = Boolean(trial && clean(trial.association || 'ASFA') !== 'ASFA');
+        tool.hidden = false;
     }
     renderAsfaEntryAlignmentTool(trial);
     renderAsfaJudgeAlignmentTool(trial);
@@ -3682,7 +4136,369 @@ function renderAsfaDrawAlignmentTool(trial) {
 
     const tool = document.getElementById('asfaDrawAlignmentTool');
     if (tool) {
-        tool.hidden = Boolean(trial && clean(trial.association || 'ASFA') !== 'ASFA');
+        tool.hidden = false;
+    }
+    renderAkcDrawAlignmentTool(trial);
+}
+
+function getAkcDrawLayout() {
+    return formAlignment.akcDrawSheet;
+}
+
+function getDrawLayoutForTrial(trial) {
+    const association = String(trial?.association || 'ASFA').trim().toUpperCase();
+    return association === 'AKC' ? getAkcDrawLayout() : getAsfaDrawLayout();
+}
+
+function renderAkcDrawAlignmentTool(trial) {
+    const container = document.getElementById('akcDrawAlignmentControls');
+    if (!container) {
+        return;
+    }
+    const layout = getAkcDrawLayout();
+    const controls = [
+        ['globalXAdjust', 'Global X offset', -60, 60, 0.5],
+        ['globalYAdjust', 'Global Y offset', -60, 60, 0.5],
+        ['blockStartY', 'First course row Y', 110, 155, 0.25],
+        ['blockYStep', 'Course row spacing', 80, 102, 0.25],
+        ['houndFontSize', 'Hound name font size', 6, 14, 0.25],
+        ['prelimChkX', 'Preliminary check X', -20, 180, 0.5],
+        ['prelimChkY', 'Preliminary check Y', 55, 125, 0.5],
+        ['finalChkX', 'Final check X', -20, 220, 0.5],
+        ['finalChkY', 'Final check Y', 55, 125, 0.5],
+        ['runoffChkX', 'Run-Off check X', -20, 250, 0.5],
+        ['runoffChkY', 'Run-Off check Y', 55, 125, 0.5],
+        ['bifChkX', 'BIF check X', -20, 250, 0.5],
+        ['bifChkY', 'BIF check Y', 55, 125, 0.5],
+        ['sheetNumberX', 'Draw sheet # X', 80, 240, 0.5],
+        ['sheetNumberY', 'Draw sheet # Y', 35, 90, 0.5],
+        ['sheetNumberFontSize', 'Draw sheet # font size', 7, 18, 0.25],
+        ['breedCircleXAdjust', 'Breed circle X adjustment', -30, 30, 0.5],
+        ['breedCircleYOffset', 'Breed circle Y (from block top)', -5, 18, 0.25],
+        ['breedCircleRx', 'Breed circle width', 5, 18, 0.25],
+        ['breedCircleRy', 'Breed circle height', 3, 12, 0.25],
+        ['breedCircleWeight', 'Breed circle line weight', 0.5, 3, 0.1],
+        ['breedCenterA', 'Breed A circle X', 2, 18, 0.25],
+        ['breedCenterBA', 'Breed BA circle X', 18, 38, 0.25],
+        ['breedCenterB', 'Breed B circle X', 36, 56, 0.25],
+        ['breedCenterG', 'Breed G circle X', 54, 74, 0.25],
+        ['breedCenterIB', 'Breed IB circle X', 71, 91, 0.25],
+        ['breedCenterIG', 'Breed IG circle X', 89, 109, 0.25],
+        ['breedCenterIW', 'Breed IW circle X', 108, 128, 0.25],
+        ['breedCenterP', 'Breed P circle X', 127, 147, 0.25],
+        ['breedCenterR', 'Breed R circle X', 142, 162, 0.25],
+        ['breedCenterS', 'Breed S circle X', 157, 177, 0.25],
+        ['breedCenterSD', 'Breed SD circle X', 174, 194, 0.25],
+        ['breedCenterW', 'Breed W circle X', 192, 212, 0.25],
+        ['unlistedBreedX', 'Singles / unlisted breed X', -5, 80, 0.5],
+        ['unlistedBreedY', 'Singles / unlisted breed Y', 18, 45, 0.25],
+        ['unlistedBreedFontSize', 'Singles / unlisted font size', 6, 12, 0.25],
+        ['courseNumX', 'Course number X', -10, 80, 0.5],
+        ['courseNumY', 'Course number Y', 10, 75, 0.5],
+        ['courseNumberFontSize', 'Course # font size', 7, 18, 0.25],
+        ['yellowX', 'Yellow hound X', 20, 130, 0.5],
+        ['yellowY', 'Yellow hound Y', 5, 60, 0.5],
+        ['pinkX', 'Pink hound X', 20, 130, 0.5],
+        ['pinkY', 'Pink hound Y', 10, 75, 0.5],
+        ['blueX', 'Blue hound X', 20, 130, 0.5],
+        ['blueY', 'Blue hound Y', 15, 90, 0.5],
+    ];
+    renderAlignmentControls(container, 'akcDrawSheet', layout, controls);
+    renderAkcDrawVisualEditor(layout);
+    const tool = document.getElementById('akcDrawAlignmentTool');
+    if (tool) {
+        tool.hidden = false;
+    }
+}
+
+function renderAkcDrawVisualEditor(layout) {
+    const container = document.getElementById('akcDrawVisualEditor');
+    if (!container) {
+        return;
+    }
+    const width = 792;
+    const height = 612;
+    const COL1_X = 27;
+    const BLOCK_TOP = Number(layout.blockStartY ?? 132);
+    const items = [
+        { key: 'sheetNumber', label: 'Draw sheet #', xKey: 'sheetNumberX', yKey: 'sheetNumberY', baseX: COL1_X, baseY: 0 },
+        { key: 'prelimChk', label: 'Preliminary check', xKey: 'prelimChkX', yKey: 'prelimChkY', baseX: COL1_X, baseY: 0 },
+        { key: 'finalChk', label: 'Final check', xKey: 'finalChkX', yKey: 'finalChkY', baseX: COL1_X, baseY: 0 },
+        { key: 'runoffChk', label: 'Run-Off check', xKey: 'runoffChkX', yKey: 'runoffChkY', baseX: COL1_X, baseY: 0 },
+        { key: 'bifChk', label: 'BIF check', xKey: 'bifChkX', yKey: 'bifChkY', baseX: COL1_X, baseY: 0 },
+        {
+            key: 'breedCircle', label: 'Breed circle (IG)',
+            xKey: 'breedCenterIG', yKey: 'breedCircleYOffset',
+            baseX: COL1_X, baseY: BLOCK_TOP,
+        },
+        { key: 'unlistedBreed', label: 'Singles / unlisted breed', xKey: 'unlistedBreedX', yKey: 'unlistedBreedY', baseX: COL1_X, baseY: BLOCK_TOP },
+        { key: 'courseNum', label: 'Course number', xKey: 'courseNumX', yKey: 'courseNumY', baseX: COL1_X, baseY: BLOCK_TOP },
+        { key: 'yellowHound', label: 'Yellow hound', xKey: 'yellowX', yKey: 'yellowY', baseX: COL1_X, baseY: BLOCK_TOP },
+        { key: 'pinkHound', label: 'Pink hound', xKey: 'pinkX', yKey: 'pinkY', baseX: COL1_X, baseY: BLOCK_TOP },
+        { key: 'blueHound', label: 'Blue hound', xKey: 'blueX', yKey: 'blueY', baseX: COL1_X, baseY: BLOCK_TOP },
+    ];
+
+    container.innerHTML = `
+        <p class="field-note">Drag each labelled handle onto the matching item on the official AKC template. All phase checks, the draw-sheet number, breed circle, Singles / unlisted breed label, course number, and blanket-color hound lines move independently.</p>
+        <div class="draw-sheet-stage">
+            <svg class="draw-sheet-overlay" viewBox="0 0 ${width} ${height}" aria-label="AKC draw sheet alignment editor">
+                <image href="/api/template-image/akc-draw" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>
+            </svg>
+        </div>
+    `;
+    const svg = container.querySelector('svg');
+    items.forEach((item) => {
+        const x = Number(item.baseX || 0) + Number(layout[item.xKey] || 0) + Number(layout.globalXAdjust || 0);
+        const yExtra = item.yDelta ? item.yDelta(layout) : 0;
+        const y = Number(item.baseY || 0) + Number(layout[item.yKey] || 0) + Number(layout.globalYAdjust || 0) + yExtra;
+        const group = svgElement('g', {
+            class: 'draw-editor-item',
+            'data-type': 'text',
+            'data-x-key': item.xKey,
+            'data-y-key': item.yKey,
+            'data-base-x': String(item.baseX),
+            'data-base-y': String(item.baseY),
+            'data-y-delta': String(yExtra),
+        });
+        group.appendChild(svgElement('rect', { x: x - 2, y: y - 10, width: 85, height: 14, fill: 'rgba(255,255,255,0.75)', stroke: '#b3261e', 'stroke-width': '1.4' }));
+        group.appendChild(svgElement('text', { x, y, 'font-size': '7', fill: '#b3261e', 'font-weight': '700' }, item.label));
+        group.appendChild(svgElement('rect', { class: 'draw-editor-handle', x: x + 75, y: y - 8, width: 6, height: 6, fill: '#b3261e' }));
+        svg.appendChild(group);
+    });
+    enableAkcDrawVisualDrag(svg);
+}
+
+function enableAkcDrawVisualDrag(svg) {
+    let drag = null;
+    const pointFromEvent = (event) => {
+        const point = svg.createSVGPoint();
+        point.x = event.clientX;
+        point.y = event.clientY;
+        return point.matrixTransform(svg.getScreenCTM().inverse());
+    };
+
+    svg.addEventListener('pointerdown', (event) => {
+        const item = event.target.closest('.draw-editor-item');
+        if (!item) {
+            return;
+        }
+        event.preventDefault();
+        item.setPointerCapture?.(event.pointerId);
+        drag = {
+            item,
+            start: pointFromEvent(event),
+            layout: { ...getAkcDrawLayout() },
+        };
+    });
+
+    svg.addEventListener('pointermove', (event) => {
+        if (!drag) {
+            return;
+        }
+        const point = pointFromEvent(event);
+        const dx = point.x - drag.start.x;
+        const dy = point.y - drag.start.y;
+        const layout = getAkcDrawLayout();
+        const xKey = drag.item.dataset.xKey;
+        const yKey = drag.item.dataset.yKey;
+        layout[xKey] = Math.round((Number(drag.layout[xKey] || 0) + dx) * 10) / 10;
+        layout[yKey] = Math.round((Number(drag.layout[yKey] || 0) + dy) * 10) / 10;
+        saveFormAlignment();
+        updateAkcDrawVisualItem(drag.item, layout);
+    });
+
+    const finish = () => {
+        if (!drag) {
+            return;
+        }
+        drag = null;
+        renderAkcDrawAlignmentTool(readForm());
+    };
+    svg.addEventListener('pointerup', finish);
+    svg.addEventListener('pointerleave', finish);
+}
+
+function updateAkcDrawVisualItem(item, layout) {
+    const baseX = Number(item.dataset.baseX || 0);
+    const baseY = Number(item.dataset.baseY || 0);
+    const xKey = item.dataset.xKey;
+    const yKey = item.dataset.yKey;
+    const yDelta = Number(item.dataset.yDelta || 0);
+    const x = baseX + Number(layout[xKey] || 0) + Number(layout.globalXAdjust || 0);
+    const y = baseY + Number(layout[yKey] || 0) + Number(layout.globalYAdjust || 0) + yDelta;
+    const rect = item.querySelector('rect:first-child');
+    const label = item.querySelector('text');
+    const handle = item.querySelector('rect:last-child');
+    if (rect) {
+        rect.setAttribute('x', String(x - 2));
+        rect.setAttribute('y', String(y - 10));
+    }
+    if (label) {
+        label.setAttribute('x', String(x));
+        label.setAttribute('y', String(y));
+    }
+    if (handle) {
+        handle.setAttribute('x', String(x + 75));
+        handle.setAttribute('y', String(y - 8));
+    }
+}
+
+function getAkcRecordLayout() {
+    return formAlignment.akcRecordSheet;
+}
+
+function renderAkcRecordAlignmentTool(trial) {
+    const container = document.getElementById('akcRecordAlignmentControls');
+    if (!container) {
+        return;
+    }
+    const layout = getAkcRecordLayout();
+    const controls = [
+        ['globalXAdjust', 'All text X offset', -20, 20, 0.5],
+        ['globalYAdjust', 'All text Y offset', -20, 20, 0.5],
+        ['clubNameX', 'Club name X', 50, 180, 1],
+        ['clubNameY', 'Club name Y', 60, 110, 1],
+        ['startsOnX', 'Date X', 300, 400, 1],
+        ['startsOnY', 'Date Y', 60, 110, 1],
+        ['eventNumX', 'Event # X', 440, 540, 1],
+        ['eventNumY', 'Event # Y', 60, 110, 1],
+        ['entriesCountX', '# Entries X', 560, 660, 1],
+        ['startersCountX', '# Starters X', 680, 780, 1],
+        ['rowTop', 'First hound row Y', 150, 200, 1],
+        ['rowHeight', 'Row spacing', 18, 30, 0.5],
+        ['judge1X', 'Judge 1 name X', 80, 200, 1],
+        ['judge1Y', 'Judge 1 name Y', 520, 580, 1],
+        ['judge2X', 'Judge 2 name X', 450, 580, 1],
+        ['judge2Y', 'Judge 2 name Y', 520, 580, 1],
+        ['fieldClerkX', 'Field Clerk X', 80, 200, 1],
+        ['fieldSecretaryX', 'Field Secretary X', 330, 450, 1],
+        ['chairNameX', 'Field Chair X', 600, 730, 1],
+    ];
+    renderAlignmentControls(container, 'akcRecordSheet', layout, controls);
+    renderAkcRecordVisualEditor(layout);
+    const tool = document.getElementById('akcRecordAlignmentTool');
+    if (tool) {
+        tool.hidden = false;
+    }
+}
+
+function renderAkcRecordVisualEditor(layout) {
+    const container = document.getElementById('akcRecordVisualEditor');
+    if (!container) {
+        return;
+    }
+    const width = 792;
+    const height = 612;
+    const items = [
+        { key: 'clubName', label: 'Club Name', xKey: 'clubNameX', yKey: 'clubNameY' },
+        { key: 'startsOn', label: 'Date', xKey: 'startsOnX', yKey: 'startsOnY' },
+        { key: 'eventNum', label: 'Event #', xKey: 'eventNumX', yKey: 'eventNumY' },
+        { key: 'rowTop', label: 'Row 1', xKey: 'rowTopX', yKey: 'rowTop', baseX: 30 },
+        { key: 'judge1', label: 'Judge 1', xKey: 'judge1X', yKey: 'judge1Y' },
+        { key: 'judge2', label: 'Judge 2', xKey: 'judge2X', yKey: 'judge2Y' },
+        { key: 'fieldSecretary', label: 'Secretary', xKey: 'fieldSecretaryX', yKey: 'fieldSecretaryY' },
+    ];
+
+    container.innerHTML = `
+        <p class="field-note">This is the official AKC Lure Coursing Scoresheet (JERSC3). Drag red target handles to adjust filled-in values on the template image.</p>
+        <div class="record-sheet-stage">
+            <svg class="record-sheet-overlay" viewBox="0 0 ${width} ${height}" aria-label="AKC record sheet alignment editor">
+                <image href="/api/template-image/akc-record" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>
+            </svg>
+        </div>
+    `;
+    const svg = container.querySelector('svg');
+    items.forEach((item) => {
+        const x = Number(item.baseX || layout[item.xKey] || 0) + Number(layout.globalXAdjust || 0);
+        const y = Number(layout[item.yKey] || 0) + Number(layout.globalYAdjust || 0);
+        const group = svgElement('g', {
+            class: 'record-editor-item',
+            'data-x-key': item.xKey,
+            'data-y-key': item.yKey,
+            'data-base-x': String(item.baseX || 0),
+        });
+        group.appendChild(svgElement('rect', { x: x - 2, y: y - 10, width: 75, height: 14, fill: 'rgba(255,255,255,0.75)', stroke: '#b3261e', 'stroke-width': '1.4' }));
+        group.appendChild(svgElement('text', { x, y, 'font-size': '7', fill: '#b3261e', 'font-weight': '700' }, item.label));
+        group.appendChild(svgElement('rect', { class: 'record-editor-handle', x: x + 65, y: y - 8, width: 6, height: 6, fill: '#b3261e' }));
+        svg.appendChild(group);
+    });
+    enableAkcRecordVisualDrag(svg);
+}
+
+function enableAkcRecordVisualDrag(svg) {
+    let drag = null;
+    const pointFromEvent = (event) => {
+        const point = svg.createSVGPoint();
+        point.x = event.clientX;
+        point.y = event.clientY;
+        return point.matrixTransform(svg.getScreenCTM().inverse());
+    };
+
+    svg.addEventListener('pointerdown', (event) => {
+        const item = event.target.closest('.record-editor-item');
+        if (!item) {
+            return;
+        }
+        event.preventDefault();
+        item.setPointerCapture?.(event.pointerId);
+        drag = {
+            item,
+            start: pointFromEvent(event),
+            layout: { ...getAkcRecordLayout() },
+        };
+    });
+
+    svg.addEventListener('pointermove', (event) => {
+        if (!drag) {
+            return;
+        }
+        const point = pointFromEvent(event);
+        const dx = point.x - drag.start.x;
+        const dy = point.y - drag.start.y;
+        const layout = getAkcRecordLayout();
+        const xKey = drag.item.dataset.xKey;
+        const yKey = drag.item.dataset.yKey;
+        if (xKey && xKey !== 'undefined') {
+            layout[xKey] = Math.max(0, Math.round((Number(drag.layout[xKey] || 0) + dx) * 10) / 10);
+        }
+        if (yKey && yKey !== 'undefined') {
+            layout[yKey] = Math.max(0, Math.round((Number(drag.layout[yKey] || 0) + dy) * 10) / 10);
+        }
+        saveFormAlignment();
+        updateAkcRecordVisualItem(drag.item, layout);
+    });
+
+    const finish = () => {
+        if (!drag) {
+            return;
+        }
+        drag = null;
+        renderAkcRecordAlignmentTool(readForm());
+    };
+    svg.addEventListener('pointerup', finish);
+    svg.addEventListener('pointerleave', finish);
+}
+
+function updateAkcRecordVisualItem(item, layout) {
+    const xKey = item.dataset.xKey;
+    const yKey = item.dataset.yKey;
+    const baseX = Number(item.dataset.baseX || 0);
+    const x = (xKey && xKey !== 'undefined' ? Number(layout[xKey] || 0) : baseX) + Number(layout.globalXAdjust || 0);
+    const y = Number(layout[yKey] || 0) + Number(layout.globalYAdjust || 0);
+    const rect = item.querySelector('rect:first-child');
+    const label = item.querySelector('text');
+    const handle = item.querySelector('rect:last-child');
+    if (rect) {
+        rect.setAttribute('x', String(x - 2));
+        rect.setAttribute('y', String(y - 10));
+    }
+    if (label) {
+        label.setAttribute('x', String(x));
+        label.setAttribute('y', String(y));
+    }
+    if (handle) {
+        handle.setAttribute('x', String(x + 65));
+        handle.setAttribute('y', String(y - 8));
     }
 }
 
@@ -3930,7 +4746,7 @@ function renderAsfaEntryAlignmentTool(trial) {
 
     const tool = document.getElementById('asfaEntryAlignmentTool');
     if (tool) {
-        tool.hidden = Boolean(trial && clean(trial.association || 'ASFA') !== 'ASFA');
+        tool.hidden = false;
     }
     renderAsfaLciEntryAlignmentTool(trial);
 }
@@ -4004,7 +4820,7 @@ function renderAsfaLciEntryAlignmentTool(trial) {
 
     const tool = document.getElementById('asfaLciEntryAlignmentTool');
     if (tool) {
-        tool.hidden = Boolean(trial && clean(trial.association || 'ASFA') !== 'ASFA');
+        tool.hidden = false;
     }
 }
 
@@ -4481,6 +5297,7 @@ function renderAsfaJudgeAlignmentTool(trial) {
         ['lciCircleW', 'LCI type circle width', 10, 36, 0.5],
         ['lciCircleH', 'LCI type circle height', 4, 16, 0.5],
         ['flightCircleX', 'Flight A circle X', 35, 100, 1],
+        ['flightCircleStepX', 'Flight circle spacing', 20, 45, 0.5],
         ['flightCircleY', 'Flight A circle Y', 150, 185, 1],
         ['flightCircleW', 'Flight circle width', 5, 18, 0.5],
         ['flightCircleH', 'Flight circle height', 4, 14, 0.5],
@@ -4864,6 +5681,8 @@ function renderAlignmentControls(container, reportKey, layout, controls) {
             renderAsfaLciEntryAlignmentTool(readForm());
         } else if (reportKey === 'asfaDrawSheet') {
             renderAsfaDrawAlignmentTool(readForm());
+        } else if (reportKey === 'akcDrawSheet') {
+            renderAkcDrawAlignmentTool(readForm());
         }
     });
     const lockText = document.createElement('span');
@@ -4913,6 +5732,8 @@ function renderAlignmentControls(container, reportKey, layout, controls) {
                 renderAsfaLciEntryVisualEditor(formAlignment.asfaLciEntryForm);
             } else if (reportKey === 'asfaDrawSheet') {
                 renderAsfaDrawAlignmentTool(readForm());
+            } else if (reportKey === 'akcDrawSheet') {
+                renderAkcDrawVisualEditor(formAlignment.akcDrawSheet);
             }
         };
         range.addEventListener('input', () => update(range.value));
@@ -5238,12 +6059,13 @@ function renderClassOptions(trial) {
     const current = select.value;
     const selectedBreed = document.getElementById('entryBreed')?.value || '';
     const isLciBreed = lciDivisions.includes(selectedBreed);
-    const classes = isLciBreed ? lciStakes : defaultClassOptions;
+    const profile = rulesForTrial(trial);
+    const classes = isLciBreed && profile.lciAllowed ? lciStakes : profile.regularStakes;
 
     select.innerHTML = '';
     const blank = document.createElement('option');
     blank.value = '';
-    blank.textContent = isLciBreed ? 'Select LCI stake' : 'Select stake/class';
+    blank.textContent = isLciBreed && profile.lciAllowed ? 'Select LCI stake' : 'Select stake/class';
     select.appendChild(blank);
     classes.forEach((className) => {
         const option = document.createElement('option');
@@ -5609,7 +6431,7 @@ function renderRollCall(trial) {
     });
 
     renderOwnerSeparationQuickEditor(entries);
-    renderInitialCourseGroups(entries, ownerLetters);
+    renderInitialCourseGroups(trial, entries, ownerLetters);
     renderPreliminaryDraw(trial);
 }
 
@@ -6149,7 +6971,7 @@ function setAllRollCallPresent(isPresent) {
     render();
 }
 
-function renderInitialCourseGroups(entries, ownerLetters) {
+function renderInitialCourseGroups(trial, entries, ownerLetters) {
     const container = document.getElementById('initialCourseGroups');
     const eligible = entries.filter((entry) => entry.rollCallStatus === 'present');
     const pending = entries.filter((entry) => !entry.rollCallStatus || entry.rollCallStatus === 'not_checked');
@@ -6174,6 +6996,8 @@ function renderInitialCourseGroups(entries, ownerLetters) {
     summary.appendChild(summaryItem('Not checked', pending.length, 'todo'));
     summary.appendChild(summaryItem('Unavailable', unavailable.length, 'todo'));
     container.appendChild(summary);
+
+    renderSplitStakeEligibility(container, trial, eligible);
 
     if (groups.size === 0) {
         const empty = document.createElement('p');
@@ -6306,7 +7130,7 @@ function buildPreliminaryDraw() {
         return;
     }
 
-    const groups = groupEntriesByBreedAndStake(presentEntries, trial.mixedStakeBreeds || []);
+    const groups = groupEntriesByBreedAndStake(presentEntries, trial.mixedStakeBreeds || [], trial);
     trial.preliminaryDraw = {
         id: crypto.randomUUID(),
         phase: 'preliminary',
@@ -6321,7 +7145,180 @@ function buildPreliminaryDraw() {
     render();
 }
 
-function groupEntriesByBreedAndStake(entries, mixedStakeBreeds = []) {
+const AKC_REGION_STATES = {
+    1: ['ME', 'NH', 'VT', 'MA', 'RI', 'CT', 'NY', 'NJ', 'PA', 'DE', 'MD', 'DC', 'WV', 'VA'],
+    2: ['NC', 'SC', 'TN', 'GA', 'AL', 'MS', 'FL'],
+    3: ['ND', 'SD', 'NE', 'KS', 'MN', 'IA', 'MO', 'WI', 'IL', 'MI', 'IN', 'KY', 'OH'],
+    4: ['CO', 'NM', 'OK', 'TX', 'AR', 'LA'],
+    5: ['AK', 'WA', 'OR', 'MT', 'ID', 'WY'],
+    6: ['CA', 'NV', 'UT', 'AZ', 'HI'],
+};
+
+function akcRegionForTrial(trial) {
+    const state = String(trial.locationState || '').trim().toUpperCase();
+    const found = Object.entries(AKC_REGION_STATES).find(([, states]) => states.includes(state));
+    if (found) return Number(found[0]);
+    const selected = Number(trial.region || 0);
+    return selected >= 1 && selected <= 6 ? selected : 0;
+}
+
+function akcFivePointMajorSize(trial, breed) {
+    const code = breedDisplayCode(breed).toUpperCase();
+    const region = akcRegionForTrial(trial);
+    if (!region) return 0;
+    const regional = {
+        BZ: [6, 6, 10, 7, 6, 7],
+        RR: [8, 10, 8, 10, 7, 8],
+        WH: [15, 15, 15, 11, 11, 11],
+    };
+    return regional[code]?.[region - 1] || 6;
+}
+
+function isRegularSplitStake(trial, group) {
+    if (group.mixedStake || isQuasiBreedGroup(group)) return false;
+    const stake = clean(group.stake);
+    return rulesForTrial(trial).association === 'AKC'
+        ? ['OPEN', 'SPECIAL', 'SPECIALS', 'VETERAN'].includes(stake)
+        : ['OPEN', 'FIELDCHAMPION', 'FCH', 'VETERAN', 'PROVISIONAL'].includes(stake);
+}
+
+function splitStakeRuleForGroup(trial, group) {
+    const count = group.entries.length;
+    const association = rulesForTrial(trial).association;
+    if (!isRegularSplitStake(trial, group)) return { eligible: false, association, count };
+    if (association === 'ASFA') {
+        return {
+            eligible: count >= 20,
+            association,
+            count,
+            splitCount: count >= 20 ? Math.floor(count / 10) : 1,
+            minimumPerSplit: 10,
+            label: 'flight',
+            reason: 'ASFA requires regular stakes with 20 or more starters to be divided as evenly as possible into flights of at least 10.',
+        };
+    }
+    const majorSize = akcFivePointMajorSize(trial, group.breed);
+    if (!majorSize) {
+        return {
+            eligible: false,
+            association,
+            count,
+            needsRegion: true,
+            label: 'split stake',
+            reason: 'Set the trial state or AKC region so the five-point major threshold can be calculated.',
+        };
+    }
+    const splitCount = Math.floor(count / majorSize);
+    return {
+        eligible: splitCount >= 2,
+        association,
+        count,
+        splitCount: splitCount >= 2 ? splitCount : 1,
+        minimumPerSplit: majorSize,
+        label: 'split stake',
+        region: akcRegionForTrial(trial),
+        reason: 'AKC requires a split whenever the entry is sufficient for two or more five-point majors.',
+    };
+}
+
+function balancedSplitEntries(entries, splitCount) {
+    const capacities = Array.from({ length: splitCount }, (_, index) => (
+        Math.floor(entries.length / splitCount) + (index < entries.length % splitCount ? 1 : 0)
+    ));
+    const flights = capacities.map(() => []);
+    const ownerCounts = capacities.map(() => new Map());
+    const buckets = new Map();
+    entries.forEach((entry) => {
+        const key = ownerKey(entry);
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(entry);
+    });
+    const ownerBuckets = secureShuffle([...buckets.entries()])
+        .map(([key, values]) => [key, secureShuffle(values)])
+        .sort((a, b) => b[1].length - a[1].length);
+
+    ownerBuckets.forEach(([owner, values]) => {
+        values.forEach((entry) => {
+            const candidates = flights.map((flight, index) => ({
+                index,
+                remaining: capacities[index] - flight.length,
+                ownerCount: ownerCounts[index].get(owner) || 0,
+                total: flight.length,
+            })).filter((candidate) => candidate.remaining > 0);
+            const ownerMinimum = Math.min(...candidates.map((candidate) => candidate.ownerCount));
+            const ownerBalanced = candidates.filter((candidate) => candidate.ownerCount === ownerMinimum);
+            const totalMinimum = Math.min(...ownerBalanced.map((candidate) => candidate.total));
+            const chosen = secureChoice(ownerBalanced.filter((candidate) => candidate.total === totalMinimum));
+            flights[chosen.index].push(entry);
+            ownerCounts[chosen.index].set(owner, chosen.ownerCount + 1);
+        });
+    });
+    return flights;
+}
+
+function splitEligibleStakeGroups(groups, trial) {
+    return groups.flatMap((group) => {
+        const rule = splitStakeRuleForGroup(trial, group);
+        if (!rule.eligible) return [group];
+        return balancedSplitEntries(group.entries, rule.splitCount).map((entries, index) => ({
+            ...group,
+            key: group.key + '|' + String.fromCharCode(65 + index),
+            flight: String.fromCharCode(65 + index),
+            splitStake: true,
+            splitLabel: rule.association === 'AKC' ? 'Split' : 'Flight',
+            splitRule: rule,
+            entries,
+        }));
+    });
+}
+
+function renderSplitStakeEligibility(container, trial, entries) {
+    const grouped = new Map();
+    entries.forEach((entry) => {
+        const breed = runGroupBreedForEntry(entry);
+        const stake = runGroupStakeForEntry(entry);
+        const key = breed + '|' + stake;
+        if (!grouped.has(key)) grouped.set(key, { key, breed, stake, entries: [] });
+        grouped.get(key).entries.push(entry);
+    });
+    const rows = [...grouped.values()]
+        .map((group) => ({ group, rule: splitStakeRuleForGroup(trial, group) }))
+        .filter(({ rule }) => rule.eligible || (rule.needsRegion && rule.count >= 12));
+    if (!rows.length) return;
+
+    const details = document.createElement('details');
+    details.className = 'split-stake-panel';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Advanced: Split Stakes (' + rows.length + ')';
+    details.appendChild(summary);
+    const note = document.createElement('p');
+    note.className = 'field-note';
+    note.textContent = 'This appears only when current entries require a split or AKC eligibility needs a region. Required splits are applied automatically when the preliminary draw is built.';
+    details.appendChild(note);
+    const bobNote = document.createElement('p');
+    bobNote.className = 'field-note split-stake-bob-note';
+    bobNote.textContent = rulesForTrial(trial).association === 'AKC'
+        ? 'AKC BOB: every split winner advances directly into the randomized BOB draw.'
+        : 'ASFA BOB: flight winners first determine one overall stake winner when all flight and other stake winners cannot fit in one three-hound BOB course.';
+    details.appendChild(bobNote);
+    const list = document.createElement('div');
+    list.className = 'split-stake-list';
+    rows.forEach(({ group, rule }) => {
+        const row = document.createElement('div');
+        row.className = rule.eligible ? 'split-stake-row eligible' : 'split-stake-row warning';
+        const title = document.createElement('strong');
+        title.textContent = groupTitle(group);
+        const status = document.createElement('span');
+        status.textContent = rule.eligible
+            ? rule.splitCount + ' ' + rule.label + (rule.splitCount === 1 ? '' : 's') + ' (' + rule.count + ' hounds)'
+            : rule.reason;
+        row.append(title, status);
+        list.appendChild(row);
+    });
+    details.appendChild(list);
+    container.appendChild(details);
+}
+function groupEntriesByBreedAndStake(entries, mixedStakeBreeds = [], trial = {}) {
     const groups = new Map();
     const mixedBreeds = new Set((mixedStakeBreeds || []).map(clean));
     const eligibleMixedBreeds = new Set();
@@ -6342,7 +7339,10 @@ function groupEntriesByBreedAndStake(entries, mixedStakeBreeds = []) {
         }
         groups.get(key).entries.push(entry);
     });
-    return [...groups.values()].sort((a, b) => a.breed.localeCompare(b.breed, undefined, { numeric: true, sensitivity: 'base' }) || a.stake.localeCompare(b.stake, undefined, { numeric: true, sensitivity: 'base' }));
+    return splitEligibleStakeGroups([...groups.values()], trial)
+        .sort((a, b) => a.breed.localeCompare(b.breed, undefined, { numeric: true, sensitivity: 'base' })
+            || a.stake.localeCompare(b.stake, undefined, { numeric: true, sensitivity: 'base' })
+            || String(a.flight || '').localeCompare(String(b.flight || '')));
 }
 
 function buildDrawGroup(group) {
@@ -6391,6 +7391,10 @@ function buildDrawGroup(group) {
         id: crypto.randomUUID(),
         breed: group.breed,
         stake: group.stake,
+        flight: group.flight || '',
+        splitStake: Boolean(group.splitStake),
+        splitLabel: group.splitLabel || (group.splitRule?.association === 'AKC' ? 'Split' : 'Flight'),
+        splitRule: group.splitRule || null,
         mixedStake: Boolean(group.mixedStake),
         entryCount: group.entries.length,
         courses,
@@ -6453,6 +7457,10 @@ function redrawPreliminaryDrawGroup(groupId) {
         key: existingGroup.key || `${existingGroup.breed}|${existingGroup.stake}`,
         breed: existingGroup.breed,
         stake: existingGroup.stake,
+        flight: existingGroup.flight || '',
+        splitStake: Boolean(existingGroup.splitStake),
+        splitLabel: existingGroup.splitLabel || '',
+        splitRule: existingGroup.splitRule || null,
         entries: currentGroupEntries,
     });
     replacement.id = existingGroup.id;
@@ -7846,13 +8854,14 @@ function renderScorebookSection(containerId, trial, mode) {
 }
 
 function scorebookActionsForGroup(group, mode) {
+    const trial = readForm();
+    const isAkc = rulesForTrial(trial).association === 'AKC';
     const groupBuildLabel = isQuasiBreedGroup(group) ? 'Build Finals Group' : 'Build Finals Breed';
-    const groupSheetLabel = isQuasiBreedGroup(group) ? 'ASFA Group Sheet' : 'ASFA Breed Sheet';
+    const groupSheetLabel = isAkc ? (isQuasiBreedGroup(group) ? 'AKC Group Draw' : 'AKC Breed Draw') : (isQuasiBreedGroup(group) ? 'ASFA Group Sheet' : 'ASFA Breed Sheet');
     const stakeDrawn = Boolean(group.finalDraw && Array.isArray(group.finalDraw.courses) && group.finalDraw.courses.length > 0);
     const prelimStatus = prelimCompletionStatusForGroup(group);
     const breedStatus = prelimCompletionStatusForBreed(group.breed);
     if (mode === 'finals') {
-        const trial = readForm();
         const finalsLocked = Boolean(trial.scorebook && trial.scorebook.finalsLocked);
         const breedDrawn = finalsBreedOrGroupDrawn(group);
         const groupDrawLabel = isQuasiBreedGroup(group) ? 'Finals Group' : 'Finals Breed';
@@ -7883,13 +8892,18 @@ function scorebookActionsForGroup(group, mode) {
                 disabled: !stakeDrawn,
             },
             {
-                label: 'ASFA Stake Sheet',
+                label: isAkc ? 'AKC Record Sheet' : 'ASFA Stake Sheet',
                 handler: () => printAsfaRecordSheet({ groupId: group.id }),
                 className: 'secondary small report-button',
             },
             {
                 label: groupSheetLabel,
                 handler: () => printAsfaRecordSheet({ breed: group.breed }),
+                className: 'secondary small report-button',
+            },
+            {
+                label: 'AKC Draw Sheet',
+                handler: () => printDrawSheet(),
                 className: 'secondary small report-button',
             },
         ];
@@ -7916,7 +8930,7 @@ function scorebookActionsForGroup(group, mode) {
             blockedMessage: `Cannot draw finals for ${group.breed} yet. Enter prelim scores or outcomes for every hound in this ${isQuasiBreedGroup(group) ? 'group' : 'breed'}. ${breedStatus.remaining} row${breedStatus.remaining === 1 ? '' : 's'} remaining.`,
         },
         {
-            label: 'ASFA Stake Sheet',
+            label: isAkc ? 'AKC Record Sheet' : 'ASFA Stake Sheet',
             handler: () => printAsfaRecordSheet({ groupId: group.id, combineMixedPosting: true }),
             className: 'secondary small report-button',
         },
@@ -9001,6 +10015,7 @@ function bobWinnersForTrial(trial) {
 
 function bifCandidateHoundsForTrial(trial) {
     const entriesById = new Map((trial.entries || []).map((entry) => [bifEntryKey(entry.id), entry]));
+    const profile = rulesForTrial(trial);
     const bifEligible = new Set(((trial.resultState || {}).bifEligibleEntryIds || []).map(bifEntryKey));
     const candidatesByEntry = new Map();
     sortDrawGroupsForPrint(((trial.preliminaryDraw || {}).groups || []), trial)
@@ -9009,7 +10024,7 @@ function bifCandidateHoundsForTrial(trial) {
         .forEach((row) => {
             const key = bifEntryKey(row.hound.entryId);
             const entry = entriesById.get(key) || {};
-            if (isAsfaProvisionalBifEntry(row.hound, entry, row.group)) {
+            if (isBifIneligibleEntry(profile, row.hound, entry, row.group)) {
                 return;
             }
             candidatesByEntry.set(key, {
@@ -9032,7 +10047,7 @@ function bifCandidateHoundsForTrial(trial) {
         }
         const entry = entriesById.get(key) || {};
         const breed = runGroupBreedForEntry(entry);
-        if (!entry.id || isAsfaProvisionalBifEntry(entry, entry, { breed })) {
+        if (!entry.id || isBifIneligibleEntry(profile, entry, entry, { breed })) {
             return;
         }
         candidatesByEntry.set(key, {
@@ -9062,6 +10077,12 @@ function isAsfaProvisionalBifEntry(hound = {}, entry = {}, group = {}) {
         || isAsfaProvisionalBreed(hound.entryBreed)
         || isAsfaProvisionalBreed(entry.breed)
         || isAsfaProvisionalBreed(group.breed);
+}
+
+function isBifIneligibleEntry(profile, hound = {}, entry = {}, group = {}) {
+    const breeds = [hound.breed, hound.entryBreed, entry.breed, group.breed].map(clean);
+    return breeds.some((breed) => profile.bifExcludedBreedCodes.includes(breed))
+        || clean(hound.stake || entry.className || group.stake) === 'SINGLES';
 }
 
 function updateBifStatus(entryId, status) {
@@ -9868,6 +10889,7 @@ function recalculateTrialResults(trial) {
     syncResolvedTiePlaceholders(trial);
     mergeBobRunoffOutcomeFacts(trial);
     normalizeBobRunoffState(trial);
+    syncResolvedAsfaStakeOverallPlaceholders(trial);
     trial.resultState = buildTrialResultState(trial);
     reconcileBifStateWithBobWinners(trial);
 
@@ -10020,7 +11042,7 @@ function buildTrialResultState(trial) {
         });
 
     (trial.bobRunoffs || [])
-        .filter((runoff) => !String(runoff.key || '').startsWith('bobtie:'))
+        .filter((runoff) => !String(runoff.key || '').startsWith('bobtie:') && runoff.purpose !== 'stakeOverall')
         .forEach((runoff) => {
             const suppressedByResolvedTie = bobTieResolvedKeys.has(runoff.key || '');
             runoffRows(runoff).forEach((row) => {
@@ -10042,7 +11064,7 @@ function buildTrialResultState(trial) {
         .filter(([, result]) => result === 'BOB')
         .filter(([entryId]) => {
             const context = houndContextByEntry.get(bifEntryKey(entryId)) || {};
-            return !isAsfaProvisionalBifEntry(context.hound || {}, entriesById.get(bifEntryKey(entryId)) || {}, context.group || {});
+            return !isBifIneligibleEntry(rulesForTrial(trial), context.hound || {}, entriesById.get(bifEntryKey(entryId)) || {}, context.group || {});
         })
         .map(([entryId]) => entryId);
 
@@ -10067,12 +11089,12 @@ function bobResultPriority(result) {
 
 function automaticBobWinnerRows(trial) {
     const groups = sortDrawGroupsForPrint(((trial.preliminaryDraw || {}).groups || []), trial);
-    const candidatesByBreed = bobStakeCandidatesByBreed(groups);
+    const candidatesByBreed = bobStakeCandidatesByBreed(groups, trial);
     const firstTiePlaceholders = firstPlaceTiePlaceholdersByBreed(groups);
     const automatic = [];
 
     candidatesByBreed.forEach((rows, breedKey) => {
-        if (rows.length !== 1 || (firstTiePlaceholders.get(breedKey) || []).length > 0) {
+        if (rows.length !== 1 || rows[0].placeholder || rows[0].hound?.isPlaceholder || (firstTiePlaceholders.get(breedKey) || []).length > 0) {
             return;
         }
         automatic.push(rows[0]);
@@ -10098,6 +11120,47 @@ function syncResolvedTiePlaceholders(trial) {
     return before !== JSON.stringify(trial.bobRunoffs);
 }
 
+function syncResolvedAsfaStakeOverallPlaceholders(trial) {
+    if (!trial || !Array.isArray(trial.bobRunoffs)) return false;
+    const winners = new Map();
+    trial.bobRunoffs.filter((runoff) => runoff.purpose === 'stakeOverall').forEach((runoff) => {
+        const winner = runoffRows(runoff).find((row) => row.hound.stakeOverallResult === 'Stake Winner');
+        if (winner) winners.set(`placeholder:${runoff.key}`, winner.hound);
+    });
+    if (!winners.size) return false;
+    const before = JSON.stringify(trial.bobRunoffs);
+    trial.bobRunoffs = trial.bobRunoffs.map((runoff) => {
+        if (runoff.purpose === 'stakeOverall') return runoff;
+        return {
+            ...runoff,
+            courses: (runoff.courses || []).map((course) => ({
+                ...course,
+                hounds: (course.hounds || []).map((hound) => {
+                    const winner = winners.get(String(hound.entryId || ''));
+                    if (!winner) return hound;
+                    return {
+                        ...winner,
+                        isPlaceholder: false,
+                        tieBreakCourse: hound.tieBreakCourse,
+                        tieBreakBlanketColor: hound.tieBreakBlanketColor,
+                        tieBreakCode: hound.tieBreakCode,
+                        bobCourse: hound.bobCourse,
+                        bobBlanketColor: hound.bobBlanketColor,
+                        bobCode: hound.bobCode,
+                        drawPosition: hound.drawPosition,
+                        bobJudge1Score: '',
+                        bobJudge2Score: '',
+                        bobScore: '',
+                        bobOutcome: '',
+                        bobResult: '',
+                        bobWinner: false,
+                    };
+                }),
+            })),
+        };
+    });
+    return before !== JSON.stringify(trial.bobRunoffs);
+}
 function normalizeBobRunoffState(trial) {
     if (!trial || !Array.isArray(trial.bobRunoffs)) {
         return false;
@@ -10229,6 +11292,7 @@ function collectRunoffItems(trial) {
         .forEach((item) => items.push(item));
     combinedItems.forEach((item) => items.push(item));
     existingCombinedItems.forEach((item) => items.push(item));
+    asfaSplitStakeOverallItems(trial, groups).forEach((item) => items.push(item));
     bobRunoffItems(trial, groups, [...combinedItems, ...existingCombinedItems]).forEach((item) => items.push(item));
     bobTieRunoffItems(trial).forEach((item) => items.push(item));
     return orderRunoffItems(trial, items);
@@ -10309,9 +11373,9 @@ function resolvedTieBreakGroups(group, activeKeys = new Set()) {
 }
 
 function combinedTieBobRunoffItems(trial, groups, tieItems) {
-    const byBreed = bobStakeCandidatesByBreed(groups);
+    const byBreed = bobStakeCandidatesByBreed(groups, trial);
     return tieItems
-        .filter((item) => isFirstPlaceTie(item.tie))
+        .filter((item) => isFirstPlaceTie(item.tie) && !item.group.splitStake)
         .map((tieItem) => {
             const breed = tieItem.group.breed || 'Unknown';
             const stakeCandidates = byBreed.get(clean(breed)) || [];
@@ -10399,29 +11463,111 @@ function isFirstPlaceTie(tie) {
     return tiePlacementRange(tie.label).start === 1;
 }
 
-function bobStakeCandidatesByBreed(groups) {
+function asfaSplitStakeKey(group) {
+    return `${clean(group.breed)}|${clean(group.stake)}`;
+}
+
+function asfaBreedBobContenderCount(groups, breedKey) {
+    const winnerCount = groups
+        .filter((group) => clean(group.breed) === breedKey && !isQuasiBreedGroup(group))
+        .reduce((total, group) => total + bobStakeWinnerRowsForGroup(group).length, 0);
+    const placeholderCount = (firstPlaceTiePlaceholdersByBreed(groups).get(breedKey) || []).length;
+    return winnerCount + placeholderCount;
+}
+
+function asfaSplitOverallRequired(trial, groups, splitGroups) {
+    if (!trial || rulesForTrial(trial).association !== 'ASFA' || splitGroups.length < 2) return false;
+    return asfaBreedBobContenderCount(groups, clean(splitGroups[0].breed)) > 3;
+}
+
+function resolvedAsfaSplitStakeWinner(trial, breed, stake) {
+    const key = `stakeoverall:${clean(breed)}:${clean(stake)}`;
+    const runoff = (trial?.bobRunoffs || []).find((candidate) => candidate.key === key);
+    if (!runoff) return null;
+    const winner = runoffRows(runoff).find((row) => row.hound.stakeOverallResult === 'Stake Winner');
+    return winner ? winner.hound : null;
+}
+
+function asfaSplitStakeOverallItems(trial, groups) {
+    if (rulesForTrial(trial).association !== 'ASFA') return [];
+    const sets = new Map();
+    groups.filter((group) => group.splitStake).forEach((group) => {
+        const key = asfaSplitStakeKey(group);
+        if (!sets.has(key)) sets.set(key, []);
+        sets.get(key).push(group);
+    });
+    return [...sets.values()].flatMap((splitGroups) => {
+        if (!asfaSplitOverallRequired(trial, groups, splitGroups)) return [];
+        const rows = splitGroups.flatMap((group) => bobStakeWinnerRowsForGroup(group).map((winner) => ({
+            kind: 'stakeOverall',
+            group,
+            hound: { ...winner.hound, bobStake: group.stake },
+        })));
+        if (rows.length < 2) return [];
+        const breed = splitGroups[0].breed;
+        const stake = splitGroups[0].stake;
+        return [{
+            id: `stakeoverall:${clean(breed)}:${clean(stake)}`,
+            type: 'stakeOverall',
+            purpose: 'stakeOverall',
+            priority: 1.5,
+            breed,
+            stake,
+            rows,
+            title: `${breed} ${stake} Overall Winner`,
+            subtitle: `ASFA flight winners run to determine the overall ${stake} winner before BOB`,
+        }];
+    });
+}
+function bobStakeCandidatesByBreed(groups, trial = null) {
     const breeds = new Map();
+    const handledAsfaSplits = new Set();
+    const overallItems = trial ? new Map(asfaSplitStakeOverallItems(trial, groups).map((item) => [item.id, item])) : new Map();
     groups.forEach((group) => {
-        if (isQuasiBreedGroup(group)) {
+        if (isQuasiBreedGroup(group)) return;
+        const breed = group.breed || 'Unknown';
+        const breedKey = clean(breed);
+        const splitKey = asfaSplitStakeKey(group);
+        const splitGroups = group.splitStake
+            ? groups.filter((candidate) => candidate.splitStake && asfaSplitStakeKey(candidate) === splitKey)
+            : [];
+        if (trial && asfaSplitOverallRequired(trial, groups, splitGroups)) {
+            if (handledAsfaSplits.has(splitKey)) return;
+            handledAsfaSplits.add(splitKey);
+            const itemId = `stakeoverall:${breedKey}:${clean(group.stake)}`;
+            if (!overallItems.has(itemId)) return;
+            if (!breeds.has(breedKey)) breeds.set(breedKey, []);
+            const winner = resolvedAsfaSplitStakeWinner(trial, breed, group.stake);
+            if (winner) {
+                breeds.get(breedKey).push({
+                    group,
+                    hound: { ...winner, bobStake: group.stake },
+                });
+            } else {
+                breeds.get(breedKey).push({
+                    group,
+                    placeholder: true,
+                    hound: {
+                        entryId: `placeholder:${itemId}`,
+                        callName: `Winner of ${group.stake} flights`,
+                        registeredName: 'Write in after overall stake runoff',
+                        breed,
+                        stake: group.stake,
+                        bobStake: group.stake,
+                        isPlaceholder: true,
+                    },
+                });
+            }
             return;
         }
         const winnerRows = bobStakeWinnerRowsForGroup(group);
-        if (winnerRows.length === 0) {
-            return;
-        }
-        const breed = group.breed || 'Unknown';
-        const key = clean(breed);
-        if (!breeds.has(key)) {
-            breeds.set(key, []);
-        }
+        if (winnerRows.length === 0) return;
+        if (!breeds.has(breedKey)) breeds.set(breedKey, []);
         winnerRows.forEach((winner) => {
             const stake = winner.hound.stake || group.stake || '';
-            breeds.get(key).push({
+            breeds.get(breedKey).push({
                 group: group.mixedStake ? { ...group, stake } : group,
-                hound: {
-                    ...winner.hound,
-                    bobStake: stake,
-                },
+                hound: { ...winner.hound, bobStake: stake },
             });
         });
     });
@@ -10469,7 +11615,7 @@ function mixedStakeWinnerRows(group, rows) {
 }
 
 function bobRunoffItems(trial, groups, combinedItems = []) {
-    const breeds = bobStakeCandidatesByBreed(groups);
+    const breeds = bobStakeCandidatesByBreed(groups, trial);
     const combinedBreeds = new Set(combinedItems.map((item) => clean(item.breed)));
     const firstTiePlaceholders = firstPlaceTiePlaceholdersByBreed(groups);
 
@@ -10625,8 +11771,8 @@ function runoffDisplayRows(trial, item) {
         color: runoff ? (row.hound.tieBreakBlanketColor || row.hound.bobBlanketColor || '') : '',
         name: row.hound.callName || row.hound.registeredName || 'Unnamed hound',
         stake: row.hound.bobStake || '',
-        reason: row.hound.isPlaceholder ? 'BOB placeholder' : 'BOB',
-        result: row.hound.isPlaceholder ? '' : (row.hound.bobResult || bobResultForEntry(trial, row.hound.entryId)),
+        reason: item.type === 'stakeOverall' ? ('Overall ' + item.stake) : (row.hound.isPlaceholder ? 'BOB placeholder' : 'BOB'),
+        result: row.hound.isPlaceholder ? '' : (item.type === 'stakeOverall' ? (row.hound.stakeOverallResult || '') : (row.hound.bobResult || bobResultForEntry(trial, row.hound.entryId))),
         outcome: bobOutcomeForItem(trial, item.id, row.hound.entryId),
         judge1: bobScoreForItem(trial, item.id, row.hound.entryId).judge1,
         judge2: bobScoreForItem(trial, item.id, row.hound.entryId).judge2,
@@ -10687,10 +11833,10 @@ function runoffPrintTrial(trial) {
         const judgeBreed = item.group?.breed || item.breed || runoff.breed || '';
         const judgeStake = item.type === 'tie'
             ? (item.group?.stake || runoff.stake || '')
-            : '';
+            : (item.type === 'stakeOverall' ? (item.stake || runoff.stake || '') : '');
         const runoffText = item.type === 'tie'
             ? (item.tie?.label || '')
-            : (item.type === 'combinedTieBob' ? (item.tie?.label || '') : '');
+            : (item.type === 'combinedTieBob' ? (item.tie?.label || '') : (item.type === 'stakeOverall' ? 'Overall Stake' : ''));
         const phase = item.type === 'tie'
             ? 'runoff'
             : (item.type === 'combinedTieBob' || item.type === 'bobTie' || item.type === 'bob' ? 'bob' : 'runoff');
@@ -10700,10 +11846,10 @@ function runoffPrintTrial(trial) {
             breed,
             judgeBreed,
             judgeStake,
-            stake: item.type === 'tie' ? `${item.tie.label} Runoff` : (item.type === 'combinedTieBob' ? 'BOB + Tie' : (item.type === 'bobTie' ? 'BOB Tie' : 'BOB')),
+            stake: item.type === 'tie' ? `${item.tie.label} Runoff` : (item.type === 'combinedTieBob' ? 'BOB + Tie' : (item.type === 'bobTie' ? 'BOB Tie' : (item.type === 'stakeOverall' ? ('Overall ' + item.stake) : 'BOB'))),
             phase,
             runoffText,
-            mixedStake: item.type !== 'tie',
+            mixedStake: item.type !== 'tie' && item.type !== 'stakeOverall',
             manualNote: item.subtitle,
             courses: runoff.courses.map((course) => ({
                 ...course,
@@ -10712,7 +11858,7 @@ function runoffPrintTrial(trial) {
                     blanketColor: hound.tieBreakBlanketColor || hound.bobBlanketColor || '',
                     stake: item.type === 'tie'
                         ? (item.tie.label || 'Runoff')
-                        : (hound.isPlaceholder ? 'BOB winner write-in' : (hound.runoffRole === 'tie' ? (item.tie.label || 'Runoff') : 'BOB')),
+                        : (item.type === 'stakeOverall' ? ('Overall ' + item.stake) : (hound.isPlaceholder ? 'BOB winner write-in' : (hound.runoffRole === 'tie' ? (item.tie.label || 'Runoff') : 'BOB'))),
                 })),
             })),
         });
@@ -11134,6 +12280,7 @@ function normalizedBobOutcome(value) {
 }
 
 function resolveBobRunoffResults(runoff) {
+    const stakeOverall = runoff.purpose === 'stakeOverall';
     const rows = runoffRows(runoff).map((row) => row.hound);
     const activeRows = rows.filter((hound) => !hound.isPlaceholder && !hound.bobOutcome && !hound.tieBreakOutcome);
     const outcomeRows = rows.filter((hound) => !hound.isPlaceholder && (hound.bobOutcome || hound.tieBreakOutcome));
@@ -11148,7 +12295,8 @@ function resolveBobRunoffResults(runoff) {
                 ...course,
                 hounds: (course.hounds || []).map((hound) => ({
                     ...hound,
-                    bobResult: hound.isPlaceholder ? 'BOB placeholder' : '',
+                    bobResult: hound.isPlaceholder && !stakeOverall ? 'BOB placeholder' : '',
+                    stakeOverallResult: '',
                     bobWinner: false,
                 })),
             })),
@@ -11157,10 +12305,7 @@ function resolveBobRunoffResults(runoff) {
 
     const scored = rows
         .filter((hound) => !hound.isPlaceholder && hasScoreValue(hound.bobScore || hound.tieBreakScore) && !hound.bobOutcome && !hound.tieBreakOutcome)
-        .map((hound) => ({
-            entryId: hound.entryId,
-            score: Number(hound.bobScore || hound.tieBreakScore),
-        }))
+        .map((hound) => ({ entryId: hound.entryId, score: Number(hound.bobScore || hound.tieBreakScore) }))
         .filter((row) => Number.isFinite(row.score))
         .sort((a, b) => b.score - a.score);
     const topScore = scored[0]?.score;
@@ -11174,24 +12319,29 @@ function resolveBobRunoffResults(runoff) {
             ...course,
             hounds: (course.hounds || []).map((hound) => {
                 if (hound.isPlaceholder) {
-                    return { ...hound, bobResult: 'BOB placeholder', bobWinner: false };
+                    return { ...hound, bobResult: stakeOverall ? '' : 'BOB placeholder', stakeOverallResult: '', bobWinner: false };
                 }
                 if (topTied.includes(hound.entryId)) {
                     return {
                         ...hound,
-                        bobResult: topTied.length > 1 ? 'BOB Tie' : 'BOB',
-                        bobWinner: topTied.length === 1,
+                        bobResult: stakeOverall ? '' : (topTied.length > 1 ? 'BOB Tie' : 'BOB'),
+                        stakeOverallResult: stakeOverall ? (topTied.length > 1 ? 'Stake Tie' : 'Stake Winner') : '',
+                        bobWinner: !stakeOverall && topTied.length === 1,
                     };
                 }
                 if (hound.bobOutcome || hound.tieBreakOutcome) {
-                    return { ...hound, bobResult: scoreOutcomeLabel(hound.bobOutcome || hound.tieBreakOutcome), bobWinner: false };
+                    return {
+                        ...hound,
+                        bobResult: stakeOverall ? '' : scoreOutcomeLabel(hound.bobOutcome || hound.tieBreakOutcome),
+                        stakeOverallResult: stakeOverall ? scoreOutcomeLabel(hound.bobOutcome || hound.tieBreakOutcome) : '',
+                        bobWinner: false,
+                    };
                 }
-                return { ...hound, bobResult: '', bobWinner: false };
+                return { ...hound, bobResult: '', stakeOverallResult: '', bobWinner: false };
             }),
         })),
     };
 }
-
 function nextBobForfeitOrder(trial, itemId) {
     const orders = [];
     Object.values((trial.bobRunoffOutcomes || {})[itemId] || {}).forEach((value) => {
@@ -11222,7 +12372,7 @@ function createBobRunoffDraw(item, trial) {
             runoffRole: row.kind || 'bob',
             tieBreakLabel: row.placeholder || row.hound.isPlaceholder
                 ? row.hound.tieBreakLabel
-                : (item.type === 'combinedTieBob' && row.kind === 'tie' ? item.tie.label : 'BOB'),
+                : (item.type === 'combinedTieBob' && row.kind === 'tie' ? item.tie.label : (item.type === 'stakeOverall' ? 'Overall Stake' : 'BOB')),
             tieBreakCombinedScore: row.placeholder || row.hound.isPlaceholder
                 ? row.hound.tieBreakCombinedScore || ''
                 : (item.type === 'combinedTieBob' && row.kind === 'tie' ? item.tie.combinedScore || row.hound.combinedScore || '' : ''),
@@ -11266,7 +12416,9 @@ function createBobRunoffDraw(item, trial) {
     return {
         id: crypto.randomUUID(),
         key: item.id,
-        label: item.type === 'combinedTieBob' ? item.tie.label : 'BOB',
+        label: item.type === 'combinedTieBob' ? item.tie.label : (item.type === 'stakeOverall' ? 'Overall Stake' : 'BOB'),
+        purpose: item.type === 'stakeOverall' ? 'stakeOverall' : 'bob',
+        stake: item.stake || '',
         breed: item.breed,
         tieGroupId: item.type === 'combinedTieBob' ? item.groupId || '' : '',
         tieLabel: item.type === 'combinedTieBob' ? item.tie.label || '' : '',
@@ -11287,7 +12439,7 @@ function redrawAllRunoffs() {
     }
 
     const tieItems = items.filter((item) => item.type === 'tie');
-    const bobItems = items.filter((item) => item.type === 'bob' || item.type === 'combinedTieBob' || item.type === 'bobTie');
+    const bobItems = items.filter((item) => item.type === 'bob' || item.type === 'combinedTieBob' || item.type === 'bobTie' || item.type === 'stakeOverall');
     const tieDraws = new Map(tieItems
         .map((item) => [item.id, createRunoffDrawFromRows(item.tie.rows, item.tie)])
         .filter(([, runoff]) => runoff));
@@ -11333,7 +12485,7 @@ function drawRunoffsForBreed(breed) {
     }
 
     const tieItems = items.filter((item) => item.type === 'tie');
-    const bobItems = items.filter((item) => item.type === 'bob' || item.type === 'combinedTieBob' || item.type === 'bobTie');
+    const bobItems = items.filter((item) => item.type === 'bob' || item.type === 'combinedTieBob' || item.type === 'bobTie' || item.type === 'stakeOverall');
     const tieDraws = new Map(tieItems
         .map((item) => [item.id, createRunoffDrawFromRows(item.tie.rows, item.tie)])
         .filter(([, runoff]) => runoff));
@@ -11795,19 +12947,15 @@ function printRibbonReport() {
 async function printAsfaRecordSheet({ groupId = '', breed = '', combineMixedPosting = false } = {}) {
     const message = document.getElementById('scoringMessage');
     const trial = readForm();
+    const profile = rulesForTrial(trial);
     const draw = trial.preliminaryDraw;
     if (!draw || !Array.isArray(draw.groups) || draw.groups.length === 0) {
-        showMessage(message, 'Build the preliminary draw before printing the ASFA record sheet.', 'warning');
-        return;
-    }
-
-    if (clean(trial.association || 'ASFA') !== 'ASFA') {
-        showMessage(message, 'The official record sheet button is set up for ASFA trials first.', 'warning');
+        showMessage(message, `Build the preliminary draw before printing ${profile.association} sheets.`, 'warning');
         return;
     }
 
     if (!isLocalServerMode()) {
-        showMessage(message, 'Official ASFA record sheets require SQLite/server mode. Start the app with start_field_trial_secretary.ps1.', 'warning');
+        showMessage(message, `Official ${profile.association} record sheets require SQLite/server mode. Start the app with start_field_trial_secretary.ps1.`, 'warning');
         return;
     }
 
@@ -11855,13 +13003,10 @@ async function printAsfaRecordSheet({ groupId = '', breed = '', combineMixedPost
 async function printAsfaRecordPacket() {
     const message = wrapUpMessage || mainResultsMessage || document.getElementById('scoringMessage');
     const trial = readForm();
+    const profile = rulesForTrial(trial);
     const draw = trial.preliminaryDraw;
     if (!draw || !Array.isArray(draw.groups) || draw.groups.length === 0) {
-        showMessage(message, 'Build the preliminary draw before printing the ASFA record packet.', 'warning');
-        return;
-    }
-    if (clean(trial.association || 'ASFA') !== 'ASFA') {
-        showMessage(message, 'The full record packet is set up for ASFA trials first.', 'warning');
+        showMessage(message, `Build the preliminary draw before printing the ${profile.association} submission packet.`, 'warning');
         return;
     }
     const printed = await openTrialPdf('/api/asfa-record-packet', {
@@ -11870,7 +13015,7 @@ async function printAsfaRecordPacket() {
         entryLayout: getAsfaEntryLayout(),
         lciEntryLayout: getAsfaLciEntryLayout(),
         secretaryLayout: getAsfaSecretaryLayout(),
-    }, message, 'ASFA record packet PDF created.', 'ASFA record packet could not be created.');
+    }, message, `${profile.association} submission packet PDF created.`, `${profile.association} submission packet could not be created.`);
     if (printed) {
         markTrialGuidePrinted('asfaRecordPacket');
     }
@@ -11879,8 +13024,9 @@ async function printAsfaRecordPacket() {
 async function printAsfaEntryForms() {
     const message = wrapUpMessage || officialFormsMessage || mainResultsMessage || document.getElementById('scoringMessage');
     const trial = readForm();
-    if (clean(trial.association || 'ASFA') !== 'ASFA') {
-        showMessage(message, 'The first-time entry forms are set up for ASFA trials first.', 'warning');
+    const profile = rulesForTrial(trial);
+    if (profile.association === 'AKC') {
+        showMessage(message, 'AKC lure coursing does not use ASFA first-time entry forms.', 'warning');
         return;
     }
     const count = (trial.entries || []).filter((entry) => entry.firstTime).length;
@@ -11898,14 +13044,11 @@ async function printAsfaEntryForms() {
 async function printAsfaSecretaryReport() {
     const message = wrapUpSecretaryMessage || wrapUpMessage || mainResultsMessage || document.getElementById('scoringMessage');
     const trial = readForm();
-    if (clean(trial.association || 'ASFA') !== 'ASFA') {
-        showMessage(message, 'The secretary report button is set up for ASFA trials first.', 'warning');
-        return;
-    }
+    const profile = rulesForTrial(trial);
     const printed = await openTrialPdf('/api/asfa-secretary-report', {
         trial,
         layout: getAsfaSecretaryLayout(),
-    }, message, 'ASFA secretary report PDF created.', 'ASFA secretary report could not be created.');
+    }, message, `${profile.association} secretary report PDF created.`, `${profile.association} secretary report could not be created.`);
     if (printed) {
         markTrialGuidePrinted('asfaSecretaryReport');
     }
@@ -11920,7 +13063,8 @@ function markPaperworkSubmitted() {
     trial.paperworkSubmittedAt = new Date().toISOString();
     upsertTrial(trial);
     saveTrials();
-    showMessage(wrapUpMessage || wrapUpSecretaryMessage, 'Paperwork marked submitted to records@asfa.org.', 'success');
+    const association = rulesForTrial(trial).association;
+    showMessage(wrapUpMessage || wrapUpSecretaryMessage, association === 'AKC' ? 'AKC paperwork marked submitted.' : 'Paperwork marked submitted to records@asfa.org.', 'success');
     render();
 }
 
@@ -12292,6 +13436,120 @@ function resetAsfaDrawAlignment() {
     saveFormAlignment();
     renderAsfaDrawAlignmentTool(readForm());
     showMessage(officialFormsMessage, 'ASFA draw sheet alignment reset to defaults.', 'success');
+}
+
+async function previewAkcDrawAlignment() {
+    const message = officialFormsMessage;
+    const trial = readForm();
+    const draw = trial.preliminaryDraw;
+    if (!draw || !Array.isArray(draw.groups) || draw.groups.length === 0) {
+        showMessage(message, 'Build a preliminary or runoff draw before previewing AKC draw sheet alignment.', 'warning');
+        return;
+    }
+    if (!isLocalServerMode()) {
+        showMessage(message, 'AKC draw sheet preview requires SQLite/server mode.', 'warning');
+        return;
+    }
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/draw-sheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial, layout: getAkcDrawLayout(), copies: 1 }),
+        });
+        if (!response.ok) {
+            let errorMessage = 'AKC draw sheet preview could not be created.';
+            try {
+                const payload = await response.json();
+                errorMessage = payload.error || errorMessage;
+            } catch {
+                // Keep generic message.
+            }
+            throw new Error(errorMessage);
+        }
+        const blob = await response.blob();
+        const frame = document.getElementById('akcDrawAlignmentPreview');
+        if (frame) {
+            frame.src = URL.createObjectURL(blob);
+        }
+        showMessage(message, 'Previewing AKC draw sheet alignment.', 'success');
+    } catch (error) {
+        showMessage(message, error.message || 'AKC draw sheet preview could not be created.', 'warning');
+    }
+}
+
+function resetAkcDrawAlignment() {
+    formAlignment.akcDrawSheet = { ...defaultFormAlignment.akcDrawSheet };
+    saveFormAlignment();
+    renderAkcDrawAlignmentTool(readForm());
+    showMessage(officialFormsMessage, 'AKC draw sheet alignment reset to defaults.', 'success');
+}
+
+async function previewAkcRecordAlignment() {
+    const message = officialFormsMessage;
+    const trial = readForm();
+    if (!isLocalServerMode()) {
+        showMessage(message, 'AKC record sheet preview requires SQLite/server mode.', 'warning');
+        return;
+    }
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/asfa-record-sheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial, layout: getAkcRecordLayout() }),
+        });
+        if (!response.ok) {
+            let errorMessage = 'AKC record sheet preview could not be created.';
+            try {
+                const payload = await response.json();
+                errorMessage = payload.error || errorMessage;
+            } catch {
+                // Keep generic message.
+            }
+            throw new Error(errorMessage);
+        }
+        const blob = await response.blob();
+        const frame = document.getElementById('akcRecordAlignmentPreview');
+        if (frame) {
+            frame.src = URL.createObjectURL(blob);
+        }
+        showMessage(message, 'Previewing AKC record sheet alignment.', 'success');
+    } catch (error) {
+        showMessage(message, error.message || 'AKC record sheet preview could not be created.', 'warning');
+    }
+}
+
+function resetAkcRecordAlignment() {
+    formAlignment.akcRecordSheet = {
+        globalXAdjust: 0,
+        globalYAdjust: 0,
+        clubNameX: 95,
+        clubNameY: 88,
+        startsOnX: 355,
+        startsOnY: 88,
+        eventNumX: 495,
+        eventNumY: 88,
+        entriesCountX: 615,
+        entriesCountY: 88,
+        startersCountX: 730,
+        startersCountY: 88,
+        rowTop: 175,
+        rowHeight: 24,
+        judge1X: 115,
+        judge1Y: 544,
+        judge2X: 520,
+        judge2Y: 544,
+        fieldClerkX: 115,
+        fieldClerkY: 566,
+        fieldSecretaryX: 390,
+        fieldSecretaryY: 566,
+        chairNameX: 670,
+        chairNameY: 565,
+    };
+    saveFormAlignment();
+    renderAkcRecordAlignmentTool(readForm());
+    showMessage(officialFormsMessage, 'AKC record sheet alignment reset to defaults.', 'success');
 }
 
 async function previewAsfaJudgeAlignment() {
@@ -12947,6 +14205,7 @@ function bobResultForEntry(trial, entryId) {
     }
     const results = [];
     for (const runoff of (trial.bobRunoffs || [])) {
+        if (runoff.purpose === 'stakeOverall') continue;
         for (const row of runoffRows(runoff)) {
             if (row.hound.entryId === entryId && row.hound.bobResult) {
                 results.push({
@@ -13720,11 +14979,7 @@ function nextTieBreakForfeitOrder(trial, groupId, tieLabel) {
 }
 
 function placementNameForNumber(value) {
-    const number = Number(value);
-    if (number === 5) {
-        return 'NBQ';
-    }
-    return Number.isFinite(number) ? String(number) : '';
+    return associationRules.placementName(value, currentAssociation());
 }
 
 function placementTieLabel(start, end) {
@@ -13741,11 +14996,7 @@ function placementTieLabel(start, end) {
 }
 
 function placementNumberFromLabel(value) {
-    const normalized = clean(value);
-    if (normalized === 'NBQ') {
-        return 5;
-    }
-    const number = Number(normalized);
+    const number = associationRules.placementNumber(value, currentAssociation());
     return Number.isFinite(number) ? number : NaN;
 }
 
@@ -13848,7 +15099,8 @@ function finalPlacementPartitions(finals, group) {
 }
 
 function placementQualifyingMinimum(judgeCount = 1) {
-    return Math.max(1, Number(judgeCount || 1)) * 100;
+    const profile = rulesForTrial(arguments.length > 1 ? arguments[1] : null);
+    return Math.max(1, Number(judgeCount || 1)) * profile.combinedQualifyingMinimumPerJudge;
 }
 
 function assignFinalPlacementLabels(finals, placementByEntry, qualifyingMinimum = 100) {
@@ -13868,7 +15120,7 @@ function assignFinalPlacementLabels(finals, placementByEntry, qualifyingMinimum 
         } else if (index < 4) {
             placementByEntry.set(row.entryId, String(index + 1));
         } else if (index === 4) {
-            placementByEntry.set(row.entryId, 'NBQ');
+            placementByEntry.set(row.entryId, placementNameForNumber(5));
         }
     });
 }
@@ -14416,6 +15668,58 @@ function populateAdminFinalsScores() {
     render();
 }
 
+function populateAdminRunoffScores() {
+    let trial = readForm();
+    if (!trial || !trial.id) {
+        showMessage(adminTestMessage, 'Choose or create a trial before populating runoff scores.', 'warning');
+        return;
+    }
+
+    if (!trial.testTrial) {
+        showMessage(adminTestMessage, 'Runoff score population is blocked for real trials. Mark the trial as a Test Trial on the Trials page before using this tool.', 'warning');
+        return;
+    }
+
+    redrawAllRunoffs();
+    trial = readForm();
+
+    const items = collectRunoffItems(trial);
+    if (!items || items.length === 0) {
+        showMessage(adminTestMessage, 'No runoffs or tie breaks found for this trial. Build prelim/finals draws and populate scores to generate ties first.', 'warning');
+        return;
+    }
+
+    let totalPopulated = 0;
+    items.forEach((item) => {
+        const judgeCount = judgeCountForRunoffItem(trial, item);
+        const rows = runoffDisplayRows(trial, item);
+        rows.forEach((row, idx) => {
+            const entryId = row.hound?.entryId || row.entryId;
+            if (!entryId) return;
+            const profile = rulesForTrial(trial);
+            const baseMax = profile.judgeScoreMaximum || 100;
+            const basePerJudge = Math.max(30, baseMax - 5 - (idx * 4));
+            const judge1 = String(basePerJudge);
+            const judge2 = judgeCount > 1 ? String(basePerJudge - 1) : '';
+            updateRunoffScore(item, entryId, { judge1, judge2 });
+            totalPopulated += 1;
+        });
+    });
+
+    trial = readForm();
+    trial.preliminaryDraw = {
+        ...trial.preliminaryDraw,
+        groups: (trial.preliminaryDraw?.groups || []).map((group) => recomputeFinalPlacements(group)),
+    };
+    syncResolvedTiePlaceholders(trial);
+    upsertTrial(trial);
+    saveTrials();
+
+    showMessage(adminTestMessage, `Populated runoff scores for ${totalPopulated} tie/BOB entry position${totalPopulated === 1 ? '' : 's'}.`, 'success');
+    switchTab('scoring');
+    render();
+}
+
 function randomAdminPrelimScore() {
     // Test scores should feel like a normal trial: clustered around 75 with small movement.
     const centered = 75 + secureRandomInt(7) - 3;
@@ -14552,6 +15856,8 @@ function buildRunPlanRowsForTrial(trial) {
         huntmaster: existing.get(group.key)?.huntmaster || '',
         paddock: existing.get(group.key)?.paddock || '',
         fieldClerk: existing.get(group.key)?.fieldClerk || '',
+        fieldId: existing.get(group.key)?.fieldId || eventFieldsForTrial(trial)[0].id,
+        rollCallLaneId: existing.get(group.key)?.rollCallLaneId || rollCallLanesForTrial(trial)[0].id,
     }));
     return applyPremiumJudgeAssignmentsToRunPlan(trial, rows);
 }
@@ -14596,11 +15902,24 @@ function premiumCodeForRunGroup(breed) {
 }
 
 function asfaEntryEligibilityProblem(hound, className, association = 'ASFA') {
+    const profile = rulesForAssociation(association);
+    const breed = clean(hound && hound.breed);
+    const stake = clean(className);
+    if (profile.association === 'AKC') {
+        if (isLciEntryData(hound && hound.breed, className)) {
+            return 'AKC lure coursing does not offer LCI divisions.';
+        }
+        if (!profile.eligibleBreedCodes.includes(breed)) {
+            return `${breedLabel(hound && hound.breed)} is not currently listed as an AKC lure coursing eligible breed.`;
+        }
+        if (!profile.regularStakes.some((name) => clean(name) === stake)) {
+            return `${className || 'This stake'} is not an AKC lure coursing stake. Choose Open, Specials, Veteran, or Singles.`;
+        }
+        return '';
+    }
     if (clean(association) !== 'ASFA') {
         return '';
     }
-    const breed = clean(hound && hound.breed);
-    const stake = clean(className);
     if (isLciClassName(className)) {
         if (!breed.startsWith('LCI')) {
             return `${breedLabel(hound && hound.breed)} is a regular breed hound. LCI entries must use LCI Small, LCI Large, or LCI Sighthound Mix as the hound breed.`;
@@ -15527,21 +16846,30 @@ function renderPremiumJudgeMatrixReview(trial) {
 
 function renderRunPlan(trial) {
     const body = document.getElementById('runPlanTable');
-    if (!body) {
-        return;
-    }
+    if (!body) return;
 
     renderPremiumJudgeAssignmentStatus(trial);
     renderPremiumJudgeMatrixReview(trial);
     body.innerHTML = '';
-    const rows = sortedRunPlanRows(trial.runPlan || []);
+    const fields = eventFieldsForTrial(trial);
+    const lanes = rollCallLanesForTrial(trial);
+    const showField = fields.length > 1;
+    const showLane = lanes.length > 1;
+    const fieldHeading = document.getElementById('runPlanFieldHeading');
+    const laneHeading = document.getElementById('runPlanLaneHeading');
+    if (fieldHeading) fieldHeading.hidden = !showField;
+    if (laneHeading) laneHeading.hidden = !showLane;
+    const table = body.closest('table');
+    if (table) table.classList.toggle('run-plan-multi-table', showField || showLane);
+    const visibleColumnCount = 10 + Number(showField) + Number(showLane);
+    const rows = sortedRunPlanRows(trial.runPlan || [], fields);
 
     if (rows.length === 0) {
         selectedRunPlanRowId = '';
         renderSelectedRunPlanLabel(rows);
         const empty = document.createElement('tr');
         const cell = document.createElement('td');
-        cell.colSpan = 10;
+        cell.colSpan = visibleColumnCount;
         cell.textContent = 'Build from entries after hounds are entered.';
         empty.appendChild(cell);
         body.appendChild(empty);
@@ -15550,54 +16878,79 @@ function renderRunPlan(trial) {
 
     const judgeOptions = uniqueNames([...(trial.judges || []).map((judge) => judge.name), ...masterJudges.map((judge) => judge.name)]);
     const workerOptions = uniqueNames([...(trial.workers || []).map((worker) => worker.name), ...masterWorkers.map((worker) => worker.name)]);
-    if (selectedRunPlanRowId && !rows.some((row) => row.id === selectedRunPlanRowId)) {
-        selectedRunPlanRowId = '';
-    }
+    if (selectedRunPlanRowId && !rows.some((row) => row.id === selectedRunPlanRowId)) selectedRunPlanRowId = '';
     renderSelectedRunPlanLabel(rows);
 
-    rows.forEach((row, index) => {
-        const tr = document.createElement('tr');
-        const assignmentConflicts = runPlanAssignmentConflicts(row);
-        tr.draggable = true;
-        tr.dataset.runPlanId = row.id;
-        tr.classList.toggle('selected-row', row.id === selectedRunPlanRowId);
-        tr.classList.toggle('worker-assignment-conflict-row', assignmentConflicts.length > 0);
-        if (assignmentConflicts.length > 0) {
-            tr.title = `Worker assignment conflict: ${assignmentConflicts.join('; ')}`;
+    fields.forEach((field) => {
+        const fieldRows = rows.filter((row) => (row.fieldId || fields[0].id) === field.id);
+        if (!fieldRows.length) return;
+        if (fields.length > 1) {
+            const headingRow = document.createElement('tr');
+            headingRow.className = 'run-plan-field-heading';
+            const headingCell = document.createElement('th');
+            headingCell.colSpan = visibleColumnCount;
+            headingCell.textContent = field.name;
+            headingRow.appendChild(headingCell);
+            body.appendChild(headingRow);
         }
-        tr.addEventListener('click', (event) => {
-            if (event.target.matches('input, select, button')) {
-                return;
-            }
-            selectedRunPlanRowId = row.id;
-            render();
-        });
-        tr.addEventListener('dragstart', (event) => {
-            selectedRunPlanRowId = row.id;
-            event.dataTransfer.setData('text/plain', row.id);
-        });
-        tr.addEventListener('dragover', (event) => {
-            event.preventDefault();
-        });
-        tr.addEventListener('drop', (event) => {
-            event.preventDefault();
-            moveRunPlanRow(event.dataTransfer.getData('text/plain'), row.id);
-        });
 
-        tr.appendChild(runPlanMoveCell(row, index, rows.length));
-        tr.appendChild(textCell(index + 1));
-        tr.appendChild(textCell(displayBreedCode(row.breed)));
-        tr.appendChild(textCell(row.entryCount));
-        tr.appendChild(assignmentCell(row, 'judge1', judgeOptions, 'judge'));
-        tr.appendChild(assignmentCell(row, 'judge2', judgeOptions, 'judge'));
-        tr.appendChild(assignmentCell(row, 'lureOperator', workerOptions, 'Lure Operator'));
-        tr.appendChild(assignmentCell(row, 'huntmaster', workerOptions, 'Huntmaster'));
-        tr.appendChild(assignmentCell(row, 'paddock', workerOptions, 'Paddock'));
-        tr.appendChild(assignmentCell(row, 'fieldClerk', workerOptions, 'Field Clerk'));
-        body.appendChild(tr);
+        fieldRows.forEach((row, index) => {
+            const tr = document.createElement('tr');
+            const assignmentConflicts = runPlanAssignmentConflicts(row);
+            tr.draggable = true;
+            tr.dataset.runPlanId = row.id;
+            tr.dataset.fieldId = field.id;
+            tr.classList.toggle('selected-row', row.id === selectedRunPlanRowId);
+            tr.classList.toggle('worker-assignment-conflict-row', assignmentConflicts.length > 0);
+            if (assignmentConflicts.length > 0) tr.title = 'Worker assignment conflict: ' + assignmentConflicts.join('; ');
+            tr.addEventListener('click', (event) => {
+                if (event.target.matches('input, select, button')) return;
+                selectedRunPlanRowId = row.id;
+                render();
+            });
+            tr.addEventListener('dragstart', (event) => {
+                selectedRunPlanRowId = row.id;
+                event.dataTransfer.setData('text/plain', row.id);
+            });
+            tr.addEventListener('dragover', (event) => event.preventDefault());
+            tr.addEventListener('drop', (event) => {
+                event.preventDefault();
+                moveRunPlanRow(event.dataTransfer.getData('text/plain'), row.id);
+            });
+
+            tr.appendChild(runPlanMoveCell(row, index, fieldRows.length));
+            tr.appendChild(textCell(row.runOrder || index + 1));
+            if (showField) tr.appendChild(optionSelectCell(row, 'fieldId', fields));
+            if (showLane) tr.appendChild(optionSelectCell(row, 'rollCallLaneId', lanes));
+            tr.appendChild(textCell(displayBreedCode(row.breed)));
+            tr.appendChild(textCell(row.entryCount));
+            tr.appendChild(assignmentCell(row, 'judge1', judgeOptions, 'judge'));
+            tr.appendChild(assignmentCell(row, 'judge2', judgeOptions, 'judge'));
+            tr.appendChild(assignmentCell(row, 'lureOperator', workerOptions, 'Lure Operator'));
+            tr.appendChild(assignmentCell(row, 'huntmaster', workerOptions, 'Huntmaster'));
+            tr.appendChild(assignmentCell(row, 'paddock', workerOptions, 'Paddock'));
+            tr.appendChild(assignmentCell(row, 'fieldClerk', workerOptions, 'Field Clerk'));
+            body.appendChild(tr);
+        });
     });
 }
 
+function optionSelectCell(row, key, options) {
+    const td = document.createElement('td');
+    td.className = 'operational-select-cell ' + (key === 'fieldId' ? 'field-select-cell' : 'lane-select-cell');
+    const select = document.createElement('select');
+    select.title = key === 'fieldId' ? 'Assigned field' : 'Assigned roll call lane';
+    options.forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = item.name;
+        select.appendChild(option);
+    });
+    select.value = row[key] || options[0]?.id || '';
+    select.addEventListener('change', () => updateRunPlanField(row.id, key, select.value));
+    td.appendChild(select);
+    return td;
+}
 function renderPremiumJudgeAssignmentStatus(trial) {
     const status = document.getElementById('premiumJudgeAssignmentsStatus');
     if (!status) {
@@ -15754,6 +17107,9 @@ function runPlanAssignmentConflicts(row) {
 async function updateRunPlanField(rowId, key, value, role = '') {
     const trial = readForm();
     trial.runPlan = (trial.runPlan || []).map((row) => row.id === rowId ? { ...row, [key]: key === 'runOrder' ? Number(value) || '' : value } : row);
+    if (key === 'fieldId') {
+        trial.runPlan = renumberRunPlanOrders(trial.runPlan || [], eventFieldsForTrial(trial));
+    }
     const updatedRow = (trial.runPlan || []).find((row) => row.id === rowId);
     if (
         role === 'judge'
@@ -15790,36 +17146,42 @@ async function updateRunPlanField(rowId, key, value, role = '') {
 
 function moveRunPlanRowByStep(rowId, step) {
     const trial = readForm();
-    const rows = sortedRunPlanRows(trial.runPlan || []);
-    const index = rows.findIndex((row) => row.id === rowId);
+    const fields = eventFieldsForTrial(trial);
+    const allRows = sortedRunPlanRows(trial.runPlan || [], fields);
+    const selected = allRows.find((row) => row.id === rowId);
+    if (!selected) return;
+    const fieldRows = allRows.filter((row) => row.fieldId === selected.fieldId);
+    const index = fieldRows.findIndex((row) => row.id === rowId);
     const nextIndex = index + step;
-    if (index < 0 || nextIndex < 0 || nextIndex >= rows.length) {
-        return;
-    }
+    if (index < 0 || nextIndex < 0 || nextIndex >= fieldRows.length) return;
 
-    const [row] = rows.splice(index, 1);
-    rows.splice(nextIndex, 0, row);
+    const [row] = fieldRows.splice(index, 1);
+    fieldRows.splice(nextIndex, 0, row);
+    const otherRows = allRows.filter((item) => item.fieldId !== selected.fieldId);
     selectedRunPlanRowId = rowId;
-    saveRunPlanOrder(trial, rows);
+    saveRunPlanOrder(trial, [...otherRows, ...fieldRows]);
 }
 
 function moveRunPlanRow(sourceId, targetId) {
-    if (!sourceId || !targetId || sourceId === targetId) {
-        return;
-    }
-
+    if (!sourceId || !targetId || sourceId === targetId) return;
     const trial = readForm();
-    const rows = sortedRunPlanRows(trial.runPlan || []);
-    const sourceIndex = rows.findIndex((row) => row.id === sourceId);
-    const targetIndex = rows.findIndex((row) => row.id === targetId);
-    if (sourceIndex < 0 || targetIndex < 0) {
+    const fields = eventFieldsForTrial(trial);
+    const allRows = sortedRunPlanRows(trial.runPlan || [], fields);
+    const source = allRows.find((row) => row.id === sourceId);
+    const target = allRows.find((row) => row.id === targetId);
+    if (!source || !target) return;
+    if (source.fieldId !== target.fieldId) {
+        showMessage(runPlanMessage, 'Choose the destination field first, then drag the breed within that field.', 'warning');
         return;
     }
-
-    const [row] = rows.splice(sourceIndex, 1);
-    rows.splice(targetIndex, 0, row);
+    const fieldRows = allRows.filter((row) => row.fieldId === source.fieldId);
+    const sourceIndex = fieldRows.findIndex((row) => row.id === sourceId);
+    const targetIndex = fieldRows.findIndex((row) => row.id === targetId);
+    const [row] = fieldRows.splice(sourceIndex, 1);
+    fieldRows.splice(targetIndex, 0, row);
+    const otherRows = allRows.filter((item) => item.fieldId !== source.fieldId);
     selectedRunPlanRowId = sourceId;
-    saveRunPlanOrder(trial, rows);
+    saveRunPlanOrder(trial, [...otherRows, ...fieldRows]);
 }
 
 function moveSelectedRunPlanRow(step) {
@@ -15830,19 +17192,35 @@ function moveSelectedRunPlanRow(step) {
     moveRunPlanRowByStep(selectedRunPlanRowId, step);
 }
 
+function renumberRunPlanOrders(rows, fields = [], preserveArrayOrder = false) {
+    const fieldList = fields.length ? fields : normalizedNamedOperationalGroups([], 'field', 'Field');
+    const knownIds = new Set(fieldList.map((field) => field.id));
+    const normalized = rows.map((row) => ({ ...row, fieldId: knownIds.has(row.fieldId) ? row.fieldId : fieldList[0].id }));
+    fieldList.forEach((field) => {
+        const fieldRows = normalized.filter((row) => row.fieldId === field.id);
+        if (!preserveArrayOrder) {
+            fieldRows.sort((a, b) => Number(a.runOrder || 0) - Number(b.runOrder || 0));
+        }
+        fieldRows.forEach((row, index) => { row.runOrder = index + 1; });
+    });
+    return normalized;
+}
+
 function saveRunPlanOrder(trial, rows) {
-    trial.runPlan = rows.map((row, index) => ({
-        ...row,
-        runOrder: index + 1,
-    }));
+    trial.runPlan = renumberRunPlanOrders(rows, eventFieldsForTrial(trial), true);
     upsertTrial(trial);
     render();
 }
 
-function sortedRunPlanRows(rows) {
-    return [...rows].sort((a, b) => Number(a.runOrder || 0) - Number(b.runOrder || 0));
+function sortedRunPlanRows(rows, fields = []) {
+    const fieldList = fields.length ? fields : normalizedNamedOperationalGroups([], 'field', 'Field');
+    const fieldOrder = new Map(fieldList.map((field, index) => [field.id, index]));
+    return [...rows].sort((a, b) => {
+        const fieldDifference = (fieldOrder.get(a.fieldId) ?? 999) - (fieldOrder.get(b.fieldId) ?? 999);
+        if (fieldDifference) return fieldDifference;
+        return Number(a.runOrder || 0) - Number(b.runOrder || 0);
+    });
 }
-
 function uniqueNames(values) {
     return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
@@ -15905,15 +17283,57 @@ function ensureWorkerInDatabaseAndTrial(name, role, trial) {
 }
 
 function renderPrintableSheets(trial) {
+    renderPrintFieldControl(trial);
     renderWorkerSheet(trial);
     renderJudgesMap(trial);
     renderRollCallSheet(trial);
     renderDrawSheet(trial);
 }
 
+function renderPrintFieldControl(trial) {
+    const control = document.getElementById('printFieldControl');
+    const select = document.getElementById('printFieldSelect');
+    if (!control || !select) return;
+    const fields = eventFieldsForTrial(trial);
+    control.hidden = fields.length <= 1;
+    const current = select.value;
+    select.innerHTML = '';
+    fields.forEach((field) => select.add(new Option(field.name, field.id)));
+    select.value = fields.some((field) => field.id === current) ? current : fields[0].id;
+}
+
+function selectedPrintField(trial) {
+    const fields = eventFieldsForTrial(trial);
+    if (fields.length <= 1) return fields[0];
+    const selectedId = document.getElementById('printFieldSelect')?.value;
+    return fields.find((field) => field.id === selectedId) || fields[0];
+}
+
+function printFieldTitle(trial) {
+    const fields = eventFieldsForTrial(trial);
+    return fields.length > 1 ? ` | ${selectedPrintField(trial).name}` : '';
+}
+
+function runPlanRowsForPrint(trial) {
+    const fields = eventFieldsForTrial(trial);
+    const selectedField = selectedPrintField(trial);
+    return sortedRunPlanRows(trial.runPlan || [], fields)
+        .filter((row) => fields.length <= 1 || row.fieldId === selectedField.id);
+}
+
+function entriesForPrintField(trial) {
+    const fields = eventFieldsForTrial(trial);
+    if (fields.length <= 1) return trial.entries || [];
+    const selectedField = selectedPrintField(trial);
+    const fieldByBreed = new Map((trial.runPlan || []).map((row) => [clean(row.breed), row.fieldId]));
+    return (trial.entries || []).filter((entry) => fieldByBreed.get(clean(runGroupBreedForEntry(entry))) === selectedField.id);
+}
+
 function renderWorkerSheet(trial) {
-    document.getElementById('workerSheetTitle').textContent = trialTitle(trial);
-    const rows = sortedRunPlanRows(trial.runPlan || []);
+    document.getElementById('workerSheetTitle').textContent = trialTitle(trial) + printFieldTitle(trial);
+    const fields = eventFieldsForTrial(trial);
+    const rows = runPlanRowsForPrint(trial);
+    const showField = false;
     const head = document.getElementById('workerSheetHead');
     const body = document.getElementById('workerSheetTable');
     const foot = document.getElementById('workerSheetFoot');
@@ -15921,7 +17341,9 @@ function renderWorkerSheet(trial) {
     const showMixed = rowDetails.some(({ stakeRuns }) => Boolean(stakeRuns.mixed));
     const showPaddock = rows.some((row) => Boolean(String(row.paddock || '').trim()));
     const showFieldClerk = rows.some((row) => Boolean(String(row.fieldClerk || '').trim()));
-    const headers = ['Order', 'Entries'];
+    const headers = [];
+    if (showField) headers.push('Field');
+    headers.push('Order', 'Entries');
     if (showMixed) headers.push('Mixed');
     headers.push('Open', 'Fch/Exc', 'Vet', 'Judges', 'Lure Operator', 'Huntmaster');
     if (showPaddock) headers.push('Paddock');
@@ -15953,9 +17375,8 @@ function renderWorkerSheet(trial) {
         tr.className = 'worker-sheet-breed-row';
         const assignmentConflicts = runPlanAssignmentConflicts(row);
         tr.classList.toggle('worker-assignment-conflict-row', assignmentConflicts.length > 0);
-        if (assignmentConflicts.length > 0) {
-            tr.title = `Worker assignment conflict: ${assignmentConflicts.join('; ')}`;
-        }
+        if (assignmentConflicts.length > 0) tr.title = 'Worker assignment conflict: ' + assignmentConflicts.join('; ');
+        if (showField) tr.appendChild(textCell(operationalGroupName(fields, row.fieldId, fields[0].name)));
         tr.appendChild(textCell(row.runOrder));
         tr.appendChild(workerSheetBreedCell(row.breed, stakeRuns.total));
         if (showMixed) tr.appendChild(textCell(stakeRuns.mixed));
@@ -15984,7 +17405,6 @@ function renderWorkerSheet(trial) {
     totalRow.append(totalLabel, totalValue, remainder);
     foot.appendChild(totalRow);
 }
-
 function workerSheetBreedCell(breed, entryTotal) {
     const td = document.createElement('td');
     td.className = 'worker-sheet-breed-cell';
@@ -16049,18 +17469,32 @@ function formatWorkerSheetRunCount(count) {
 
 function renderJudgesMap(trial) {
     const title = document.getElementById('judgesMapTitle');
+    const head = document.getElementById('judgesMapHead');
     const body = document.getElementById('judgesMapTable');
-    if (!title || !body) {
-        return;
-    }
-    title.textContent = trialTitle(trial);
+    if (!title || !body) return;
+    title.textContent = trialTitle(trial) + printFieldTitle(trial);
     body.innerHTML = '';
+    const fields = eventFieldsForTrial(trial);
+    const showField = false;
+    if (head) {
+        head.innerHTML = '';
+        const header = document.createElement('tr');
+        const labels = showField
+            ? ['Field', 'Order', 'Breed', 'Stake', 'Entries', 'Courses', 'Judges']
+            : ['Order', 'Breed', 'Stake', 'Entries', 'Courses', 'Judges'];
+        labels.forEach((label) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            header.appendChild(th);
+        });
+        head.appendChild(header);
+    }
 
-    const rows = judgesMapRows(trial);
+    const rows = judgesMapRows(trial, selectedPrintField(trial).id);
     if (rows.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 6;
+        td.colSpan = showField ? 7 : 6;
         td.textContent = 'No judge map rows yet.';
         tr.appendChild(td);
         body.appendChild(tr);
@@ -16069,56 +17503,51 @@ function renderJudgesMap(trial) {
 
     rows.forEach((row) => {
         const tr = document.createElement('tr');
-        [
-            row.runOrder,
-            row.breed,
-            row.stake,
-            row.entryCount,
-            row.courseBreakdown,
-            row.judges,
-        ].forEach((value) => tr.appendChild(textCell(value)));
+        const values = showField
+            ? [row.fieldName, row.runOrder, row.breed, row.stake, row.entryCount, row.courseBreakdown, row.judges]
+            : [row.runOrder, row.breed, row.stake, row.entryCount, row.courseBreakdown, row.judges];
+        values.forEach((value) => tr.appendChild(textCell(value)));
         body.appendChild(tr);
     });
 }
-
-function judgesMapRows(trial) {
-    const runRows = sortedRunPlanRows(trial.runPlan || []);
+function judgesMapRows(trial, selectedFieldId = '') {
+    const fields = eventFieldsForTrial(trial);
+    const runRows = sortedRunPlanRows(trial.runPlan || [], fields)
+        .filter((row) => !selectedFieldId || fields.length <= 1 || row.fieldId === selectedFieldId);
     return runRows.flatMap((runRow) => {
+        const base = {
+            fieldName: operationalGroupName(fields, runRow.fieldId, fields[0].name),
+            runOrder: runRow.runOrder,
+            breed: displayBreedCode(runRow.breed),
+            judges: [runRow.judge1, runRow.judge2].filter(Boolean).join(' / '),
+        };
         const entries = (trial.entries || []).filter((entry) => clean(runGroupBreedForEntry(entry)) === clean(runRow.breed));
         const mixedEligibility = mixedStakeEligibilityForEntries(entries, runRow.breed);
         if (mixedStakeBreedEnabled(trial, runRow.breed) && mixedEligibility.eligible) {
             return [{
-                runOrder: runRow.runOrder,
-                breed: displayBreedCode(runRow.breed),
-                stake: `Mixed (${mixedEligibility.stakes.map(displayJudgeMapStake).join('/')})`,
+                ...base,
+                stake: 'Mixed (' + mixedEligibility.stakes.map(displayJudgeMapStake).join('/') + ')',
                 entryCount: entries.length,
                 courseBreakdown: formatJudgeMapCourseBreakdown(entries.length, false),
-                judges: [runRow.judge1, runRow.judge2].filter(Boolean).join(' / '),
             }];
         }
         const stakeMap = new Map();
         entries.forEach((entry) => {
             const stake = runGroupStakeForEntry(entry) || 'Unassigned';
             const key = clean(stake) || 'UNASSIGNED';
-            if (!stakeMap.has(key)) {
-                stakeMap.set(key, { stake, entries: [] });
-            }
+            if (!stakeMap.has(key)) stakeMap.set(key, { stake, entries: [] });
             stakeMap.get(key).entries.push(entry);
         });
-
         return Array.from(stakeMap.values())
             .sort((a, b) => stakeSortOrder(a.stake) - stakeSortOrder(b.stake) || String(a.stake).localeCompare(String(b.stake)))
             .map((stakeRow) => ({
-                runOrder: runRow.runOrder,
-                breed: displayBreedCode(runRow.breed),
+                ...base,
                 stake: displayJudgeMapStake(stakeRow.stake),
                 entryCount: stakeRow.entries.length,
                 courseBreakdown: formatJudgeMapCourseBreakdown(stakeRow.entries.length, isQuasiBreedClass(runRow.breed) || isQuasiBreedClass(stakeRow.stake)),
-                judges: [runRow.judge1, runRow.judge2].filter(Boolean).join(' / '),
             }));
     });
 }
-
 function stakeSortOrder(stake) {
     const normalized = clean(stake);
     if (normalized === 'OPEN' || normalized === 'SINGLES') {
@@ -16151,16 +17580,21 @@ function formatJudgeMapCourseBreakdown(count, fillCourses = false) {
 }
 
 function renderRollCallSheet(trial) {
-    document.getElementById('rollCallTitle').textContent = trialTitle(trial);
+    document.getElementById('rollCallTitle').textContent = trialTitle(trial) + printFieldTitle(trial);
     const body = document.getElementById('rollCallTable');
     body.innerHTML = '';
-    const rows = sortRollCallEntries(trial.entries || []);
-    document.getElementById('rollCallTotal').textContent = `Total hounds: ${rows.length}`;
+    const lanes = rollCallLanesForTrial(trial);
+    const showLane = lanes.length > 1;
+    const laneSort = (document.getElementById('rollCallSort')?.value || '') === 'lane';
+    const laneHeading = document.getElementById('rollCallLanePrintHeading');
+    if (laneHeading) laneHeading.hidden = !showLane;
+    const rows = sortRollCallEntries(entriesForPrintField(trial), trial);
+    document.getElementById('rollCallTotal').textContent = 'Total hounds: ' + rows.length;
 
     if (rows.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 5;
+        td.colSpan = showLane ? 6 : 5;
         td.textContent = 'No entries yet.';
         tr.appendChild(td);
         body.appendChild(tr);
@@ -16169,17 +17603,26 @@ function renderRollCallSheet(trial) {
 
     const callNameCounts = rows.reduce((counts, entry) => {
         const key = clean(entry.callName);
-        if (key) {
-            counts.set(key, (counts.get(key) || 0) + 1);
-        }
+        if (key) counts.set(key, (counts.get(key) || 0) + 1);
         return counts;
     }, new Map());
+    let previousLaneId = '';
 
     rows.forEach((entry) => {
-        const tr = document.createElement('tr');
-        if (entryNeedsDocuments(entry)) {
-            tr.classList.add('roll-call-print-needs-documents');
+        const lane = rollCallLaneForEntry(trial, entry);
+        if (showLane && laneSort && lane.id !== previousLaneId) {
+            const laneRow = document.createElement('tr');
+            laneRow.className = 'roll-call-lane-heading';
+            const laneCell = document.createElement('th');
+            laneCell.colSpan = 6;
+            laneCell.textContent = lane.name;
+            laneRow.appendChild(laneCell);
+            body.appendChild(laneRow);
+            previousLaneId = lane.id;
         }
+
+        const tr = document.createElement('tr');
+        if (entryNeedsDocuments(entry)) tr.classList.add('roll-call-print-needs-documents');
         const check = document.createElement('td');
         check.className = 'roll-call-check-cell';
         const box = document.createElement('span');
@@ -16188,13 +17631,16 @@ function renderRollCallSheet(trial) {
         tr.appendChild(check);
         const callNameKey = clean(entry.callName);
         const duplicateCallName = callNameKey && callNameCounts.get(callNameKey) > 1;
-        const callName = duplicateCallName ? `${entry.callName || 'Unnamed'} (${entry.owner || 'Owner not listed'})` : entry.callName;
+        const callName = duplicateCallName ? (entry.callName || 'Unnamed') + ' (' + (entry.owner || 'Owner not listed') + ')' : entry.callName;
         const note = entryNeedsDocuments(entry) ? 'Documentation needed' : '';
-        [callName, displayBreedCode(entry.breed), entry.className, note].forEach((value) => tr.appendChild(textCell(value)));
+        tr.appendChild(textCell(callName));
+        tr.appendChild(textCell(displayBreedCode(entry.breed)));
+        tr.appendChild(textCell(entry.className));
+        if (showLane) tr.appendChild(textCell(lane.name));
+        tr.appendChild(textCell(note));
         body.appendChild(tr);
     });
 }
-
 function renderDrawSheet(trial) {
     const heading = document.getElementById('drawSheetHeading');
     const title = document.getElementById('drawSheetTitle');
@@ -16299,35 +17745,42 @@ function drawSheetTemplateInfo(association) {
 }
 
 function sortDrawGroupsForPrint(groups, trial) {
-    const runOrderByBreed = new Map((trial.runPlan || []).map((row) => [clean(row.breed), Number(row.runOrder || 999)]));
+    const fields = eventFieldsForTrial(trial);
+    const fieldOrder = new Map(fields.map((field, index) => [field.id, index]));
+    const assignmentByBreed = new Map((trial.runPlan || []).map((row) => [clean(row.breed), {
+        fieldOrder: fieldOrder.get(row.fieldId) ?? 999,
+        runOrder: Number(row.runOrder || 999),
+    }]));
     const stakeOrder = ['Open', 'Excellent', 'Field Champion', 'FCH', 'Veteran', 'Singles', 'LCI'];
 
     return [...groups].sort((a, b) => {
-        const breedOrderA = runOrderByBreed.get(clean(a.breed)) || 999;
-        const breedOrderB = runOrderByBreed.get(clean(b.breed)) || 999;
-        if (breedOrderA !== breedOrderB) {
-            return breedOrderA - breedOrderB;
-        }
+        const assignmentA = assignmentByBreed.get(clean(a.breed)) || { fieldOrder: 999, runOrder: 999 };
+        const assignmentB = assignmentByBreed.get(clean(b.breed)) || { fieldOrder: 999, runOrder: 999 };
+        if (assignmentA.fieldOrder !== assignmentB.fieldOrder) return assignmentA.fieldOrder - assignmentB.fieldOrder;
+        if (assignmentA.runOrder !== assignmentB.runOrder) return assignmentA.runOrder - assignmentB.runOrder;
 
         const breedCompare = String(a.breed || '').localeCompare(String(b.breed || ''), undefined, { numeric: true, sensitivity: 'base' });
-        if (breedCompare !== 0) {
-            return breedCompare;
-        }
-
+        if (breedCompare !== 0) return breedCompare;
         const stakeA = stakeOrder.findIndex((stake) => clean(stake) === clean(a.stake));
         const stakeB = stakeOrder.findIndex((stake) => clean(stake) === clean(b.stake));
         const normalizedA = stakeA === -1 ? 999 : stakeA;
         const normalizedB = stakeB === -1 ? 999 : stakeB;
-        if (normalizedA !== normalizedB) {
-            return normalizedA - normalizedB;
-        }
-
+        if (normalizedA !== normalizedB) return normalizedA - normalizedB;
         return String(a.stake || '').localeCompare(String(b.stake || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
 }
-
-function sortRollCallEntries(entries) {
+function sortRollCallEntries(entries, trial = getSelectedTrial() || {}) {
     const sort = document.getElementById('rollCallSort')?.value || 'breedClass';
+    if (sort === 'lane') {
+        const lanes = rollCallLanesForTrial(trial);
+        const laneOrder = new Map(lanes.map((lane, index) => [lane.id, index]));
+        return [...entries].sort((a, b) => {
+            const laneA = rollCallLaneForEntry(trial, a);
+            const laneB = rollCallLaneForEntry(trial, b);
+            const difference = (laneOrder.get(laneA.id) ?? 999) - (laneOrder.get(laneB.id) ?? 999);
+            return difference || compareByKeys(a, b, ['breed', 'className', 'callName']);
+        });
+    }
     const keysBySort = {
         breedClass: ['breed', 'className', 'callName'],
         callName: ['callName', 'breed', 'className'],
@@ -16338,7 +17791,6 @@ function sortRollCallEntries(entries) {
     const keys = keysBySort[sort] || keysBySort.breedClass;
     return [...entries].sort((a, b) => compareByKeys(a, b, keys));
 }
-
 function compareByKeys(a, b, keys) {
     for (const key of keys) {
         const result = String(a[key] || '').localeCompare(String(b[key] || ''), undefined, { numeric: true, sensitivity: 'base' });
@@ -16412,7 +17864,7 @@ async function printDrawSheet() {
         const response = await fetch('/api/draw-sheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial, layout: getAsfaDrawLayout(), copies }),
+            body: JSON.stringify({ trial, layout: getDrawLayoutForTrial(trial), copies }),
         });
 
         if (!response.ok) {
@@ -16641,7 +18093,7 @@ async function printRunoffDrawSheet() {
         const response = await fetch('/api/draw-sheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial: printTrial, layout: getAsfaDrawLayout(), copies }),
+            body: JSON.stringify({ trial: printTrial, layout: getDrawLayoutForTrial(printTrial), copies }),
         });
         if (!response.ok) {
             let message = 'Runoff draw sheet could not be created.';
@@ -16733,7 +18185,7 @@ async function printBifDrawSheet() {
         const response = await fetch('/api/draw-sheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial: printTrial, layout: getAsfaDrawLayout(), copies }),
+            body: JSON.stringify({ trial: printTrial, layout: getDrawLayoutForTrial(printTrial), copies }),
         });
         if (!response.ok) {
             let message = 'BIF draw sheet could not be created.';
@@ -16821,7 +18273,7 @@ async function printFinalsHuntmasterSheet() {
         const response = await fetch('/api/draw-sheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial: printTrial, layout: getAsfaDrawLayout(), copies }),
+            body: JSON.stringify({ trial: printTrial, layout: getDrawLayoutForTrial(printTrial), copies }),
         });
         if (!response.ok) {
             let message = 'Finals huntmaster sheet could not be created.';
@@ -17089,6 +18541,7 @@ function createAdminTestTrial() {
     const groupCount = Math.max(1, Math.min(14, requestedGroups));
     const trialDate = document.getElementById('adminTestDate').value || new Date().toISOString().slice(0, 10);
     const association = document.getElementById('adminTestAssociation').value || 'ASFA';
+    const profile = rulesForAssociation(association);
     const useImported = document.getElementById('adminTestUseImportedHounds').checked;
 
     const judges = ensureAdminTestJudges();
@@ -17102,6 +18555,8 @@ function createAdminTestTrial() {
         id: crypto.randomUUID(),
         trialName: `Admin Test Trial ${trialDate}`,
         association,
+        rulesetId: profile.rulesetId,
+        rulesetVersion: profile.rulesetVersion,
         clubName: 'Admin Test Club',
         eventNumber: 'TEST',
         startsOn: trialDate,
@@ -17110,7 +18565,7 @@ function createAdminTestTrial() {
         specialtyBreed: '',
         region: '1',
         singlesOffered: true,
-        lciOffered: true,
+        lciOffered: profile.lciAllowed,
         priorityDate: false,
         testTrial: true,
         locationName: 'Test Field',
@@ -17153,14 +18608,16 @@ function createAdminTestTrial() {
 }
 
 function buildRandomAdminBreedPlan(totalDogs, requestedGroups) {
+    const association = document.getElementById('adminTestAssociation')?.value || 'ASFA';
+    const profile = rulesForAssociation(association);
     const breedCodes = breedOptions
         .map(([value]) => value)
-        .filter((value) => asfaRegularBreedCodes.includes(clean(value)));
-    const normalStakes = ['Open', 'Field Champion', 'Veteran'];
+        .filter((value) => profile.eligibleBreedCodes.includes(clean(value)));
+    const normalStakes = profile.regularStakes.filter((stake) => !['Singles', 'Provisional'].includes(stake));
     const candidates = [
         ...breedCodes.flatMap((breed) => normalStakes.map((className) => ({ breed, className }))),
         { breed: 'Singles', className: 'Singles' },
-        ...lciDivisions.flatMap((breed) => lciStakes.map((className) => ({ breed, className }))),
+        ...(profile.lciAllowed ? lciDivisions.flatMap((breed) => lciStakes.map((className) => ({ breed, className }))) : []),
     ];
     const groupCount = Math.max(1, Math.min(requestedGroups || 8, candidates.length, totalDogs));
     const chosen = secureShuffle(candidates).slice(0, groupCount);
@@ -17627,6 +19084,8 @@ function buildAdminRunPlan(trial) {
         huntmaster,
         paddock: trial.workers.find((worker) => worker.role === 'Paddock')?.name || '',
         fieldClerk: trial.workers.find((worker) => worker.role === 'Field Clerk')?.name || '',
+        fieldId: eventFieldsForTrial(trial)[0].id,
+        rollCallLaneId: rollCallLanesForTrial(trial)[0].id,
     }));
 }
 
@@ -21640,18 +23099,20 @@ function isQuasiBreedGroup(group) {
 }
 
 function groupTitle(group) {
+    let title;
     if (isQuasiBreedGroup(group)) {
         if (clean(group.breed) === 'SINGLES') {
-            return `${group.breed}${group.mixedStake ? ' (Mixed)' : ''}`;
+            title = `${group.breed}${group.mixedStake ? ' (Mixed)' : ''}`;
+        } else if (clean(group.breed).startsWith('LCI')) {
+            title = `${group.breed} - ${group.stake || 'Open'}${group.mixedStake ? ' (Mixed)' : ''}`;
+        } else {
+            title = `${group.breed}${group.mixedStake ? ' (Mixed)' : ''}`;
         }
-        if (clean(group.breed).startsWith('LCI')) {
-            return `${group.breed} - ${group.stake || 'Open'}${group.mixedStake ? ' (Mixed)' : ''}`;
-        }
-        return `${group.breed}${group.mixedStake ? ' (Mixed)' : ''}`;
+    } else {
+        title = `${breedDisplayCode(group.breed)} - ${group.stake}${group.mixedStake ? ' (Mixed Stake)' : ''}`;
     }
-    return `${breedDisplayCode(group.breed)} - ${group.stake}${group.mixedStake ? ' (Mixed Stake)' : ''}`;
+    return group.flight ? `${title} - ${group.splitLabel || 'Flight'} ${group.flight}` : title;
 }
-
 function clearValues(ids) {
     ids.forEach((id) => {
         document.getElementById(id).value = '';
@@ -21797,16 +23258,60 @@ function renderScoringPages() {
 }
 
 function renderWrapUpPages() {
+    const trial = getSelectedTrial();
+    const profile = rulesForTrial(trial);
+    const isAkc = profile.association === 'AKC';
+
+    const secHeading = document.getElementById('secretaryReportHeading');
+    const secDesc = document.getElementById('secretaryReportDesc');
+    const secBtn = document.getElementById('printAsfaSecretaryReportButton');
+    if (secHeading) secHeading.textContent = isAkc ? 'AKC Secretary Report' : 'ASFA Secretary Report';
+    if (secDesc) secDesc.textContent = isAkc ? 'Build the official AKC Event Secretary report for trial submission.' : 'Build the ASFA Field Trial Secretary report for trial submission.';
+    if (secBtn) secBtn.textContent = isAkc ? 'Print AKC Secretary Report' : 'Print ASFA Secretary Report';
+
+    const asfaQuestions = document.getElementById('asfaSecretaryQuestions');
+    const akcQuestions = document.getElementById('akcSecretaryQuestions');
+    const secretaryInfo = document.getElementById('secretaryReportInfo');
+    if (asfaQuestions) asfaQuestions.hidden = isAkc;
+    if (akcQuestions) akcQuestions.hidden = !isAkc;
+    if (secretaryInfo) {
+        secretaryInfo.textContent = isAkc
+            ? 'The report also fills the club, event dates and number, location, entry count, $4.50 AKC recording fee, secretary contact information, and signature date from the active trial.'
+            : 'The report also fills club, region, chair, secretary email, trial date, location, entry counts, and calculated ASFA fees from the active trial.';
+    }
+
+    const recHeading = document.getElementById('recordPacketHeading');
+    const recDesc = document.getElementById('recordPacketDesc');
+    const recBtn = document.getElementById('printAsfaRecordPacketButton');
+    const entryFormsBtn = document.getElementById('printAsfaEntryFormsButton');
+    if (recHeading) recHeading.textContent = isAkc ? 'AKC Submission Packet' : 'ASFA Record Packet';
+    if (recDesc) recDesc.textContent = isAkc ? 'Create the complete end-of-trial AKC event submission packet.' : 'Create the complete end-of-trial ASFA record packet with all record sheets in order.';
+    if (recBtn) recBtn.textContent = isAkc ? 'Print AKC Submission Packet' : 'Print ASFA Record Packet';
+    if (entryFormsBtn) entryFormsBtn.style.display = isAkc ? 'none' : '';
+
+    const submissionDesc = document.getElementById('paperworkSubmissionDesc');
+    if (submissionDesc) {
+        submissionDesc.textContent = isAkc
+            ? 'Email the completed event results to performanceresults@akc.org after reviewing the AKC submission packet.'
+            : 'Send the completed trial paperwork to records@asfa.org after reviewing the record packet.';
+    }
+
+    const lciLabel = document.getElementById('secretaryLciRegistrationCount')?.closest('label');
+    const perCapitaLabel = document.getElementById('secretaryPerCapitaRate')?.closest('label');
+    if (lciLabel) lciLabel.style.display = isAkc ? 'none' : '';
+    if (perCapitaLabel) perCapitaLabel.style.display = isAkc ? 'none' : '';
+
     const sections = [...document.querySelectorAll('.form-section[data-tab="wrapup"]')];
+    const defaultPage = isAkc ? 'AKC Secretary Report' : 'ASFA Secretary Report';
     if (!sections.some((section) => section.querySelector('h2, h3')?.textContent === currentWrapUpPage)) {
-        currentWrapUpPage = 'ASFA Secretary Report';
+        currentWrapUpPage = defaultPage;
     }
     sections.forEach((section) => {
         const heading = section.querySelector('h2, h3');
         section.hidden = heading ? heading.textContent !== currentWrapUpPage : true;
     });
-    renderPaperworkSubmittedStatus(getSelectedTrial());
-    renderTrialArchiveStatus(getSelectedTrial());
+    renderPaperworkSubmittedStatus(trial);
+    renderTrialArchiveStatus(trial);
 }
 
 function wrapUpPageGuideStatus(page, trial) {
@@ -21866,6 +23371,8 @@ function renderPaperworkSubmittedStatus(trial) {
         paragraph.textContent = 'Select a trial to see submission status.';
     } else if (trial.paperworkSubmittedAt) {
         paragraph.innerHTML = `<strong>Submitted:</strong> ${formatTimestamp(trial.paperworkSubmittedAt)}. Next step is to archive the completed trial.`;
+    } else if (rulesForTrial(trial).association === 'AKC') {
+        paragraph.innerHTML = 'After reviewing the AKC submission packet, email the event results to <strong>performanceresults@akc.org</strong>, handle the service-fee payment as directed on the report, then mark it submitted here.';
     } else {
         paragraph.innerHTML = 'After printing and reviewing the ASFA record packet, submit paperwork to <strong>records@asfa.org</strong>, then mark it submitted here.';
     }
@@ -21925,6 +23432,156 @@ function applyArchiveReadOnlyMode(trial) {
     });
 }
 
+function catalogReportTrialsInDateOrder() {
+    return [...trials].sort((a, b) => {
+        const dateCompare = String(a.startsOn || a.endsOn || '').localeCompare(String(b.startsOn || b.endsOn || ''));
+        if (dateCompare !== 0) return dateCompare;
+        return String(a.trialName || a.clubName || '').localeCompare(String(b.trialName || b.clubName || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+}
+
+function catalogTrialDateLabel(trial) {
+    const raw = trial?.startsOn || trial?.endsOn || '';
+    if (!raw) return 'Date not set';
+    const date = new Date(`${raw}T12:00:00`);
+    if (Number.isNaN(date.getTime())) return raw;
+    return date.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function catalogTrialStatusLabel(trial) {
+    if (trial?.archivedAt) return 'Archived';
+    if ((trial?.preliminaryDraw?.groups || []).length > 0) return 'In progress';
+    return 'Setup';
+}
+
+function updateCatalogSelectionSummary() {
+    const existingIds = new Set(trials.map((trial) => String(trial.id || '')));
+    selectedCatalogTrialIds = new Set([...selectedCatalogTrialIds].filter((id) => existingIds.has(id)));
+    const count = selectedCatalogTrialIds.size;
+    const entryCount = trials
+        .filter((trial) => selectedCatalogTrialIds.has(String(trial.id || '')))
+        .reduce((total, trial) => total + (trial.entries || []).length, 0);
+    const summary = document.getElementById('catalogSelectionCount');
+    if (summary) {
+        summary.textContent = `${count} trial${count === 1 ? '' : 's'} selected | ${entryCount} entr${entryCount === 1 ? 'y' : 'ies'}`;
+    }
+    ['buildCatalogEntriesButton', 'buildCatalogFinalButton'].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = count === 0;
+    });
+}
+
+function renderCatalogReportTrials() {
+    const table = document.getElementById('catalogTrialTable');
+    if (!table) return;
+    if (!catalogSelectionInitialized) {
+        const initialId = String(selectedTrialId || getSelectedTrial()?.id || '');
+        if (initialId) selectedCatalogTrialIds.add(initialId);
+        catalogSelectionInitialized = true;
+    }
+    table.innerHTML = '';
+    const orderedTrials = catalogReportTrialsInDateOrder();
+    if (orderedTrials.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 7;
+        cell.textContent = 'Create a trial before building catalog reports.';
+        row.appendChild(cell);
+        table.appendChild(row);
+        updateCatalogSelectionSummary();
+        return;
+    }
+    orderedTrials.forEach((trial) => {
+        const trialId = String(trial.id || '');
+        const row = document.createElement('tr');
+        const checkCell = document.createElement('td');
+        checkCell.className = 'catalog-check-column';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selectedCatalogTrialIds.has(trialId);
+        checkbox.setAttribute('aria-label', `Use ${trial.trialName || trial.clubName || 'trial'} in catalog reports`);
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) selectedCatalogTrialIds.add(trialId);
+            else selectedCatalogTrialIds.delete(trialId);
+            row.classList.toggle('catalog-trial-selected', checkbox.checked);
+            updateCatalogSelectionSummary();
+        });
+        checkCell.appendChild(checkbox);
+        row.appendChild(checkCell);
+        [
+            catalogTrialDateLabel(trial),
+            trial.trialName || 'Untitled trial',
+            trial.clubName || '-',
+            String(trial.association || 'ASFA').toUpperCase(),
+            String((trial.entries || []).length),
+            catalogTrialStatusLabel(trial),
+        ].forEach((value, index) => {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            if (index === 5) cell.className = 'catalog-trial-status';
+            row.appendChild(cell);
+        });
+        row.classList.toggle('catalog-trial-selected', checkbox.checked);
+        table.appendChild(row);
+    });
+    updateCatalogSelectionSummary();
+}
+
+function selectAllCatalogTrials() {
+    selectedCatalogTrialIds = new Set(trials.map((trial) => String(trial.id || '')).filter(Boolean));
+    renderCatalogReportTrials();
+}
+
+function clearCatalogTrials() {
+    selectedCatalogTrialIds.clear();
+    renderCatalogReportTrials();
+}
+
+function selectActiveCatalogWeekend() {
+    const anchor = getSelectedTrial();
+    const anchorRaw = anchor?.startsOn || anchor?.endsOn || '';
+    const anchorDate = anchorRaw ? new Date(`${anchorRaw}T12:00:00`) : null;
+    if (!anchorDate || Number.isNaN(anchorDate.getTime())) {
+        if (anchor?.id) selectedCatalogTrialIds = new Set([String(anchor.id)]);
+        renderCatalogReportTrials();
+        return;
+    }
+    selectedCatalogTrialIds = new Set(catalogReportTrialsInDateOrder()
+        .filter((trial) => {
+            const raw = trial.startsOn || trial.endsOn || '';
+            const date = raw ? new Date(`${raw}T12:00:00`) : null;
+            return date && !Number.isNaN(date.getTime()) && Math.abs(date.getTime() - anchorDate.getTime()) <= (2 * 24 * 60 * 60 * 1000);
+        })
+        .map((trial) => String(trial.id || ''))
+        .filter(Boolean));
+    renderCatalogReportTrials();
+}
+
+function selectedCatalogTrials() {
+    return catalogReportTrialsInDateOrder().filter((trial) => selectedCatalogTrialIds.has(String(trial.id || '')));
+}
+
+async function buildCatalogReport(reportType) {
+    const message = document.getElementById('catalogReportMessage');
+    const chosenTrials = selectedCatalogTrials();
+    if (chosenTrials.length === 0) {
+        showMessage(message, 'Select at least one trial for the catalog.', 'warning');
+        return;
+    }
+    const entryCount = chosenTrials.reduce((total, trial) => total + (trial.entries || []).length, 0);
+    if (entryCount === 0) {
+        showMessage(message, 'The selected trials do not have any hound entries yet.', 'warning');
+        return;
+    }
+    const isFinal = reportType === 'final';
+    await openTrialPdf(
+        isFinal ? '/api/catalog-final' : '/api/catalog-entries',
+        { trialIds: chosenTrials.map((trial) => String(trial.id || '')).filter(Boolean) },
+        message,
+        `${isFinal ? 'Catalog Final' : 'Catalog Entries'} PDF created from ${chosenTrials.length} trial${chosenTrials.length === 1 ? '' : 's'}.`,
+        `${isFinal ? 'Catalog Final' : 'Catalog Entries'} could not be created.`,
+    );
+}
 function renderAdminPages() {
     if (!adminPageTabs.includes(currentAdminPage)) {
         currentAdminPage = adminPageTabs[0];
@@ -21971,6 +23628,7 @@ function render() {
     renderTrialGuide(selected || null);
     renderWorkflowStrip(selected || null);
     writeForm(selected || null);
+    renderCatalogReportTrials();
     switchTab(currentTab);
     applyArchiveReadOnlyMode(selected || null);
     requestAnimationFrame(restorePendingScoreFocus);
@@ -22235,6 +23893,19 @@ document.getElementById('cancelEntryEditButton').addEventListener('click', () =>
     clearEntryForm();
     showMessage(entryMessage, 'Entry edit canceled.', 'warning');
 });
+document.getElementById('eventFieldCount')?.addEventListener('change', () => {
+    resizeOperationalSetup('eventFieldCount', 'eventFieldNames', 'field', 'Field');
+    saveOperationalSetupFromControls();
+});
+document.getElementById('rollCallLaneCount')?.addEventListener('change', () => {
+    resizeOperationalSetup('rollCallLaneCount', 'rollCallLaneNames', 'lane', 'Lane');
+    saveOperationalSetupFromControls();
+});
+document.addEventListener('change', (event) => {
+    if (event.target.matches('#eventFieldNames input[data-operational-name], #rollCallLaneNames input[data-operational-name]')) {
+        saveOperationalSetupFromControls();
+    }
+});
 document.getElementById('copyTrialButton').addEventListener('click', copyCurrentTrialSetup);
 document.getElementById('buildRunPlanButton').addEventListener('click', buildRunPlanFromEntries);
 document.getElementById('readPremiumJudgesButton')?.addEventListener('click', () => {
@@ -22264,6 +23935,10 @@ document.getElementById('premiumJudgeAssignmentsText')?.addEventListener('input'
 });
 document.getElementById('moveSelectedRunPlanUpButton')?.addEventListener('click', () => moveSelectedRunPlanRow(-1));
 document.getElementById('moveSelectedRunPlanDownButton')?.addEventListener('click', () => moveSelectedRunPlanRow(1));
+document.getElementById('printFieldSelect')?.addEventListener('change', () => {
+    const trial = getSelectedTrial();
+    if (trial) renderPrintableSheets(trial);
+});
 document.getElementById('rollCallSort').addEventListener('change', () => {
     const trial = readForm();
     upsertTrial(trial);
@@ -22361,7 +24036,13 @@ document.getElementById('addAdminPlanRowButton').addEventListener('click', addAd
 document.getElementById('createAdminTestTrialButton').addEventListener('click', createAdminTestTrial);
 document.getElementById('populateAdminScoresButton').addEventListener('click', populateAdminPreliminaryScores);
 document.getElementById('populateAdminFinalsScoresButton').addEventListener('click', populateAdminFinalsScores);
+document.getElementById('populateAdminRunoffScoresButton')?.addEventListener('click', populateAdminRunoffScores);
 document.getElementById('removeAdminTestRecordsButton')?.addEventListener('click', removeAdminTestRecords);
+document.getElementById('selectAllCatalogTrialsButton')?.addEventListener('click', selectAllCatalogTrials);
+document.getElementById('selectCatalogWeekendButton')?.addEventListener('click', selectActiveCatalogWeekend);
+document.getElementById('clearCatalogTrialsButton')?.addEventListener('click', clearCatalogTrials);
+document.getElementById('buildCatalogEntriesButton')?.addEventListener('click', () => buildCatalogReport('entries'));
+document.getElementById('buildCatalogFinalButton')?.addEventListener('click', () => buildCatalogReport('final'));
 document.getElementById('deleteSelectedTrialButton').addEventListener('click', deleteSelectedAdminTrial);
 document.getElementById('restoreBrowserBackupButton').addEventListener('click', restoreBrowserSafetyBackup);
 document.getElementById('createSQLiteBackupButton').addEventListener('click', createSQLiteBackup);
@@ -22391,12 +24072,16 @@ document.getElementById('importDataBackupFile').addEventListener('change', (even
 document.getElementById('officialFormsAssociation').addEventListener('change', () => renderOfficialForms(getSelectedTrial()));
 document.getElementById('previewAsfaRecordAlignmentButton').addEventListener('click', previewAsfaRecordAlignment);
 document.getElementById('resetAsfaRecordAlignmentButton').addEventListener('click', resetAsfaRecordAlignment);
+document.getElementById('previewAkcRecordAlignmentButton')?.addEventListener('click', previewAkcRecordAlignment);
+document.getElementById('resetAkcRecordAlignmentButton')?.addEventListener('click', resetAkcRecordAlignment);
 document.getElementById('previewAsfaEntryAlignmentButton')?.addEventListener('click', previewAsfaEntryAlignment);
 document.getElementById('resetAsfaEntryAlignmentButton')?.addEventListener('click', resetAsfaEntryAlignment);
 document.getElementById('previewAsfaLciEntryAlignmentButton')?.addEventListener('click', previewAsfaLciEntryAlignment);
 document.getElementById('resetAsfaLciEntryAlignmentButton')?.addEventListener('click', resetAsfaLciEntryAlignment);
 document.getElementById('previewAsfaDrawAlignmentButton')?.addEventListener('click', previewAsfaDrawAlignment);
 document.getElementById('resetAsfaDrawAlignmentButton')?.addEventListener('click', resetAsfaDrawAlignment);
+document.getElementById('previewAkcDrawAlignmentButton')?.addEventListener('click', previewAkcDrawAlignment);
+document.getElementById('resetAkcDrawAlignmentButton')?.addEventListener('click', resetAkcDrawAlignment);
 document.getElementById('previewAsfaJudgeAlignmentButton').addEventListener('click', previewAsfaJudgeAlignment);
 document.getElementById('resetAsfaJudgeAlignmentButton').addEventListener('click', resetAsfaJudgeAlignment);
 document.getElementById('previewAsfaSecretaryAlignmentButton')?.addEventListener('click', previewAsfaSecretaryAlignment);

@@ -86,6 +86,57 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-macos-build.txt
 
+      - name: Configure Developer ID signing
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          REQUIRE_NOTARIZATION: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${MACOS_CERTIFICATE:-}" || -z "${MACOS_CERTIFICATE_PASSWORD:-}" ]]; then
+            if [[ "$REQUIRE_NOTARIZATION" == "true" ]]; then
+              echo "Developer ID certificate secrets are required for tagged releases."
+              exit 1
+            fi
+            echo "::warning::Developer ID secrets are not configured; this development artifact will be ad-hoc signed."
+            echo "MACOS_SIGNED=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/field-trial-secretary-developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/field-trial-secretary-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          SIGN_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          if [[ -z "$SIGN_IDENTITY" ]]; then
+            echo "No Developer ID Application identity was found in the imported certificate."
+            exit 1
+          fi
+
+          echo "MACOS_SIGN_IDENTITY=$SIGN_IDENTITY" >> "$GITHUB_ENV"
+          echo "MACOS_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "MACOS_SIGNED=true" >> "$GITHUB_ENV"
+          echo "Developer ID signing identity configured."
+
       - name: Install build dependencies
         run: python3 -m pip install --upgrade -r requirements-macos-build.txt
 
@@ -118,6 +169,50 @@ jobs:
 
           python3 -c 'import json; data=json.load(open("build/macos-status.json")); assert data["ok"] is True; print(data["dbPath"])'
 
+      - name: Notarize and staple macOS installer
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          REQUIRE_NOTARIZATION: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${MACOS_SIGNED:-false}" != "true" ]]; then
+            if [[ "$REQUIRE_NOTARIZATION" == "true" ]]; then
+              echo "Tagged releases cannot be published without Developer ID signing."
+              exit 1
+            fi
+            echo "::warning::Skipping notarization for an unsigned development artifact."
+            exit 0
+          fi
+
+          if [[ -z "${APPLE_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" || -z "${APPLE_TEAM_ID:-}" ]]; then
+            if [[ "$REQUIRE_NOTARIZATION" == "true" ]]; then
+              echo "APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID are required for tagged releases."
+              exit 1
+            fi
+            echo "::warning::Notarization credentials are not configured; skipping development artifact notarization."
+            exit 0
+          fi
+
+          DMG_PATH="$(find dist -maxdepth 1 -name 'Field-Trial-Secretary-*-macOS-*.dmg' -print -quit)"
+          if [[ -z "$DMG_PATH" ]]; then
+            echo "No macOS DMG was found for notarization."
+            exit 1
+          fi
+
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --verbose=2 --type open --context context:primary-signature "$DMG_PATH"
+          echo "MACOS_NOTARIZED=true" >> "$GITHUB_ENV"
+
       - name: Upload macOS installer
         uses: actions/upload-artifact@v4
         with:
@@ -125,6 +220,14 @@ jobs:
           path: dist/Field-Trial-Secretary-*-macOS-*.dmg
           if-no-files-found: error
           retention-days: 30
+
+      - name: Remove temporary signing keychain
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${MACOS_SIGNING_KEYCHAIN:-}" && -f "$MACOS_SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
+          fi
 
   publish:
     name: Publish tagged release

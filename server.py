@@ -31,6 +31,7 @@ from asfa_judges import parse_asfa_judge_directory
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 
@@ -100,6 +101,7 @@ JUDGE_TEMPLATES = {
 }
 RECORD_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "SEC-01-Record-Sheet-Rev-03-02.pdf",
+    "AKC": APP_DIR / "templates" / "akc" / "JERSC3-Lure-Coursing-Scoresheet-4-22.pdf",
 }
 ENTRY_FORM_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "EF-A-Entry-Form-Rev-06-26.pdf",
@@ -203,6 +205,7 @@ DEFAULT_ASFA_JUDGE_LAYOUT = {
     "mixedTextX": 292,
     "mixedTextY": 169,
     "flightCircleX": 58,
+    "flightCircleStepX": 31.5,
     "flightCircleY": 167,
     "flightCircleW": 8,
     "flightCircleH": 7,
@@ -253,6 +256,53 @@ DEFAULT_ASFA_JUDGE_LAYOUT = {
     "colorColumnW": 80,
 }
 
+DEFAULT_AKC_DRAW_LAYOUT = {
+    "globalXAdjust": 0,
+    "globalYAdjust": 0,
+    "prelimChkX": 52.4,
+    "prelimChkY": 89.9,
+    "finalChkX": 96.4,
+    "finalChkY": 89.9,
+    "runoffChkX": 158.4,
+    "runoffChkY": 89.9,
+    "bifChkX": 202.4,
+    "bifChkY": 89.9,
+    "sheetNumberX": 166,
+    "sheetNumberY": 58,
+    "sheetNumberFontSize": 12,
+    "blockStartY": 132,
+    "blockYStep": 91,
+    "houndFontSize": 9.5,
+    "breedCircleXAdjust": 0,
+    "breedCircleYOffset": 4.78,
+    "breedCircleRx": 10,
+    "breedCircleRy": 6,
+    "breedCircleWeight": 1.4,
+    "breedCenterA": 7.82,
+    "breedCenterBA": 26.94,
+    "breedCenterB": 46.06,
+    "breedCenterG": 61.85,
+    "breedCenterIB": 79.03,
+    "breedCenterIG": 97.60,
+    "breedCenterIW": 117.35,
+    "breedCenterP": 135.14,
+    "breedCenterR": 150.38,
+    "breedCenterS": 165.67,
+    "breedCenterSD": 184.30,
+    "breedCenterW": 201.50,
+    "unlistedBreedX": 8,
+    "unlistedBreedY": 29,
+    "unlistedBreedFontSize": 9.5,
+    "courseNumX": 8,
+    "courseNumY": 48,
+    "courseNumberFontSize": 10,
+    "yellowX": 52,
+    "yellowY": 20,
+    "pinkX": 52,
+    "pinkY": 33,
+    "blueX": 52,
+    "blueY": 46,
+}
 DEFAULT_ASFA_DRAW_LAYOUT = {
     "globalXAdjust": 0,
     "globalYAdjust": 0,
@@ -1369,6 +1419,7 @@ def draw_groups_for_print(trial: dict) -> list[dict]:
             str(group.get("breed") or ""),
             stake_index,
             str(group.get("stake") or ""),
+            str(group.get("flight") or ""),
         )
 
     return sorted(groups, key=sort_key)
@@ -1402,7 +1453,7 @@ def generate_draw_sheet_pdf(trial: dict, layout: dict | None = None, copies: int
     if not course_blocks:
         raise ValueError("No preliminary draw courses were found.")
 
-    layout_settings = asfa_draw_layout(layout)
+    layout_settings = akc_draw_layout(layout) if association == "AKC" else asfa_draw_layout(layout)
     copy_count = max(1, min(10, int(copies or 1)))
     page_capacity = draw_sheet_page_capacity(association)
     writer = PdfWriter()
@@ -1451,6 +1502,18 @@ def generate_draw_sheet_pdf(trial: dict, layout: dict | None = None, copies: int
     return output.getvalue()
 
 
+
+def akc_draw_layout(layout: dict | None) -> dict:
+    merged = {**DEFAULT_AKC_DRAW_LAYOUT}
+    if isinstance(layout, dict):
+        for key in merged:
+            try:
+                value = float(layout.get(key))
+            except (TypeError, ValueError):
+                continue
+            merged[key] = value
+    return merged
+
 def asfa_draw_layout(layout: dict | None) -> dict:
     merged = {**DEFAULT_ASFA_DRAW_LAYOUT}
     if isinstance(layout, dict):
@@ -1496,7 +1559,7 @@ def build_draw_overlay(trial: dict, association: str, course_blocks: list[dict |
     pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
     pdf.setTitle("Official Draw Order Sheet")
     if association == "AKC":
-        draw_akc_overlay(pdf, trial, course_blocks, page_number, first_order)
+        draw_akc_overlay(pdf, trial, course_blocks, page_number, first_order, layout)
     else:
         draw_asfa_overlay(pdf, trial, course_blocks, page_number, first_order, layout, duplicate_copy_numbers)
     pdf.save()
@@ -1545,19 +1608,178 @@ def draw_asfa_draw_sheet_phase_checks(pdf: canvas.Canvas, column: int, block: di
         draw_check(pdf, column + layout["bifCheckX"] + layout["globalXAdjust"], layout["bifCheckY"] + layout["globalYAdjust"], layout)
 
 
-def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict], page_number: int, first_order: int) -> None:
-    columns = [27, 279, 540]
-    rows = [132, 223, 314, 405, 496]
-    draw_page_header(pdf, trial, page_number, first_order, first_order + len(course_blocks) - 1)
-    draw_sheet_numbers(pdf, columns, rows, len(course_blocks), page_number, 166, 58)
-    pdf.setFont("Helvetica", 6)
-    for index, block in enumerate(course_blocks):
-        column, top = draw_block_position(index, columns, rows)
-        draw_check(pdf, column + 51, 84)
-        pdf.drawString(column + 3, y_from_top(top + 6), f"{safe_text(block['breed'], 18)} - {safe_text(block['stake'], 8)}")
-        pdf.drawString(column + 18, y_from_top(top + 41), str(block["course"]))
-        draw_hound_lines(pdf, column + 43, top + 31, block)
+def draw_akc_existing_checkbox_mark(pdf: canvas.Canvas, x: float, top: float) -> None:
+    """Mark a checkbox already printed on the official AKC template."""
+    pdf.saveState()
+    pdf.setFillColorRGB(0.85, 0, 0)
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(x, y_from_top(top), "X")
+    pdf.restoreState()
 
+
+def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict], page_number: int, first_order: int, layout: dict | None = None) -> None:
+    columns = [27, 279, 540]
+    draw_page_header(pdf, trial, page_number, first_order, first_order + len(course_blocks) - 1)
+
+    layout_cfg = layout or {}
+    global_x = float(layout_cfg.get("globalXAdjust", 0))
+    global_y = float(layout_cfg.get("globalYAdjust", 0))
+    block_start_y = float(layout_cfg.get("blockStartY", 132))
+    block_y_step = float(layout_cfg.get("blockYStep", 91))
+    rows = [block_start_y + (index * block_y_step) for index in range(5)]
+    sheet_number_x = float(layout_cfg.get("sheetNumberX", 166))
+    sheet_number_y = float(layout_cfg.get("sheetNumberY", 58))
+    sheet_number_font_size = float(layout_cfg.get("sheetNumberFontSize", 12))
+    draw_sheet_numbers(
+        pdf, columns, rows, len(course_blocks), page_number,
+        sheet_number_x + global_x, sheet_number_y + global_y,
+        font_size=sheet_number_font_size, color=(0.85, 0, 0),
+    )
+
+    prelim_check_x = float(layout_cfg.get("prelimChkX", 57))
+    final_check_x = float(layout_cfg.get("finalChkX", 104))
+    runoff_check_x = float(layout_cfg.get("runoffChkX", 149))
+    bif_check_x = float(layout_cfg.get("bifChkX", 192))
+    legacy_phase_y = float(layout_cfg.get("phaseChkY", 86))
+    prelim_check_y = float(layout_cfg.get("prelimChkY", legacy_phase_y))
+    final_check_y = float(layout_cfg.get("finalChkY", legacy_phase_y))
+    runoff_check_y = float(layout_cfg.get("runoffChkY", legacy_phase_y))
+    bif_check_y = float(layout_cfg.get("bifChkY", legacy_phase_y))
+
+    breed_centers = {
+        "A": float(layout_cfg.get("breedCenterA", 9)),
+        "BA": float(layout_cfg.get("breedCenterBA", 27)),
+        "B": float(layout_cfg.get("breedCenterB", 46)),
+        "G": float(layout_cfg.get("breedCenterG", 64)),
+        "IB": float(layout_cfg.get("breedCenterIB", 81)),
+        "IG": float(layout_cfg.get("breedCenterIG", 99)),
+        "IW": float(layout_cfg.get("breedCenterIW", 118)),
+        "P": float(layout_cfg.get("breedCenterP", 137)),
+        "R": float(layout_cfg.get("breedCenterR", 152)),
+        "S": float(layout_cfg.get("breedCenterS", 167)),
+        "SD": float(layout_cfg.get("breedCenterSD", 184)),
+        "W": float(layout_cfg.get("breedCenterW", 202)),
+    }
+    breed_aliases = {
+        "AH": "A", "AFGHAN": "A",
+        "BASENJI": "BA",
+        "BZ": "B", "BORZOI": "B",
+        "GH": "G", "GREYHOUND": "G",
+        "IBIZAN": "IB",
+        "ITALIAN": "IG",
+        "IRISH": "IW",
+        "PH": "P", "PHARAOH": "P",
+        "RR": "R", "RHODESIAN": "R",
+        "SA": "S", "SALUKI": "S",
+        "DH": "SD", "SCOTTISH": "SD",
+        "WH": "W", "WHIPPET": "W",
+    }
+
+    breed_circle_x_adjust = float(layout_cfg.get("breedCircleXAdjust", 0))
+    breed_circle_y_offset = float(layout_cfg.get("breedCircleYOffset", 4))
+    breed_circle_rx = float(layout_cfg.get("breedCircleRx", 10))
+    breed_circle_ry = float(layout_cfg.get("breedCircleRy", 6))
+    breed_circle_weight = float(layout_cfg.get("breedCircleWeight", 1.4))
+    hound_font_size = float(layout_cfg.get("houndFontSize", 9.5))
+    unlisted_breed_x = float(layout_cfg.get("unlistedBreedX", 8))
+    unlisted_breed_y = float(layout_cfg.get("unlistedBreedY", 29))
+    unlisted_breed_font_size = float(layout_cfg.get("unlistedBreedFontSize", 9.5))
+    course_num_x_offset = float(layout_cfg.get("courseNumX", 8))
+    course_num_y_offset = float(layout_cfg.get("courseNumY", 48))
+    course_number_font_size = float(layout_cfg.get("courseNumberFontSize", 10))
+    yellow_x_offset = float(layout_cfg.get("yellowX", layout_cfg.get("houndTextX", 52)))
+    yellow_y_offset = float(layout_cfg.get("yellowY", 20))
+    pink_x_offset = float(layout_cfg.get("pinkX", layout_cfg.get("houndTextX", 52)))
+    pink_y_offset = float(layout_cfg.get("pinkY", 33))
+    blue_x_offset = float(layout_cfg.get("blueX", layout_cfg.get("houndTextX", 52)))
+    blue_y_offset = float(layout_cfg.get("blueY", 46))
+
+    blocks_per_column = len(rows)
+    for column_index, column_x in enumerate(columns):
+        column_blocks = course_blocks[
+            column_index * blocks_per_column:(column_index + 1) * blocks_per_column
+        ]
+        column_blocks = [block for block in column_blocks if block]
+        if not column_blocks:
+            continue
+        first_block = column_blocks[0]
+        stake = clean_text(first_block.get("stake") or "")
+        phase = clean_text(first_block.get("phase") or "")
+        is_final = "FINAL" in phase or "FINAL" in stake
+        is_runoff = "RUNOFF" in phase or "RUNOFF" in stake or "BOB" in phase or "TIE" in stake
+        is_bif = "BIF" in phase or "BIF" in stake
+        checkbox_column_x = column_x + global_x
+        if is_runoff:
+            draw_akc_existing_checkbox_mark(pdf, checkbox_column_x + runoff_check_x, runoff_check_y + global_y)
+        elif is_final:
+            draw_akc_existing_checkbox_mark(pdf, checkbox_column_x + final_check_x, final_check_y + global_y)
+        elif not is_bif:
+            draw_akc_existing_checkbox_mark(pdf, checkbox_column_x + prelim_check_x, prelim_check_y + global_y)
+        if is_bif:
+            draw_akc_existing_checkbox_mark(pdf, checkbox_column_x + bif_check_x, bif_check_y + global_y)
+
+    for index, block in enumerate(course_blocks):
+        if not block:
+            continue
+        column, top = draw_block_position(index, columns, rows)
+        column_x = column + global_x
+        block_top = top + global_y
+
+        raw_breed = clean_text(block.get("breed") or "")
+        breed_key = raw_breed if raw_breed in breed_centers else breed_aliases.get(raw_breed)
+        breed_offset = breed_centers.get(breed_key)
+        if breed_offset is not None:
+            center_x = column_x + breed_offset + breed_circle_x_adjust
+            center_y = y_from_top(block_top + breed_circle_y_offset)
+            pdf.setStrokeColorRGB(0.85, 0, 0)
+            pdf.setLineWidth(breed_circle_weight)
+            pdf.ellipse(
+                center_x - breed_circle_rx, center_y - breed_circle_ry,
+                center_x + breed_circle_rx, center_y + breed_circle_ry,
+                stroke=1, fill=0,
+            )
+        elif raw_breed not in {"", "BIF", "BIE"}:
+            label = "Singles" if raw_breed == "SINGLES" else clean_text(block.get("breed") or "")
+            pdf.setFillColorRGB(0.85, 0, 0)
+            pdf.setFont("Helvetica-Bold", unlisted_breed_font_size)
+            pdf.drawString(
+                column_x + unlisted_breed_x,
+                y_from_top(block_top + unlisted_breed_y),
+                label[:16],
+            )
+
+        pdf.setFillColorRGB(0.85, 0, 0)
+        pdf.setFont("Helvetica-Bold", course_number_font_size)
+        pdf.drawString(
+            column_x + course_num_x_offset,
+            y_from_top(block_top + course_num_y_offset),
+            str(block["course"]),
+        )
+
+        pdf.setFont("Helvetica-Bold", hound_font_size)
+        pdf.setFillColorRGB(0.8, 0, 0)
+        hounds_by_color = {
+            clean_text(hound.get("blanketColor")): hound
+            for hound in (block.get("hounds") or [])
+        }
+        color_positions = {
+            "YELLOW": (yellow_x_offset, yellow_y_offset),
+            "PINK": (pink_x_offset, pink_y_offset),
+            "BLUE": (blue_x_offset, blue_y_offset),
+        }
+        for color, (x_offset, y_offset) in color_positions.items():
+            hound = hounds_by_color.get(color)
+            if not hound:
+                continue
+            line = safe_text(draw_sheet_hound_name(hound, block), 22)
+            if hound.get("manuallyMoved"):
+                line = safe_text(f"{line} (m)", 26)
+            pdf.drawString(
+                column_x + x_offset,
+                y_from_top(block_top + y_offset),
+                line,
+            )
+        pdf.setFillColorRGB(0, 0, 0)
 
 def draw_page_header(pdf: canvas.Canvas, trial: dict, page_number: int, first_order: int, last_order: int) -> None:
     pdf.setFont("Helvetica-Bold", 6)
@@ -1577,8 +1799,9 @@ def draw_block_position(index: int, columns: list[int], rows: list[int]) -> tupl
     return columns[column_index], rows[row_index]
 
 
-def draw_sheet_numbers(pdf: canvas.Canvas, columns: list[int], rows: list[int], course_count: int, page_number: int, x_offset: int, title_top: int, duplicate_copy_numbers: bool = False) -> None:
-    pdf.setFont("Helvetica-Bold", 10)
+def draw_sheet_numbers(pdf: canvas.Canvas, columns: list[int], rows: list[int], course_count: int, page_number: int, x_offset: int, title_top: int, duplicate_copy_numbers: bool = False, font_size: float = 10, color: tuple[float, float, float] = (0, 0, 0)) -> None:
+    pdf.setFont("Helvetica-Bold", font_size)
+    pdf.setFillColorRGB(*color)
     row_count = len(rows)
     first_sheet_number = ((page_number - 1) * len(columns)) + 1
     for column_index, column in enumerate(columns):
@@ -1586,6 +1809,7 @@ def draw_sheet_numbers(pdf: canvas.Canvas, columns: list[int], rows: list[int], 
             continue
         sheet_number = first_sheet_number if duplicate_copy_numbers else first_sheet_number + column_index
         pdf.drawString(column + x_offset, y_from_top(title_top), f"#{sheet_number}")
+    pdf.setFillColorRGB(0, 0, 0)
 
 
 def draw_check(pdf: canvas.Canvas, x: float, top: float, layout: dict | None = None) -> None:
@@ -1643,11 +1867,7 @@ def generate_judge_sheets_pdf(trial: dict, layout: dict | None = None, group_ids
     writer = PdfWriter()
 
     if association == "AKC":
-        for course in courses:
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_akc_judge_overlay(trial, course))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+        append_akc_judge_forms(writer, trial, courses, template_path)
     else:
         forms = flatten_asfa_judge_forms(courses)
         layout_settings = asfa_judge_layout(layout)
@@ -1674,11 +1894,7 @@ def generate_runoff_judge_sheets_pdf(trial: dict, group_id: str, runoff_key: str
 
     writer = PdfWriter()
     if association == "AKC":
-        for course in courses:
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_akc_judge_overlay(trial, course))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+        append_akc_judge_forms(writer, trial, courses, template_path)
     else:
         forms = flatten_asfa_judge_forms(courses)
         layout_settings = asfa_judge_layout(layout)
@@ -1710,11 +1926,7 @@ def generate_finals_judge_sheets_pdf(trial: dict, group_id: str, layout: dict | 
 
     writer = PdfWriter()
     if association == "AKC":
-        for course in courses:
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_akc_judge_overlay(trial, course))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+        append_akc_judge_forms(writer, trial, courses, template_path)
     else:
         forms = flatten_asfa_judge_forms(courses)
         layout_settings = asfa_judge_layout(layout)
@@ -1741,11 +1953,7 @@ def generate_bif_judge_sheets_pdf(trial: dict, layout: dict | None = None) -> by
 
     writer = PdfWriter()
     if association == "AKC":
-        for course in courses:
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_akc_judge_overlay(trial, course))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+        append_akc_judge_forms(writer, trial, courses, template_path)
     else:
         forms = flatten_asfa_judge_forms(courses)
         layout_settings = asfa_judge_layout(layout)
@@ -1774,9 +1982,25 @@ def generate_asfa_record_sheet_pdf(
     combine_mixed_posting: bool = False,
     include_signed_judge_sheets: bool = False,
 ) -> bytes:
-    template_path = RECORD_TEMPLATES["ASFA"]
+    association = str(trial.get("association") or "ASFA").upper()
+
+    # AKC uses form-fill rather than coordinate overlay — delegate entirely
+    if association == "AKC":
+        return generate_akc_record_sheet_pdf(
+            trial,
+            group_id=group_id,
+            breed=breed,
+            sort_mode=sort_mode,
+            combine_mixed_posting=combine_mixed_posting,
+            include_signed_judge_sheets=include_signed_judge_sheets,
+            include_first_time_documents=include_first_time_documents,
+            entry_layout=entry_layout,
+            lci_entry_layout=lci_entry_layout,
+        )
+
+    template_path = RECORD_TEMPLATES.get(association, RECORD_TEMPLATES["ASFA"])
     if not template_path.exists():
-        raise FileNotFoundError(f"ASFA record sheet template not found: {template_path}")
+        template_path = RECORD_TEMPLATES["ASFA"]
 
     groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting)
     if not groups:
@@ -1798,7 +2022,7 @@ def generate_asfa_record_sheet_pdf(
         per_capita_count = max(0, len(rows) - refund_count)
         for page_start in range(0, len(rows), rows_per_page):
             page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_asfa_record_overlay(
+            overlay_bytes = build_asfa_record_overlay(
                 trial,
                 group,
                 rows[page_start:page_start + rows_per_page],
@@ -1807,7 +2031,8 @@ def generate_asfa_record_sheet_pdf(
                 per_capita_count,
                 page_start,
                 layout_settings,
-            ))).pages[0]
+            )
+            overlay = PdfReader(io.BytesIO(overlay_bytes)).pages[0]
             page.merge_page(overlay)
             writer.add_page(page)
         if include_signed_judge_sheets:
@@ -1821,6 +2046,378 @@ def generate_asfa_record_sheet_pdf(
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
+
+
+def _akc_scoresheet_field(row: int, col: int) -> str:
+    """Return the JERSC3 form field name for 1-based row (1-12) and column (1-16)."""
+    if row == 1:
+        return f"Text{col}"
+    elif row <= 11:
+        return f"Text{row}{col}"
+    else:  # row == 12
+        # Col 16 has a naming anomaly in the published form
+        if col == 16:
+            return "Text11216"
+        return f"Text121{col}"
+
+
+def fit_akc_registered_name(value: object) -> tuple[str, str, float]:
+    """Fit a full registered name inside the JERSC3 multiline name field."""
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ("", "/Helv", 10.0)
+
+    available_width = 106.0
+    maximum_size = 11.0
+    minimum_single_line_size = 7.5
+    width_at_maximum = pdfmetrics.stringWidth(text, "Helvetica", maximum_size)
+    if width_at_maximum <= available_width:
+        return (text, "/Helv", maximum_size)
+
+    single_line_size = maximum_size * available_width / width_at_maximum
+    if single_line_size >= minimum_single_line_size:
+        return (text, "/Helv", round(single_line_size, 2))
+
+    words = text.split()
+    candidates: list[tuple[float, str, str]] = []
+    for split_at in range(1, len(words)):
+        first_line = " ".join(words[:split_at])
+        second_line = " ".join(words[split_at:])
+        widest = max(
+            pdfmetrics.stringWidth(first_line, "Helvetica", minimum_single_line_size),
+            pdfmetrics.stringWidth(second_line, "Helvetica", minimum_single_line_size),
+        )
+        candidates.append((widest, first_line, second_line))
+
+    if not candidates:
+        return (text, "/Helv", max(5.5, round(single_line_size, 2)))
+
+    widest, first_line, second_line = min(candidates, key=lambda candidate: candidate[0])
+    wrapped_size = minimum_single_line_size
+    if widest > available_width:
+        wrapped_size = max(5.5, minimum_single_line_size * available_width / widest)
+    return (first_line + chr(10) + second_line, "/Helv", round(wrapped_size, 2))
+
+AKC_SCORESHEET_BREED_CIRCLES = {
+    "A": (101.4, 102.8, 7.0),
+    "AZ": (122.0, 102.8, 10.0),
+    "BA": (145.9, 102.8, 10.0),
+    "B": (166.2, 102.8, 7.0),
+    "C": (180.6, 102.8, 7.0),
+    "G": (198.1, 102.8, 7.0),
+    "IB": (217.3, 102.8, 9.0),
+    "IG": (238.5, 102.8, 9.0),
+    "IW": (261.2, 102.8, 10.0),
+    "N": (281.7, 102.8, 7.0),
+    "P": (298.4, 102.8, 7.0),
+    "PIO": (320.4, 102.8, 12.0),
+    "PP": (34.4, 113.2, 9.0),
+    "PPP": (59.7, 113.2, 12.0),
+    "RR": (86.0, 113.2, 10.0),
+    "S": (106.0, 113.2, 7.0),
+    "SD": (125.2, 113.2, 10.0),
+    "SL": (147.7, 113.2, 9.0),
+    "TR": (170.8, 113.2, 10.0),
+    "W": (192.8, 113.2, 8.0),
+    "OTHER": (220.6, 113.2, 16.0),
+}
+
+AKC_SCORESHEET_BREED_ALIASES = {
+    "AH": "A", "AFGHAN": "A",
+    "AZAWAKH": "AZ",
+    "BASENJI": "BA",
+    "BZ": "B", "BORZOI": "B",
+    "CE": "C", "CIRNECO": "C",
+    "GH": "G", "GREYHOUND": "G",
+    "IBIZAN": "IB",
+    "ITALIAN": "IG",
+    "IRISH": "IW",
+    "NBS": "N", "NORRBOTTENSPETS": "N",
+    "PH": "P", "PHARAOH": "P",
+    "POD": "PP", "PODENGO": "PP",
+    "RR": "RR", "RHODESIAN": "RR",
+    "SA": "S", "SALUKI": "S",
+    "DH": "SD", "SCOTTISH": "SD", "DEERHOUND": "SD",
+    "SLOUGHI": "SL",
+    "THAI": "TR",
+    "WH": "W", "WHIPPET": "W",
+}
+
+
+def akc_scoresheet_breed_key(value: object) -> str:
+    raw = clean_text(value)
+    if raw in AKC_SCORESHEET_BREED_CIRCLES:
+        return raw
+    return AKC_SCORESHEET_BREED_ALIASES.get(raw, "OTHER" if raw and raw != "BIF" else "")
+
+
+def build_akc_scoresheet_breed_overlay(group: dict) -> bytes:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
+    breed_key = akc_scoresheet_breed_key(group.get("breed"))
+    circle = AKC_SCORESHEET_BREED_CIRCLES.get(breed_key)
+    if circle:
+        center_x, center_top, radius_x = circle
+        center_y = y_from_top(center_top)
+        pdf.setStrokeColorRGB(0.85, 0, 0)
+        pdf.setLineWidth(1.4)
+        pdf.ellipse(center_x - radius_x, center_y - 6.5, center_x + radius_x, center_y + 6.5, stroke=1, fill=0)
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
+def akc_scoresheet_award_and_placement(value: object) -> tuple[str, str]:
+    text = str(value or "").strip()
+    normalized = clean_text(text)
+    award = "BIF" if "BIF" in normalized else "BOB" if "BOB" in normalized else ""
+    placement_parts = [
+        part.strip()
+        for part in text.replace("/", "-").split("-")
+        if clean_text(part) not in {"BOB", "BIF"}
+    ]
+    placement = placement_parts[0] if placement_parts else ""
+    return award, placement
+
+
+def generate_akc_record_sheet_pdf(
+    trial: dict,
+    group_id: str = "",
+    breed: str = "",
+    sort_mode: str = "",
+    combine_mixed_posting: bool = False,
+    include_signed_judge_sheets: bool = False,
+    include_first_time_documents: bool = False,
+    entry_layout: dict | None = None,
+    lci_entry_layout: dict | None = None,
+) -> bytes:
+    """Fill the AKC JERSC3 Lure Coursing Scoresheet using its built-in PDF form fields."""
+    template_path = RECORD_TEMPLATES["AKC"]
+    if not template_path.exists():
+        raise FileNotFoundError(f"AKC record sheet template not found: {template_path}")
+
+    groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting)
+    if not groups:
+        raise ValueError("No score rows were found for the AKC record sheet.")
+
+    final_writer = PdfWriter()
+    rows_per_page = 12  # JERSC3 has 12 hound rows per page
+
+    for group in groups:
+        rows = asfa_record_rows(trial, group)
+        if not rows:
+            continue
+
+        total_count = len(rows)
+        starters = sum(
+            1 for r in rows
+            if clean_text(r.get("prelimScore")) not in {"SCRATCH", "DISQUALIFIED", "ABSENT", "CANCELLED", "EXCUSED"}
+        )
+
+        for page_start in range(0, max(1, len(rows)), rows_per_page):
+            page_rows = rows[page_start:page_start + rows_per_page]
+
+            # Clone a fresh copy of the template (preserves AcroForm structure)
+            writer = PdfWriter(clone_from=template_path)
+
+            fields: dict[str, object] = {}
+
+            # ── Header ──────────────────────────────────────────────────────
+            fields["Host Club Name"] = safe_text(trial.get("clubName") or "", 50)
+            fields["Date"] = safe_text(trial.get("startsOn") or "", 20)
+            fields["Event"] = safe_text(trial.get("eventNumber") or "", 20)
+            fields["of Entries"] = str(total_count)
+            fields["of Starters"] = str(starters)
+
+            # ── Stake / breed checkboxes ─────────────────────────────────────
+            raw_stake = clean_text(group.get("stake") or "")
+            raw_breed_grp = clean_text(group.get("breed") or "")
+            if "OPEN" in raw_stake and "VETERAN" not in raw_stake:
+                fields["OPEN"] = "/Yes"
+            if "VETERAN" in raw_stake:
+                fields["open veteran"] = "/Yes"
+            if "SPECIAL" in raw_stake:
+                fields["Special"] = "/Yes"
+            if "BIF" in raw_stake or raw_breed_grp == "BIF":
+                fields["BIF"] = "/Yes"
+            split_flight = str(group.get("flight") or "").strip().upper()
+            if split_flight in {"A", "B", "C", "D", "E"}:
+                fields[f"Stake {split_flight}"] = "/Yes"
+            breed_key = akc_scoresheet_breed_key(group.get("breed"))
+            fields["Breed Other"] = safe_text(group.get("breed") or "", 25) if breed_key == "OTHER" else ""
+
+            # ── Hound rows ───────────────────────────────────────────────────
+            for i, row in enumerate(page_rows):
+                r = i + 1  # 1-based row index within the form
+                award, placement = akc_scoresheet_award_and_placement(row.get("placement"))
+                fields[_akc_scoresheet_field(r, 1)] = award
+                fields[_akc_scoresheet_field(r, 2)] = safe_text(placement, 5)
+                fields[_akc_scoresheet_field(r, 3)] = safe_text(row.get("registrationNumber") or "", 14)
+                fields[_akc_scoresheet_field(r, 4)] = fit_akc_registered_name(row.get("registeredName") or "")
+                fields[_akc_scoresheet_field(r, 5)] = safe_text(row.get("callName") or "", 18)
+                # Preliminary scoring
+                fields[_akc_scoresheet_field(r, 6)] = safe_text(row.get("prelimCode") or "", 8)
+                fields[_akc_scoresheet_field(r, 7)] = safe_text(str(row.get("prelimJudge1") or ""), 6)
+                fields[_akc_scoresheet_field(r, 8)] = safe_text(str(row.get("prelimJudge2") or ""), 6)
+                fields[_akc_scoresheet_field(r, 9)] = safe_text(str(row.get("prelimScore") or ""), 6)
+                # Final scoring
+                fields[_akc_scoresheet_field(r, 10)] = safe_text(row.get("finalCode") or "", 8)
+                fields[_akc_scoresheet_field(r, 11)] = safe_text(str(row.get("finalJudge1") or ""), 6)
+                fields[_akc_scoresheet_field(r, 12)] = safe_text(str(row.get("finalJudge2") or ""), 6)
+                fields[_akc_scoresheet_field(r, 13)] = safe_text(str(row.get("finalScore") or ""), 6)
+                fields[_akc_scoresheet_field(r, 14)] = safe_text(str(row.get("combinedScore") or ""), 6)
+                fields[_akc_scoresheet_field(r, 15)] = safe_text(str(row.get("stakesRunoffCode") or ""), 6)
+                fields[_akc_scoresheet_field(r, 16)] = safe_text(str(row.get("bobRunoffCode") or ""), 6)
+
+            # ── Judges ───────────────────────────────────────────────────────
+            judge1, judge2 = judges_for_group(trial, group)
+            fields["Judge 1 Print Name"] = safe_text(judge1, 50)
+            fields["Judge 2 Print Name"] = safe_text(judge2, 50)
+
+            # Fill and flatten so fields render as static text
+            writer.update_page_form_field_values(
+                writer.pages[0],
+                fields,
+                auto_regenerate=False,
+                flatten=True,
+            )
+
+            buf = io.BytesIO()
+            writer.write(buf)
+            filled_reader = PdfReader(io.BytesIO(buf.getvalue()))
+            filled_page = filled_reader.pages[0]
+            breed_overlay = PdfReader(io.BytesIO(build_akc_scoresheet_breed_overlay(group))).pages[0]
+            filled_page.merge_page(breed_overlay)
+            final_writer.add_page(filled_page)
+
+        if include_signed_judge_sheets:
+            append_signed_judge_sheets_for_group(final_writer, group)
+        if include_first_time_documents and clean_text(group.get("breed")) != "BIF":
+            append_first_time_documents_for_group(final_writer, trial, group, entry_layout, lci_entry_layout)
+
+    if not final_writer.pages:
+        raise ValueError("No AKC record sheet pages could be created.")
+
+    output = io.BytesIO()
+    final_writer.write(output)
+    return output.getvalue()
+
+
+def _build_akc_record_overlay_DELETED() -> None:  # kept as placeholder — body removed
+    pass  # noqa: replaced by generate_akc_record_sheet_pdf
+
+
+def build_akc_record_overlay(trial: dict, group: dict, rows: list[dict], total_count: int, page_start: int, layout: dict | None = None) -> bytes:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
+    pdf.setTitle("Official AKC Lure Coursing Scoresheet")
+
+    layout_cfg = layout or {}
+    global_x = float(layout_cfg.get("globalXAdjust", 0))
+    global_y = float(layout_cfg.get("globalYAdjust", 0))
+
+    club_name_x = float(layout_cfg.get("clubNameX", 95)) + global_x
+    club_name_y = float(layout_cfg.get("clubNameY", 88)) + global_y
+    starts_on_x = float(layout_cfg.get("startsOnX", 355)) + global_x
+    starts_on_y = float(layout_cfg.get("startsOnY", 88)) + global_y
+    event_num_x = float(layout_cfg.get("eventNumX", 495)) + global_x
+    event_num_y = float(layout_cfg.get("eventNumY", 88)) + global_y
+    entries_count_x = float(layout_cfg.get("entriesCountX", 615)) + global_x
+    starters_count_x = float(layout_cfg.get("startersCountX", 730)) + global_x
+    row_top = float(layout_cfg.get("rowTop", 175)) + global_y
+    row_height = float(layout_cfg.get("rowHeight", 24))
+
+    judge1_x = float(layout_cfg.get("judge1X", 115)) + global_x
+    judge1_y = float(layout_cfg.get("judge1Y", 544)) + global_y
+    judge2_x = float(layout_cfg.get("judge2X", 520)) + global_x
+    judge2_y = float(layout_cfg.get("judge2Y", 544)) + global_y
+    field_clerk_x = float(layout_cfg.get("fieldClerkX", 115)) + global_x
+    field_secretary_x = float(layout_cfg.get("fieldSecretaryX", 390)) + global_x
+    chair_name_x = float(layout_cfg.get("chairNameX", 670)) + global_x
+
+    pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawString(club_name_x, y_from_top(club_name_y), safe_text(trial.get("clubName") or "", 35))
+    pdf.drawString(starts_on_x, y_from_top(starts_on_y), safe_text(trial.get("startsOn") or "", 15))
+    pdf.drawString(event_num_x, y_from_top(event_num_y), safe_text(trial.get("eventNumber") or "", 15))
+    pdf.drawString(entries_count_x, y_from_top(club_name_y), str(total_count))
+    starters = sum(1 for r in rows if clean_text(r.get("prelimScore")) not in {"SCRATCH", "DISQUALIFIED", "ABSENT", "CANCELLED", "EXCUSED"})
+    pdf.drawString(starters_count_x, y_from_top(club_name_y), str(starters))
+
+    raw_breed = clean_text(group.get("breed") or "")
+    akc_breed_x_offsets = {
+        "A": 97.8, "AH": 97.8, "AFGHAN": 97.8,
+        "AZ": 115,
+        "BA": 139, "BASENJI": 139,
+        "B": 162.8, "BZ": 162.8, "BORZOI": 162.8,
+        "C": 177, "CE": 177, "CIRNECO": 177,
+        "G": 194.2, "GH": 194.2, "GREYHOUND": 194.2,
+        "IB": 212, "IBIZAN": 212,
+        "IG": 232.6, "ITALIAN": 232.6,
+        "IW": 254.3, "IRISH": 254.3,
+        "N": 278,
+        "P": 295.3, "PH": 295.3, "PHARAOH": 295.3,
+        "PIO": 311.5,
+        "PP": 28.2, "PPP": 50.5,
+        "RR": 78.8, "RHODESIAN": 78.8,
+        "S": 103.3, "SA": 103.3, "SALUKI": 103.3,
+        "SD": 118.8, "DH": 118.8, "SCOTTISH": 118.8,
+        "SL": 141.6, "SLOUGHI": 141.6,
+        "TR": 163.9,
+        "W": 187.8, "WH": 187.8, "WHIPPET": 187.8,
+    }
+    breed_x = akc_breed_x_offsets.get(raw_breed)
+    if breed_x is not None:
+        breed_y = 117 if raw_breed in {"PP", "PPP"} else 106
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(breed_x + global_x, y_from_top(breed_y + global_y), "X")
+    else:
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawString(230 + global_x, y_from_top(106 + global_y), safe_text(group.get("breed") or "", 15))
+
+    raw_stake = clean_text(group.get("stake") or "")
+    pdf.setFont("Helvetica-Bold", 10)
+    if "OPEN" in raw_stake:
+        pdf.drawString(400 + global_x, y_from_top(116 + global_y), "X")
+    elif "VETERAN" in raw_stake:
+        pdf.drawString(495 + global_x, y_from_top(116 + global_y), "X")
+    elif "SPECIAL" in raw_stake:
+        pdf.drawString(555 + global_x, y_from_top(116 + global_y), "X")
+    elif "BIF" in raw_stake:
+        pdf.drawString(605 + global_x, y_from_top(116 + global_y), "X")
+
+    pdf.setFont("Helvetica", 8)
+    for i, row in enumerate(rows):
+        r_y = row_top + (i * row_height)
+        pdf.drawString(30 + global_x, y_from_top(r_y), safe_text(row.get("placement") or "", 5))
+        pdf.drawString(85 + global_x, y_from_top(r_y), safe_text(row.get("registrationNumber") or "", 14))
+        pdf.drawString(175 + global_x, y_from_top(r_y), safe_text(row.get("registeredName") or "", 22))
+        pdf.drawString(300 + global_x, y_from_top(r_y), safe_text(row.get("callName") or "", 12))
+
+        prelim_course = f"{row.get('prelimCourse') or ''} {row.get('prelimBlanket') or ''}".strip()
+        pdf.drawString(370 + global_x, y_from_top(r_y), safe_text(prelim_course, 6))
+        pdf.drawString(405 + global_x, y_from_top(r_y), safe_text(row.get("prelimJudge1") or "", 5))
+        pdf.drawString(440 + global_x, y_from_top(r_y), safe_text(row.get("prelimJudge2") or "", 5))
+        pdf.drawString(475 + global_x, y_from_top(r_y), safe_text(row.get("prelimScore") or "", 5))
+
+        final_course = f"{row.get('finalCourse') or ''} {row.get('finalBlanket') or ''}".strip()
+        pdf.drawString(510 + global_x, y_from_top(r_y), safe_text(final_course, 6))
+        pdf.drawString(555 + global_x, y_from_top(r_y), safe_text(row.get("finalJudge1") or "", 5))
+        pdf.drawString(590 + global_x, y_from_top(r_y), safe_text(row.get("finalJudge2") or "", 5))
+        pdf.drawString(625 + global_x, y_from_top(r_y), safe_text(row.get("finalScore") or "", 5))
+
+        pdf.drawString(665 + global_x, y_from_top(r_y), safe_text(row.get("totalScore") or "", 5))
+        pdf.drawString(715 + global_x, y_from_top(r_y), safe_text(row.get("runoffScore") or "", 5))
+        pdf.drawString(755 + global_x, y_from_top(r_y), safe_text(row.get("bobRunoffScore") or "", 5))
+
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(judge1_x, y_from_top(judge1_y), safe_text(group.get("judge1") or trial.get("judge1") or "", 25))
+    pdf.drawString(judge2_x, y_from_top(judge2_y), safe_text(group.get("judge2") or trial.get("judge2") or "", 25))
+    pdf.drawString(field_clerk_x, y_from_top(judge1_y + 22), safe_text(trial.get("clerkName") or "", 25))
+    pdf.drawString(field_secretary_x, y_from_top(judge1_y + 22), safe_text(trial.get("secretaryName") or "", 25))
+    pdf.drawString(chair_name_x, y_from_top(judge1_y + 21), safe_text(trial.get("chairName") or "", 20))
+
+    pdf.save()
+    return buffer.getvalue()
 
 
 def generate_asfa_secretary_report_pdf(trial: dict, layout: dict | None = None) -> bytes:
@@ -1843,6 +2440,102 @@ def generate_asfa_secretary_report_pdf(trial: dict, layout: dict | None = None) 
     writer.write(output)
     return output.getvalue()
 
+
+def generate_akc_secretary_report_pdf(trial: dict) -> bytes:
+    template_path = SECRETARY_REPORT_TEMPLATES["AKC"]
+    if not template_path.exists():
+        raise FileNotFoundError(f"AKC secretary report template not found: {template_path}")
+
+    def display_date(value: object) -> str:
+        text = str(value or "").strip()
+        try:
+            return datetime.strptime(text, "%Y-%m-%d").strftime("%m/%d/%Y")
+        except ValueError:
+            return text
+
+    entries = trial.get("entries") if isinstance(trial.get("entries"), list) else []
+    entry_count = len(entries)
+    service_fee = entry_count * 4.50
+    location = ", ".join(
+        value for value in [
+            str(trial.get("locationName") or "").strip(),
+            str(trial.get("locationCity") or trial.get("nearestCity") or "").strip(),
+            str(trial.get("locationState") or "").strip(),
+        ] if value
+    )
+    misconduct = str(trial.get("akcSecretaryMisconduct") or "no").lower() == "yes"
+    judge_changed = str(
+        trial.get("akcSecretaryJudgesChanged")
+        or trial.get("secretaryJudgesChanged")
+        or "no"
+    ).lower() == "yes"
+    judge_complaint = str(trial.get("akcSecretaryJudgeComplaints") or "no").lower() == "yes"
+    location_satisfactory = str(trial.get("akcSecretaryLocationSatisfactory") or "yes").lower() == "yes"
+    dog_protest = str(trial.get("akcSecretaryDogProtest") or "no").lower() == "yes"
+    committee_names = []
+    for value in [trial.get("trialChair"), trial.get("secretaryName")]:
+        name = str(value or "").strip()
+        if name and name not in committee_names:
+            committee_names.append(name)
+    for worker in trial.get("workers") or []:
+        if not isinstance(worker, dict):
+            continue
+        name = str(worker.get("name") or worker.get("workerName") or "").strip()
+        if name and name not in committee_names:
+            committee_names.append(name)
+
+    committee_notes = str(trial.get("akcSecretaryCommitteeNotes") or "").strip()
+    if committee_notes:
+        committee_lines = [line.strip() for line in committee_notes.splitlines() if line.strip()][:3]
+    else:
+        committee_lines = [
+            ", ".join(committee_names[:4]),
+            ", ".join(committee_names[4:8]),
+            ", ".join(committee_names[8:12]),
+        ]
+    committee_lines += [""] * (3 - len(committee_lines))
+
+    fields = {
+        "text_clubname": safe_text(trial.get("clubName") or "", 80),
+        "report_attached_y": "/Yes" if misconduct else "/Off",
+        "report_attached_n": "/Off" if misconduct else "/Yes",
+        "text_location": safe_text(location, 100),
+        "event_date1": display_date(trial.get("startsOn")),
+        "event_date2": display_date(trial.get("endsOn") or trial.get("startsOn")),
+        "text_eventnum": safe_text(trial.get("eventNumber") or "", 30),
+        "number_of_entries": str(entry_count),
+        "text_entryfeesenclosed": f"{service_fee:.2f}",
+        "judge_change_y": "/Yes" if judge_changed else "/Off",
+        "judge_change_n": "/Off" if judge_changed else "/Yes",
+        "additional_judge_info": safe_text(trial.get("akcSecretaryJudgeChangeNotes") or trial.get("secretaryJudgeChangeNotes") or "", 180),
+        "judge_complaint_y": "/Yes" if judge_complaint else "/Off",
+        "judge_complaint_n": "/Off" if judge_complaint else "/Yes",
+        "location_satisfactory_y": "/Yes" if location_satisfactory else "/Off",
+        "location_satisfactory_n": "/Off" if location_satisfactory else "/Yes",
+        "dog_protest_y": "/Yes" if dog_protest else "/Off",
+        "dog_protest_n": "/Off" if dog_protest else "/Yes",
+        "committee_info_line1": safe_text(committee_lines[0], 100),
+        "committee_info_line2": safe_text(committee_lines[1], 100),
+        "committee_info_line3": safe_text(committee_lines[2], 100),
+        "date_signed": datetime.now().strftime("%m/%d/%Y"),
+        "Telephone": safe_text(trial.get("secretaryPhone") or "", 30),
+        "Email": safe_text(trial.get("secretaryEmail") or "", 80),
+    }
+
+    reader = PdfReader(str(template_path))
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+    writer.update_page_form_field_values(writer.pages[0], fields, auto_regenerate=False, flatten=True)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def generate_secretary_report_pdf(trial: dict, layout: dict | None = None) -> bytes:
+    association = str(trial.get("association") or "ASFA").upper()
+    if association == "AKC":
+        return generate_akc_secretary_report_pdf(trial)
+    return generate_asfa_secretary_report_pdf(trial, layout)
 
 def generate_asfa_entry_forms_pdf(trial: dict, entry_id: str = "", layout: dict | None = None, lci_layout: dict | None = None) -> bytes:
     entries = first_time_entries_for_print(trial, entry_id)
@@ -2453,6 +3146,7 @@ def record_packet_sort_key(group: dict) -> tuple:
         str(group.get("breed") or "").upper(),
         stake_order.get(clean_text(group.get("stake")), 99),
         str(group.get("stake") or "").upper(),
+        str(group.get("flight") or "").upper(),
     )
 
 
@@ -2485,6 +3179,7 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
                 placement = ""
             rows.append({
                 "callName": asfa_record_call_name(hound, entry, group),
+                "registeredName": entry.get("registeredName") or hound.get("registeredName") or "",
                 "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
                 "rollCallStatus": entry.get("rollCallStatus") or "",
                 "rollCallNotes": entry.get("rollCallNotes") or "",
@@ -2572,6 +3267,7 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
                 call_name = f"{call_name} ({breed_display})"
             rows.append({
                 "callName": call_name,
+                "registeredName": entry.get("registeredName") or hound.get("registeredName") or "",
                 "registrationNumber": entry.get("registrationNumber") or hound.get("registrationNumber") or "",
                 "rollCallStatus": "",
                 "rollCallNotes": "",
@@ -2699,6 +3395,35 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                         "color": runoff_blanket_color_code(hound, course),
                         "code": str(code),
                     }
+    group_entry_ids = {
+        str(hound.get("entryId") or "")
+        for course in group.get("courses") or []
+        for hound in course.get("hounds") or []
+        if hound.get("entryId")
+    }
+    for runoff in trial.get("bobRunoffs") or []:
+        if runoff.get("purpose") != "stakeOverall":
+            continue
+        if clean_text(runoff.get("breed")) != clean_text(group.get("breed")) or clean_text(runoff.get("stake")) != clean_text(group.get("stake")):
+            continue
+        suppress_pending_codes = runoff_resolved_without_scores(runoff)
+        for course in runoff.get("courses") or []:
+            for hound in course.get("hounds") or []:
+                entry_id = str(hound.get("entryId") or "")
+                if entry_id not in group_entry_ids:
+                    continue
+                code = runoff_record_value(
+                    hound.get("bobOutcome") or hound.get("tieBreakOutcome"),
+                    hound.get("bobScore") or hound.get("tieBreakScore"),
+                    "",
+                    suppress_pending_codes,
+                    hound.get("bobForfeitOrder") or hound.get("tieBreakForfeitOrder"),
+                )
+                boxes[entry_id] = {
+                    "label": "Overall",
+                    "color": runoff_blanket_color_code(hound, course),
+                    "code": str(code),
+                }
     group_id = str(group.get("id") or "").split("::", 1)[0]
     for runoff in (trial.get("bobRunoffs") or []):
         if str(runoff.get("tieGroupId") or "") not in {str(group.get("id") or ""), group_id}:
@@ -3291,7 +4016,7 @@ def draw_asfa_record_header(pdf: canvas.Canvas, trial: dict, group: dict, entry_
     pdf.setFont("Helvetica-Bold", layout["headerFontSize"])
     pdf.drawString(layout["breedX"], y_from_top(asfa_record_y(layout, "breedY")), safe_text(group.get("breed"), 24))
     pdf.drawString(layout["stakeX"], y_from_top(asfa_record_y(layout, "stakeY")), safe_text(asfa_record_stake_label(group), 22))
-    pdf.drawString(layout["flightX"], y_from_top(asfa_record_y(layout, "flightY")), "A")
+    pdf.drawString(layout["flightX"], y_from_top(asfa_record_y(layout, "flightY")), safe_text(group.get("flight") or "A", 2))
     pdf.drawString(layout["enteredX"], y_from_top(asfa_record_y(layout, "enteredY")), str(entry_count))
     pdf.drawString(layout["refundsX"], y_from_top(asfa_record_y(layout, "refundsY")), str(refund_count))
     pdf.drawString(layout["perCapitaX"], y_from_top(asfa_record_y(layout, "perCapitaY")), str(per_capita_count))
@@ -3354,14 +4079,14 @@ def draw_asfa_record_rows(pdf: canvas.Canvas, rows: list[dict], layout: dict) ->
         pdf.drawCentredString(layout["finalScoreX"], y_from_top(asfa_record_y(layout, "finalScoreY", row_offset)), safe_text(row.get("finalScore"), 8))
         pdf.drawCentredString(layout["combinedScoreX"], y_from_top(asfa_record_y(layout, "combinedScoreY", row_offset)), safe_text(row.get("combinedScore"), 8))
         stakes_runoff_label = safe_text(row.get("stakesRunoffLabel"), 16)
-        stakes_runoff_font_size = min(float(layout["codeFontSize"]), 6.5)
+        stakes_runoff_font_size = min(float(layout["codeFontSize"]), 8.5)
         while stakes_runoff_font_size > 4.0 and pdf.stringWidth(stakes_runoff_label, "Helvetica-Bold", stakes_runoff_font_size) > 40:
             stakes_runoff_font_size -= 0.5
         stakes_label_y = asfa_record_y(layout, "stakesRunoffLabelY", row_offset) - 5
         pdf.setFont("Helvetica-Bold", stakes_runoff_font_size)
         pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(stakes_label_y), stakes_runoff_label)
         stakes_runoff_color = safe_text(row.get("stakesRunoffColor"), 2)
-        pdf.setFont("Helvetica-Bold", 5.5)
+        pdf.setFont("Helvetica-Bold", 7.5)
         pdf.drawCentredString(layout["stakesRunoffLabelX"], y_from_top(stakes_label_y + 6), stakes_runoff_color)
         pdf.setFont("Helvetica-Bold", layout["codeFontSize"])
         pdf.drawCentredString(layout["stakesRunoffCodeX"], y_from_top(asfa_record_y(layout, "stakesRunoffCodeY", row_offset)), safe_text(row.get("stakesRunoffCode"), 5))
@@ -3774,6 +4499,7 @@ def flatten_judge_courses(trial: dict, group_ids: list[str] | None = None) -> li
             courses.append({
                 "breed": group.get("judgeBreed") or group.get("breed") or "",
                 "stake": group.get("judgeStake") or abbreviate_stake(group.get("stake") or ""),
+                "flight": group.get("flight") or "A",
                 "lciType": infer_lci_type_from_group_and_hounds(group, hounds),
                 "course": course.get("number") or "",
                 "phase": group.get("phase") or "",
@@ -3813,6 +4539,7 @@ def flatten_runoff_judge_courses(trial: dict, group_id: str, runoff_key: str) ->
             courses.append({
                 "breed": group.get("breed") or "",
                 "stake": abbreviate_stake(group.get("stake") or ""),
+                "flight": group.get("flight") or "A",
                 "lciType": infer_lci_type_from_group_and_hounds(group, normalized_hounds),
                 "course": course.get("number") or "",
                 "phase": "runoff",
@@ -3849,6 +4576,7 @@ def flatten_finals_judge_courses(trial: dict, group_id: str) -> list[dict]:
             courses.append({
                 "breed": group.get("breed") or "",
                 "stake": abbreviate_stake(group.get("stake") or ""),
+                "flight": group.get("flight") or "A",
                 "lciType": infer_lci_type_from_group_and_hounds(group, normalized_hounds),
                 "course": course.get("number") or "",
                 "phase": "final",
@@ -3915,32 +4643,127 @@ def flatten_asfa_judge_forms(courses: list[dict]) -> list[dict]:
     return forms
 
 
+def append_akc_judge_forms(writer: PdfWriter, trial: dict, courses: list[dict], template_path: Path) -> None:
+    forms = flatten_asfa_judge_forms(courses)
+    crop_left = 189.0
+    crop_bottom = 189.0
+    slot_width = 264.0
+    for start in range(0, len(forms), 3):
+        output_page = writer.add_blank_page(width=792, height=612)
+        for slot, form in enumerate(forms[start:start + 3]):
+            source_page = fresh_template_page(template_path)
+            overlay = PdfReader(io.BytesIO(build_akc_judge_overlay(trial, form))).pages[0]
+            source_page.merge_page(overlay)
+            output_page.merge_translated_page(
+                source_page,
+                (slot * slot_width) - crop_left,
+                4.0 - crop_bottom,
+                expand=False,
+                over=True,
+            )
+
+AKC_JUDGE_BREED_CIRCLES = {
+    "A": (231.37, 4.0),
+    "AZ": (240.81, 5.5),
+    "BA": (250.81, 5.8),
+    "B": (260.59, 4.0),
+    "G": (268.50, 4.0),
+    "IB": (277.21, 5.0),
+    "IG": (286.71, 5.0),
+    "IW": (296.87, 5.5),
+    "P": (305.86, 4.0),
+    "PP": (315.18, 5.5),
+    "R": (322.99, 4.0),
+    "S": (330.53, 4.0),
+    "SD": (340.08, 5.5),
+    "SL": (351.41, 5.0),
+    "TR": (362.63, 5.5),
+    "W": (371.10, 4.5),
+}
+
+AKC_JUDGE_BREED_ALIASES = {
+    "AH": "A", "AFGHAN": "A",
+    "AZAWAKH": "AZ",
+    "BASENJI": "BA",
+    "BZ": "B", "BORZOI": "B",
+    "GH": "G", "GREYHOUND": "G",
+    "IBIZAN": "IB",
+    "ITALIAN": "IG",
+    "IRISH": "IW",
+    "PH": "P", "PHARAOH": "P",
+    "POD": "PP", "PODENGO": "PP",
+    "RR": "R", "RHODESIAN": "R",
+    "SA": "S", "SALUKI": "S",
+    "DH": "SD", "SCOTTISH": "SD", "DEERHOUND": "SD",
+    "SLOUGHI": "SL",
+    "THAI": "TR",
+    "WH": "W", "WHIPPET": "W",
+}
+
+
+def draw_akc_judge_breed_mark(pdf: canvas.Canvas, breed: object) -> None:
+    raw = clean_text(breed)
+    breed_key = raw if raw in AKC_JUDGE_BREED_CIRCLES else AKC_JUDGE_BREED_ALIASES.get(raw, "")
+    circle = AKC_JUDGE_BREED_CIRCLES.get(breed_key)
+    if circle:
+        center_x, radius_x = circle
+        draw_circle(pdf, center_x, 693.11, radius_x, 5.0, 1.4)
+        return
+    if raw and raw != "BIF":
+        pdf.drawString(390, 696, safe_text(breed, 12))
+
 def build_akc_judge_overlay(trial: dict, course: dict) -> bytes:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
-    pdf.setTitle("Preliminary Judge Sheet")
+    pdf.setTitle("AKC Judge Sheet")
+    pdf.setFillColorRGB(0.75, 0, 0)
+    pdf.setStrokeColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica", 8)
-    judges = course.get("judges") or []
     pdf.drawString(234, 733, safe_text(trial.get("clubName"), 34))
     pdf.drawString(275, 716, safe_text(trial.get("startsOn"), 16))
-    pdf.drawString(390, 696, safe_text(course.get("breed"), 16))
-    pdf.drawString(390, 642, safe_text(course.get("stake"), 14))
-    draw_check_mark(pdf, 204, 657)
-    draw_akc_stake_check(pdf, course.get("stake"))
+    draw_akc_judge_breed_mark(pdf, course.get("breed"))
+    draw_akc_phase_check(pdf, course.get("phase"))
+    if not draw_akc_stake_check(pdf, course.get("stake")):
+        pdf.drawString(390, 642, safe_text(course.get("stake"), 14))
     draw_akc_course_check(pdf, course.get("course"))
-    pdf.drawString(236, 588, safe_text(judges[0] if len(judges) > 0 else "", 30))
-    pdf.drawString(236, 568, safe_text(judges[1] if len(judges) > 1 else "", 30))
-    draw_akc_judge_hounds(pdf, course)
+    draw_akc_split_stake_mark(pdf, course.get("flight"))
+    judge_index = max(1, min(2, int(course.get("judgeIndex") or 1)))
+    judge_y = 588 if judge_index == 1 else 568
+    pdf.drawString(236, judge_y, safe_text(course.get("judge") or "", 30))
+    draw_akc_unused_color_strikes(pdf, course)
     pdf.save()
     return buffer.getvalue()
 
 
-def draw_akc_stake_check(pdf: canvas.Canvas, stake: object) -> None:
+def draw_akc_split_stake_mark(pdf: canvas.Canvas, flight: object) -> None:
+    label = str(flight or "").strip().upper()
+    if label not in {"A", "B", "C", "D", "E"}:
+        return
+    center_x = 260 + ((ord(label) - ord("A")) * 26)
+    draw_circle(pdf, center_x, 642, 7.5, 6.0, 1.4)
+
+def draw_akc_stake_check(pdf: canvas.Canvas, stake: object) -> bool:
     normalized = clean_text(stake)
-    x = 204
-    if normalized in {"FCH", "FIELDCHAMPION", "SPECIAL"}:
+    if normalized == "OPEN":
+        x = 204
+    elif normalized in {"FCH", "FIELDCHAMPION", "SPECIAL", "SPECIALS"}:
         x = 276
+    elif normalized in {"BOB", "BIF", "BOBBIF"}:
+        x = 348
+    else:
+        return False
     draw_check_mark(pdf, x, 671)
+    return True
+
+
+def draw_akc_phase_check(pdf: canvas.Canvas, phase: object) -> None:
+    normalized = clean_text(phase)
+    if normalized in {"FINAL", "FINALS"}:
+        draw_check_mark(pdf, 276, 657)
+    elif normalized in {"RUNOFF", "RUNOFFS", "TIE"}:
+        draw_check_mark(pdf, 348, 657)
+    elif normalized not in {"BIF", "BOB", "BIE"}:
+        draw_check_mark(pdf, 204, 657)
 
 
 def draw_akc_course_check(pdf: canvas.Canvas, course_number: object) -> None:
@@ -3949,21 +4772,34 @@ def draw_akc_course_check(pdf: canvas.Canvas, course_number: object) -> None:
     except (TypeError, ValueError):
         return
     if 1 <= number <= 10:
-        x_positions = {1: 241, 2: 257, 3: 273, 4: 289, 5: 305, 6: 320, 7: 336, 8: 352, 9: 368, 10: 385}
-        draw_check_mark(pdf, x_positions[number], 612)
+        x_positions = {1: 242.75, 2: 258.60, 3: 274.44, 4: 290.28, 5: 306.12, 6: 321.96, 7: 337.81, 8: 353.65, 9: 369.49, 10: 387.97}
+        draw_circle(pdf, x_positions[number], 614.92, 6.5, 5.5, 1.5)
 
 
-def draw_akc_judge_hounds(pdf: canvas.Canvas, course: dict) -> None:
-    x_by_color = {"YELLOW": 312, "PINK": 356, "BLUE": 399}
-    pdf.setFont("Helvetica-Bold", 7)
-    for hound in course.get("hounds") or []:
-        x = x_by_color.get(clean_text(hound.get("blanketColor")))
-        if not x:
+def draw_akc_unused_color_strikes(pdf: canvas.Canvas, course: dict) -> None:
+    used_colors = {
+        clean_text(hound.get("blanketColor"))
+        for hound in course.get("hounds") or []
+        if clean_text(hound.get("blanketColor")) in {"YELLOW", "PINK", "BLUE"}
+    }
+    if not used_colors:
+        return
+    columns = {
+        "YELLOW": (290, 334),
+        "PINK": (334, 378),
+        "BLUE": (378, 422),
+    }
+    top_y = 538
+    bottom_y = 330
+    pdf.saveState()
+    pdf.setStrokeColorRGB(0.75, 0, 0)
+    pdf.setLineWidth(1.25)
+    for color, (left, right) in columns.items():
+        if color in used_colors:
             continue
-        label = safe_text(hound.get("callName") or hound.get("registeredName"), 12)
-        if course.get("mixedStake"):
-            label = safe_text(f"{label}/{abbreviate_stake(hound.get('stake') or course.get('stake'))}", 16)
-        pdf.drawCentredString(x, 532, label)
+        pdf.line(left, top_y, right, bottom_y)
+        pdf.line(right, top_y, left, bottom_y)
+    pdf.restoreState()
 
 
 def build_asfa_judge_overlay(trial: dict, forms: list[dict], layout: dict) -> bytes:
@@ -3991,7 +4827,7 @@ def draw_asfa_judge_form(pdf: canvas.Canvas, trial: dict, form: dict, x: float, 
         draw_asfa_lci_mark(pdf, x, lci_type, y_adjust, layout)
     draw_asfa_stake_mark(pdf, x, form.get("stake"), y_adjust, layout, form.get("phase"), form)
     draw_asfa_mixed_text(pdf, x, form, y_adjust, layout)
-    draw_asfa_flight_mark(pdf, x, y_adjust, layout)
+    draw_asfa_flight_mark(pdf, x, form.get("flight") or "A", y_adjust, layout)
     draw_asfa_phase_mark(pdf, x, y_adjust, layout, form.get("phase"))
     draw_asfa_runoff_text(pdf, x, form.get("runoffText"), y_adjust, layout)
     draw_asfa_course_mark(pdf, x, form.get("course"), y_adjust, layout)
@@ -4260,8 +5096,1011 @@ def draw_asfa_runoff_text(pdf: canvas.Canvas, x: float, runoff_text: object, y_a
     pdf.drawString(x + layout["phaseTextX"], y_from_top(layout["phaseTextY"] + y_adjust), safe_text(text, 12))
 
 
-def draw_asfa_flight_mark(pdf: canvas.Canvas, x: float, y_adjust: float, layout: dict) -> None:
-    draw_circle(pdf, x + layout["flightCircleX"], y_from_top(layout["flightCircleY"] + y_adjust), layout["flightCircleW"], layout["flightCircleH"], layout["circleWeight"])
+def draw_asfa_flight_mark(pdf: canvas.Canvas, x: float, flight: object, y_adjust: float, layout: dict) -> None:
+    label = str(flight or "A").strip().upper()
+    index = max(0, min(9, ord(label[:1]) - ord("A"))) if label else 0
+    flight_x = layout["flightCircleX"] + (index * layout.get("flightCircleStepX", 31.5))
+    draw_circle(pdf, x + flight_x, y_from_top(layout["flightCircleY"] + y_adjust), layout["flightCircleW"], layout["flightCircleH"], layout["circleWeight"])
+
+
+def draw_asfa_judge_number_mark(pdf: canvas.Canvas, x: float, judge_index: object, y_adjust: float, layout: dict) -> None:
+    try:
+        index = int(judge_index)
+    except (TypeError, ValueError):
+        index = 1
+    y_key = "judgeNumber2CircleY" if index == 2 else "judgeNumber1CircleY"
+    draw_circle(pdf, x + layout["judgeNumberCircleX"], y_from_top(layout[y_key] + y_adjust), layout["judgeNumberCircleW"], layout["judgeNumberCircleH"], layout["circleWeight"])
+
+
+def draw_asfa_course_mark(pdf: canvas.Canvas, x: float, course_number: object, y_adjust: float, layout: dict) -> None:
+    try:
+        number = int(course_number)
+    except (TypeError, ValueError):
+        return
+    x_offset = layout.get("courseCircleXAdjust", 0)
+    x_positions = {1: x + 164 + x_offset, 2: x + 186 + x_offset, 3: x + 207 + x_offset, 4: x + 235 + x_offset, 5: x + 262 + x_offset, 6: x + 290 + x_offset, 7: x + 317 + x_offset, 8: x + 344 + x_offset}
+    if number in x_positions:
+        draw_circle(pdf, x_positions[number], y_from_top(layout["courseCircleY"] + y_adjust), layout["courseCircleW"], layout["courseCircleH"], layout["circleWeight"])
+    else:
+        pdf.drawString(x + layout["phaseTextX"], y_from_top(layout["phaseTextY"] + y_adjust), str(course_number))
+
+
+def draw_check_mark(pdf: canvas.Canvas, x: float, y: float) -> None:
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(x, y, "X")
+
+
+def draw_circle(pdf: canvas.Canvas, center_x: float, center_y: float, radius_x: float, radius_y: float, line_width: float = 1.5) -> None:
+    pdf.setLineWidth(line_width)
+    pdf.ellipse(center_x - radius_x, center_y - radius_y, center_x + radius_x, center_y + radius_y, stroke=1, fill=0)
+
+
+CATALOG_BREED_NAMES = {
+    "A": "Afghan Hound", "AH": "Afghan Hound", "AZ": "Azawakh",
+    "BA": "Basenji", "B": "Borzoi", "BZ": "Borzoi", "C": "Cirneco dell'Etna",
+    "CE": "Cirneco dell'Etna", "G": "Greyhound", "GH": "Greyhound",
+    "IB": "Ibizan Hound", "IG": "Italian Greyhound", "IW": "Irish Wolfhound",
+    "N": "Norrbottenspets", "P": "Pharaoh Hound", "PH": "Pharaoh Hound",
+    "PIO": "Peruvian Inca Orchid", "PP": "Portuguese Podengo Pequeno",
+    "PPP": "Portuguese Podengo Pequeno", "RR": "Rhodesian Ridgeback",
+    "S": "Saluki", "SA": "Saluki", "SD": "Scottish Deerhound",
+    "DH": "Scottish Deerhound", "SL": "Sloughi", "SW": "Silken Windhound",
+    "TR": "Thai Ridgeback", "W": "Whippet", "WH": "Whippet",
+    "CH": "Chart Polski", "GA": "Galgo Espanol", "MA": "Magyar Agar",
+    "POD": "Portuguese Podengo", "SINGLES": "Singles",
+    "LCI SMALL": "LCI Small", "LCI LARGE": "LCI Large",
+    "LCI SIGHTHOUND MIX": "LCI Sighthound Mix", "BIF": "Best in Field",
+}
+CATALOG_STAKE_ORDER = {
+    "OPEN": 1, "FIELDCHAMPION": 2, "FCH": 2, "SPECIAL": 2,
+    "EXCELLENT": 2, "VETERAN": 3, "PROVISIONAL": 4, "SINGLES": 5, "BIF": 6,
+}
+CATALOG_OUTCOME_LABELS = {
+    "ABSENT": "Absent", "SCRATCH": "Scratch", "SCRATCHED": "Scratch",
+    "LAME": "Lame", "INSEASON": "In season", "BREEDDQ": "Breed DQ",
+    "EXCUSED": "Excused", "DISMISSED": "Dismissed", "DQ": "Disqualified",
+    "DISQUALIFIED": "Disqualified", "FORFEIT": "Forfeit", "FOR": "Forfeit",
+    "PULL": "Pulled", "PUL": "Pulled", "NOSCORE": "No score", "NS": "No score",
+}
+
+
+def catalog_clean_text(value: object) -> str:
+    text = str(value or "").strip()
+    replacements = {
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "-", "\u2026": "...", "\u00a0": " ",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return re.sub(r"\s+", " ", text).encode("latin-1", "replace").decode("latin-1")
+
+
+def catalog_breed_label(value: object) -> str:
+    text = catalog_clean_text(value)
+    normalized = clean_text(text)
+    if normalized.startswith("LCI"):
+        if "SMALL" in normalized:
+            return "LCI Small"
+        if "LARGE" in normalized:
+            return "LCI Large"
+        return "LCI Sighthound Mix"
+    return CATALOG_BREED_NAMES.get(normalized, text or "Unknown Breed")
+
+
+def catalog_stake_label(value: object) -> str:
+    text = catalog_clean_text(value) or "Open"
+    normalized = clean_text(text)
+    return {
+        "FCH": "Field Champion", "FIELDCHAMPION": "Field Champion",
+        "SPECIALS": "Special", "SPECIAL": "Special",
+    }.get(normalized, text)
+
+
+def catalog_trial_date(value: object, include_year: bool = True) -> str:
+    text = catalog_clean_text(value)
+    try:
+        date = datetime.fromisoformat(text[:10])
+    except (TypeError, ValueError):
+        return text or "Date not set"
+    if os.name == "nt":
+        return date.strftime("%a %b %#d, %Y" if include_year else "%a %#m/%#d")
+    return date.strftime("%a %b %-d, %Y" if include_year else "%a %-m/%-d")
+
+
+def catalog_trial_label(trial: dict) -> str:
+    date_text = catalog_trial_date(trial.get("startsOn") or trial.get("endsOn"), include_year=False)
+    association = catalog_clean_text(trial.get("association") or "ASFA").upper()
+    return f"{date_text} {association}".strip()
+
+
+def catalog_hound_identity(source: dict) -> str:
+    for key in ("registrationNumber", "alternateRegistrationNumber", "houndId", "id"):
+        value = clean_text(source.get(key))
+        if value:
+            return f"REG:{value}"
+    return "NAME:" + "|".join((
+        clean_text(source.get("registeredName")), clean_text(source.get("callName")), clean_text(source.get("breed")),
+    ))
+
+
+def catalog_group_key(entry: dict) -> tuple[str, str]:
+    return catalog_breed_label(run_group_breed_for_entry(entry)), catalog_stake_label(run_group_stake_for_entry(entry))
+
+
+def catalog_group_sort_key(item: tuple[tuple[str, str], object]) -> tuple:
+    (breed, stake), _value = item
+    return breed.upper(), CATALOG_STAKE_ORDER.get(clean_text(stake), 99), stake.upper()
+
+
+def catalog_wrap_lines(text: object, font_name: str, font_size: float, max_width: float) -> list[str]:
+    value = catalog_clean_text(text)
+    if not value:
+        return []
+    lines: list[str] = []
+    current = ""
+    for word in value.split():
+        candidate = f"{current} {word}".strip()
+        if not current or pdfmetrics.stringWidth(candidate, font_name, font_size) <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+class CatalogPdfCanvas:
+    def __init__(self, title: str, trials: list[dict]):
+        self.buffer = io.BytesIO()
+        self.pdf = canvas.Canvas(self.buffer, pagesize=letter)
+        self.pdf.setTitle(title)
+        self.title = title
+        self.trials = trials
+        self.page_number = 0
+        self.y = 0.0
+        self.section = ""
+        self.new_page()
+
+    def new_page(self) -> None:
+        if self.page_number:
+            self.draw_footer()
+            self.pdf.showPage()
+        self.page_number += 1
+        self.pdf.setFillColorRGB(0.02, 0.29, 0.30)
+        self.pdf.rect(0, 760, letter[0], 32, stroke=0, fill=1)
+        self.pdf.setFillColorRGB(1, 1, 1)
+        self.pdf.setFont("Helvetica-Bold", 15)
+        self.pdf.drawString(36, 772, self.title)
+        self.pdf.setFillColorRGB(0.12, 0.12, 0.12)
+        trial_dates = [catalog_trial_date(trial.get("startsOn") or trial.get("endsOn"), include_year=False) for trial in self.trials]
+        associations = sorted({catalog_clean_text(trial.get("association") or "ASFA").upper() for trial in self.trials})
+        self.pdf.setFont("Helvetica", 8)
+        subtitle = f"{len(self.trials)} selected trial{'s' if len(self.trials) != 1 else ''} | {', '.join(associations)} | {', '.join(trial_dates)}"
+        self.pdf.drawString(36, 746, safe_text(subtitle, 120))
+        self.pdf.setStrokeColorRGB(0.78, 0.58, 0.12)
+        self.pdf.setLineWidth(2)
+        self.pdf.line(36, 738, letter[0] - 36, 738)
+        self.y = 720
+        if self.section:
+            self.draw_section(self.section)
+
+    def draw_footer(self) -> None:
+        self.pdf.setStrokeColorRGB(0.78, 0.82, 0.82)
+        self.pdf.setLineWidth(0.5)
+        self.pdf.line(36, 34, letter[0] - 36, 34)
+        self.pdf.setFillColorRGB(0.35, 0.38, 0.38)
+        self.pdf.setFont("Helvetica", 7.5)
+        clubs = ", ".join(dict.fromkeys(catalog_clean_text(trial.get("clubName")) for trial in self.trials if trial.get("clubName")))
+        self.pdf.drawString(36, 22, safe_text(clubs or "Field Trial Secretary", 85))
+        self.pdf.drawRightString(letter[0] - 36, 22, f"Page {self.page_number}")
+
+    def ensure(self, height: float) -> None:
+        if self.y - height < 45:
+            self.new_page()
+
+    def draw_section(self, label: str) -> None:
+        self.section = label
+        self.ensure(30)
+        self.pdf.setFillColorRGB(0.91, 0.95, 0.94)
+        self.pdf.rect(36, self.y - 19, letter[0] - 72, 21, stroke=0, fill=1)
+        self.pdf.setFillColorRGB(0.02, 0.29, 0.30)
+        self.pdf.setFont("Helvetica-Bold", 10.5)
+        self.pdf.drawString(43, self.y - 13, catalog_clean_text(label).upper())
+        self.y -= 28
+
+    def finish(self) -> bytes:
+        self.draw_footer()
+        self.pdf.save()
+        return self.buffer.getvalue()
+
+
+def catalog_entry_records(trials: list[dict]) -> dict[tuple[str, str], list[dict]]:
+    grouped: dict[tuple[str, str], dict[str, dict]] = {}
+    for trial in trials:
+        trial_label = catalog_trial_label(trial)
+        for entry in trial.get("entries") or []:
+            source = entry_form_source(trial, entry)
+            if not (source.get("callName") or source.get("registeredName") or source.get("registrationNumber")):
+                continue
+            group_key = catalog_group_key(entry)
+            identity = catalog_hound_identity(source)
+            record = grouped.setdefault(group_key, {}).setdefault(identity, {"source": dict(source), "trials": []})
+            if trial_label not in record["trials"]:
+                record["trials"].append(trial_label)
+    return {
+        group: sorted(records.values(), key=lambda record: (
+            catalog_clean_text(record["source"].get("callName")).upper(),
+            catalog_clean_text(record["source"].get("registeredName")).upper(),
+        )) for group, records in grouped.items()
+    }
+
+
+def catalog_entry_lines(record: dict) -> list[tuple[str, float, str]]:
+    source = record["source"]
+    call_name = catalog_clean_text(source.get("callName") or source.get("registeredName") or "Unnamed hound")
+    registered = catalog_clean_text(source.get("registeredName"))
+    registration = catalog_clean_text(source.get("registrationNumber"))
+    dob = catalog_clean_text(source.get("dob") or source.get("dateOfBirth"))
+    sex = catalog_clean_text(source.get("sex"))
+    headline = f'"{call_name}"'
+    if registered and clean_text(registered) != clean_text(call_name):
+        headline += f" ~ {registered}"
+    if registration:
+        headline += f" ({registration})"
+    if dob:
+        headline += f" {dob}"
+    if sex:
+        headline += f" ({sex})"
+    lines: list[tuple[str, float, str]] = [("Helvetica-Bold", 9.4, headline)]
+    sire = catalog_clean_text(source.get("sire"))
+    dam = catalog_clean_text(source.get("dam"))
+    if sire or dam:
+        lines.append(("Helvetica", 8.2, " x ".join(part for part in (sire, dam) if part)))
+    breeder = catalog_clean_text(source.get("breeder"))
+    if breeder:
+        lines.append(("Helvetica", 8.2, f"Breeder: {breeder}"))
+    owner = catalog_clean_text(source.get("owner"))
+    location = ", ".join(part for part in (
+        catalog_clean_text(source.get("ownerCity")), catalog_clean_text(source.get("ownerState")), catalog_clean_text(source.get("ownerCountry")),
+    ) if part)
+    contact = " | ".join(part for part in (catalog_clean_text(source.get("ownerEmail")), catalog_clean_text(source.get("ownerPhone"))) if part)
+    owner_line = f"Owner: {owner or 'Not provided'}"
+    if location:
+        owner_line += f" - {location}"
+    if contact:
+        owner_line += f" | {contact}"
+    lines.append(("Helvetica", 8.2, owner_line))
+    lines.append(("Helvetica-Oblique", 7.6, f"Entered: {', '.join(record['trials'])}"))
+    return lines
+
+
+def generate_catalog_entries_pdf(trials: list[dict]) -> bytes:
+    if not trials:
+        raise ValueError("Select at least one trial for Catalog Entries.")
+    grouped = catalog_entry_records(trials)
+    if not grouped:
+        raise ValueError("The selected trials do not contain any hound entries.")
+    document = CatalogPdfCanvas("LURE COURSING - CATALOG ENTRIES", trials)
+    max_width = letter[0] - 86
+    for (breed, stake), records in sorted(grouped.items(), key=catalog_group_sort_key):
+        document.section = ""
+        document.ensure(110)
+        document.draw_section(f"{breed} - {stake}")
+        for record in records:
+            wrapped: list[tuple[str, float, str]] = []
+            for font_name, font_size, line in catalog_entry_lines(record):
+                wrapped.extend((font_name, font_size, wrapped_line) for wrapped_line in catalog_wrap_lines(line, font_name, font_size, max_width))
+            needed = sum(11 if size >= 9 else 9.5 for _font, size, _line in wrapped) + 8
+            document.ensure(needed)
+            for font_name, font_size, line in wrapped:
+                document.pdf.setFillColorRGB(0.08, 0.09, 0.09)
+                document.pdf.setFont(font_name, font_size)
+                document.pdf.drawString(43, document.y, line)
+                document.y -= 11 if font_size >= 9 else 9.5
+            document.pdf.setStrokeColorRGB(0.86, 0.88, 0.88)
+            document.pdf.setLineWidth(0.35)
+            document.pdf.line(43, document.y + 2, letter[0] - 43, document.y + 2)
+            document.y -= 7
+    return document.finish()
+
+
+def catalog_find_entry_for_row(trial: dict, row: dict) -> dict:
+    registration = clean_text(row.get("registrationNumber"))
+    call_name = clean_text(row.get("callName"))
+    registered_name = clean_text(row.get("registeredName"))
+    for entry in trial.get("entries") or []:
+        if registration and registration in {clean_text(entry.get("registrationNumber")), clean_text(entry.get("alternateRegistrationNumber"))}:
+            return entry
+    for entry in trial.get("entries") or []:
+        if registered_name and clean_text(entry.get("registeredName")) == registered_name:
+            return entry
+        if call_name and clean_text(entry.get("callName")) == call_name:
+            return entry
+    return row
+
+
+def catalog_ordinal(value: str) -> str:
+    return {"1": "1st", "2": "2nd", "3": "3rd", "4": "4th", "5": "NBQ", "NBQ": "NBQ"}.get(value.upper(), value)
+
+
+def catalog_result_text(row: dict) -> str:
+    placement = catalog_clean_text(row.get("placement"))
+    if placement:
+        return " / ".join(catalog_ordinal(part) for part in placement.replace("/", "-").split("-") if part)
+    for key in ("finalOutcome", "prelimOutcome", "rollCallStatus"):
+        value = catalog_clean_text(row.get(key))
+        label = CATALOG_OUTCOME_LABELS.get(clean_text(value))
+        if label:
+            return label
+    if row.get("finalCode") or row.get("combinedScore"):
+        return "No placement"
+    if row.get("prelimCode") or row.get("prelimScore"):
+        return "Pending finals"
+    return "Pending"
+
+
+def catalog_final_records(trials: list[dict]) -> tuple[dict[tuple[str, str], list[dict]], list[dict]]:
+    grouped: dict[tuple[str, str], dict[str, dict]] = {}
+    event_awards: list[dict] = []
+    for index, trial in enumerate(trials):
+        trial_key = str(trial.get("id") or f"trial-{index}")
+        trial_label = catalog_trial_label(trial)
+        seen_entries: set[str] = set()
+        for group in record_groups_for_print(trial, sort_mode="alpha"):
+            rows = asfa_record_rows(trial, group)
+            if clean_text(group.get("breed")) == "BIF":
+                for row in rows:
+                    if clean_text(row.get("placement")) == "BIF":
+                        event_awards.append({"trial": trial_label, "award": "BIF", "hound": catalog_clean_text(row.get("callName"))})
+                continue
+            group_key = catalog_breed_label(group.get("breed")), catalog_stake_label(group.get("stake"))
+            for row in rows:
+                entry = catalog_find_entry_for_row(trial, row)
+                source = entry_form_source(trial, entry) if entry is not row else row
+                identity = catalog_hound_identity(source)
+                seen_entries.add(identity)
+                record = grouped.setdefault(group_key, {}).setdefault(identity, {"source": dict(source), "results": {}})
+                record["results"][trial_key] = catalog_result_text(row)
+        for entry in trial.get("entries") or []:
+            source = entry_form_source(trial, entry)
+            identity = catalog_hound_identity(source)
+            if identity in seen_entries:
+                continue
+            record = grouped.setdefault(catalog_group_key(entry), {}).setdefault(identity, {"source": dict(source), "results": {}})
+            record["results"][trial_key] = CATALOG_OUTCOME_LABELS.get(clean_text(entry.get("rollCallStatus"))) or "Pending"
+    return {
+        group: sorted(records.values(), key=lambda record: (
+            catalog_clean_text(record["source"].get("callName")).upper(), catalog_clean_text(record["source"].get("registeredName")).upper(),
+        )) for group, records in grouped.items()
+    }, event_awards
+
+
+def generate_catalog_final_pdf(trials: list[dict]) -> bytes:
+    if not trials:
+        raise ValueError("Select at least one trial for Catalog Final.")
+    grouped, event_awards = catalog_final_records(trials)
+    if not grouped:
+        raise ValueError("The selected trials do not contain any hound entries.")
+    document = CatalogPdfCanvas("LURE COURSING - CATALOG FINAL", trials)
+    trial_keys = [str(trial.get("id") or f"trial-{index}") for index, trial in enumerate(trials)]
+    trial_labels = [catalog_trial_label(trial) for trial in trials]
+    result_x, detail_x = 43, 183
+    result_width, detail_width = 128, letter[0] - 183 - 43
+    for (breed, stake), records in sorted(grouped.items(), key=catalog_group_sort_key):
+        document.section = ""
+        document.ensure(110)
+        document.draw_section(f"{breed} - {stake}")
+        for record in records:
+            source = record["source"]
+            call_name = catalog_clean_text(source.get("callName") or source.get("registeredName") or "Unnamed hound")
+            registered = catalog_clean_text(source.get("registeredName"))
+            registration = catalog_clean_text(source.get("registrationNumber"))
+            headline = f'"{call_name}"'
+            if registered and clean_text(registered) != clean_text(call_name):
+                headline += f" ~ {registered}"
+            if registration:
+                headline += f" ({registration})"
+            headline_lines = catalog_wrap_lines(headline, "Helvetica-Bold", 9.2, detail_width)
+            owner = catalog_clean_text(source.get("owner"))
+            owner_lines = catalog_wrap_lines(f"Owner: {owner}", "Helvetica", 8.1, detail_width) if owner else []
+            detail_lines = headline_lines + owner_lines
+            result_lines = [f"{label}: {record['results'].get(key, '--')}" for key, label in zip(trial_keys, trial_labels)]
+            needed = (max(len(result_lines), len(detail_lines), 1) * 10.5) + 9
+            document.ensure(needed)
+            y_start = document.y
+            document.pdf.setFillColorRGB(0.16, 0.18, 0.18)
+            document.pdf.setFont("Helvetica-Bold", 7.7)
+            for line_index, line in enumerate(result_lines):
+                wrapped = catalog_wrap_lines(line, "Helvetica-Bold", 7.7, result_width)
+                document.pdf.drawString(result_x, y_start - (line_index * 10.5), safe_text(wrapped[0] if wrapped else line, 35))
+            for line_index, line in enumerate(detail_lines):
+                is_headline = line_index < len(headline_lines)
+                document.pdf.setFont("Helvetica-Bold" if is_headline else "Helvetica", 9.2 if is_headline else 8.1)
+                document.pdf.drawString(detail_x, y_start - (line_index * 10.5), line)
+            document.y -= needed
+            document.pdf.setStrokeColorRGB(0.86, 0.88, 0.88)
+            document.pdf.setLineWidth(0.35)
+            document.pdf.line(43, document.y + 4, letter[0] - 43, document.y + 4)
+    if event_awards:
+        document.section = ""
+        document.draw_section("Event Awards")
+        for award in event_awards:
+            document.ensure(18)
+            document.pdf.setFont("Helvetica-Bold", 9)
+            document.pdf.setFillColorRGB(0.12, 0.12, 0.12)
+            document.pdf.drawString(43, document.y, f"{award['trial']} - {award['award']}: {award['hound']}")
+            document.y -= 16
+    return document.finish()
+
+
+def catalog_report_filename(kind: str, trials: list[dict]) -> str:
+    dates = sorted(catalog_clean_text(trial.get("startsOn") or trial.get("endsOn"))[:10] for trial in trials if trial.get("startsOn") or trial.get("endsOn"))
+    suffix = dates[0] if len(dates) == 1 else f"{dates[0]}-to-{dates[-1]}" if dates else datetime.now().strftime("%Y-%m-%d")
+    return f"catalog-{kind}-{suffix}.pdf"
+
+
+def handle_catalog_report_post(handler, parsed) -> bool:
+    if parsed.path not in {"/api/catalog-entries", "/api/catalog-final"}:
+        return False
+    length = int(handler.headers.get("Content-Length", "0"))
+    raw = handler.rfile.read(length)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        handler.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+        return True
+    trial_ids = payload.get("trialIds")
+    if isinstance(trial_ids, list):
+        requested_ids = [str(value) for value in trial_ids if str(value).strip()]
+        state = read_state() or {}
+        data = state.get("data") if isinstance(state.get("data"), dict) else state
+        available_trials = data.get("trials") if isinstance(data, dict) else []
+        trials_by_id = {
+            str(trial.get("id")): trial
+            for trial in available_trials or []
+            if isinstance(trial, dict) and trial.get("id") is not None
+        }
+        trials = [trials_by_id[trial_id] for trial_id in requested_ids if trial_id in trials_by_id]
+        if len(trials) != len(requested_ids):
+            handler.send_json({"ok": False, "error": "One or more selected trials could not be loaded from SQLite. Refresh the page and try again."}, HTTPStatus.BAD_REQUEST)
+            return True
+    else:
+        trials = payload.get("trials")
+    if not isinstance(trials, list) or not trials or not all(isinstance(trial, dict) for trial in trials):
+        handler.send_json({"ok": False, "error": "Select at least one saved trial for the catalog."}, HTTPStatus.BAD_REQUEST)
+        return True
+    try:
+        if parsed.path == "/api/catalog-final":
+            body = generate_catalog_final_pdf(trials)
+            filename = catalog_report_filename("final", trials)
+        else:
+            body = generate_catalog_entries_pdf(trials)
+            filename = catalog_report_filename("entries", trials)
+        handler.send_pdf(body, filename)
+    except Exception as exc:
+        handler.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+    return True
+
+class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(APP_DIR), **kwargs)
+
+    def log_message(self, format: str, *args) -> None:
+        app_log(f"{self.client_address[0]} {format % args}")
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def send_json(self, payload: dict, status: int = HTTPStatus.OK) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_pdf(self, body: bytes, filename: str) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", f'inline; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_zip(self, body: bytes, filename: str, archive_path: str = "") -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        if archive_path:
+            self.send_header("X-Archive-Path", archive_path)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_png(self, body: bytes, filename: str) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Disposition", f'inline; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_stored_document(self, document: dict) -> None:
+        body = document.get("content") or b""
+        filename = str(document.get("fileName") or "entry-document")
+        mime_type = str(document.get("mimeType") or "application/octet-stream")
+        safe_filename = filename.replace('"', "")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Disposition", f'inline; filename="{safe_filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/state":
+            state = read_state()
+            self.send_json({"ok": True, "state": state})
+            return
+        if parsed.path == "/api/status":
+            self.send_json({
+                "ok": True,
+                "dbPath": str(DB_PATH),
+                "time": utc_now(),
+                "appVersion": app_version_info(),
+                "runtime": {
+                    "root": str(ROOT),
+                    "isPortableExe": bool(getattr(sys, "frozen", False)),
+                    "canBuildPortable": (not getattr(sys, "frozen", False)) and (ROOT / "build_portable_package.ps1").exists(),
+                },
+            })
+            return
+        if parsed.path == "/api/version":
+            self.send_json({"ok": True, "appVersion": app_version_info()})
+            return
+        if parsed.path == "/api/database-integrity":
+            try:
+                self.send_json({"ok": True, "integrity": database_integrity_status()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/database-backups":
+            try:
+                settings = read_app_settings()
+                self.send_json({"ok": True, "backupDir": str(DB_BACKUP_DIR), "settings": settings, "backups": list_database_backups()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/backup-settings":
+            try:
+                self.send_json({"ok": True, "settings": read_app_settings()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/portable-status":
+            try:
+                self.send_json({"ok": True, "portable": portable_package_status()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/template-image/asfa-judge":
+            try:
+                body = render_template_page_png(JUDGE_TEMPLATES["ASFA"], "asfa-judge")
+                self.send_png(body, "asfa-judge-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/asfa-record":
+            try:
+                body = render_template_page_png(RECORD_TEMPLATES["ASFA"], "asfa-record")
+                self.send_png(body, "asfa-record-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/asfa-draw":
+            try:
+                body = render_template_page_png(DRAW_TEMPLATES["ASFA"], "asfa-draw")
+                self.send_png(body, "asfa-draw-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/asfa-entry":
+            try:
+                body = render_template_half_page_png(ENTRY_FORM_TEMPLATES["ASFA"], "asfa-entry-half", DEFAULT_ASFA_ENTRY_LAYOUT["copyOffsetX"])
+                self.send_png(body, "asfa-entry-form-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/akc-draw":
+            try:
+                body = render_template_page_png(DRAW_TEMPLATES["AKC"], "akc-draw")
+                self.send_png(body, "akc-draw-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/akc-record":
+            try:
+                body = render_template_page_png(RECORD_TEMPLATES["AKC"], "akc-record")
+                self.send_png(body, "akc-record-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/asfa-secretary-1":
+            try:
+                body = render_template_page_png(SECRETARY_REPORT_TEMPLATES["ASFA"], "asfa-secretary-1", 0)
+                self.send_png(body, "asfa-secretary-report-page-1.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/asfa-secretary-2":
+            try:
+                body = render_template_page_png(SECRETARY_REPORT_TEMPLATES["ASFA"], "asfa-secretary-2", 1)
+                self.send_png(body, "asfa-secretary-report-page-2.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path.startswith("/api/document/"):
+            document_id = unquote(parsed.path.removeprefix("/api/document/"))
+            document = read_entry_document(document_id)
+            if not document:
+                self.send_json({"ok": False, "error": "Document not found."}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_stored_document(document)
+            return
+        super().do_GET()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if handle_catalog_report_post(self, parsed):
+            return
+        if parsed.path == "/api/build-portable":
+            try:
+                payload = build_portable_package()
+                self.send_json({"ok": True, **payload})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/shutdown":
+            try:
+                self.send_json({"ok": True, "message": "Field Trial Secretary has saved your data and closed the app server."})
+                threading.Thread(target=shutdown_server, args=(self.server,), daemon=False).start()
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/client-log":
+            length = min(int(self.headers.get("Content-Length", "0")), 8192)
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                payload = {"raw": raw.decode("utf-8", errors="ignore")}
+            app_log(f"CLIENT LOG: {payload}")
+            self.send_json({"ok": True})
+            return
+        if parsed.path == "/api/state":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            state = payload.get("state")
+            if not isinstance(state, dict):
+                self.send_json({"ok": False, "error": "Payload missing state object."}, HTTPStatus.BAD_REQUEST)
+                return
+            write_state(state)
+            self.send_json({"ok": True})
+            return
+        if parsed.path == "/api/save-trial":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            save_trial_to_db(trial)
+            self.send_json({"ok": True})
+            return
+        if parsed.path == "/api/draw-sheet":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            layout = payload.get("layout")
+            copies = int(payload.get("copies") or 1)
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_draw_sheet_pdf(trial, layout=layout, copies=copies)
+                filename = f"{association.lower()}-draw-sheet.pdf"
+                self.send_pdf(pdf, filename)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path in {"/api/judge-sheet", "/api/judge-sheets"}:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            group_ids = payload.get("groupIds")
+            layout = payload.get("layout")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_judge_sheets_pdf(trial, layout, group_ids if isinstance(group_ids, list) else None)
+                self.send_pdf(pdf, f"{association.lower()}-judge-sheets.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/finals-judge-sheets":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_finals_judge_sheets_pdf(
+                    trial,
+                    str(payload.get("groupId") or ""),
+                    payload.get("layout"),
+                    payload.get("groupIds") if isinstance(payload.get("groupIds"), list) else None,
+                )
+                self.send_pdf(pdf, f"{association.lower()}-finals-judge-sheets.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/runoff-judge-sheets":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_runoff_judge_sheets_pdf(
+                    trial,
+                    str(payload.get("groupId") or ""),
+                    str(payload.get("runoffKey") or ""),
+                    payload.get("layout"),
+                )
+                self.send_pdf(pdf, f"{association.lower()}-runoff-judge-sheets.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/bif-judge-sheets":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_bif_judge_sheets_pdf(trial, payload.get("layout"))
+                self.send_pdf(pdf, f"{association.lower()}-bif-judge-sheets.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/asfa-record-sheet":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            group_id = str(payload.get("groupId") or "")
+            breed = str(payload.get("breed") or "")
+            layout = payload.get("layout")
+            entry_layout = payload.get("entryLayout")
+            lci_entry_layout = payload.get("lciEntryLayout")
+            sort_mode = str(payload.get("sortMode") or "")
+            include_secretary_report = bool(payload.get("includeSecretaryReport"))
+            include_first_time_documents = bool(payload.get("includeFirstTimeDocuments"))
+            combine_mixed_posting = bool(payload.get("combineMixedPosting"))
+            include_signed_judge_sheets = bool(payload.get("includeSignedJudgeSheets"))
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                pdf = generate_asfa_record_sheet_pdf(
+                    trial,
+                    group_id=group_id,
+                    breed=breed,
+                    layout=layout,
+                    sort_mode=sort_mode,
+                    entry_layout=entry_layout,
+                    lci_entry_layout=lci_entry_layout,
+                    include_secretary_report=include_secretary_report,
+                    include_first_time_documents=include_first_time_documents,
+                    combine_mixed_posting=combine_mixed_posting,
+                    include_signed_judge_sheets=include_signed_judge_sheets,
+                )
+                association = str(trial.get("association") or "ASFA").upper()
+                self.send_pdf(pdf, f"{association.lower()}-record-sheet.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/asfa-secretary-report":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            layout = payload.get("layout")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_secretary_report_pdf(trial, layout)
+                self.send_pdf(pdf, f"{association.lower()}-secretary-report.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/asfa-record-packet":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                pdf = generate_asfa_record_sheet_pdf(
+                    trial,
+                    layout=payload.get("layout"),
+                    sort_mode=str(payload.get("sortMode") or "alpha"),
+                    entry_layout=payload.get("entryLayout"),
+                    lci_entry_layout=payload.get("lciEntryLayout"),
+                    secretary_layout=payload.get("secretaryLayout"),
+                    include_secretary_report=True,
+                    include_first_time_documents=True,
+                    include_signed_judge_sheets=True,
+                )
+                self.send_pdf(pdf, "asfa-record-packet.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        super().do_POST()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run Field Trial Secretary locally with SQLite storage.")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=8765, type=int)
+    parser.add_argument("--open-browser", action="store_true", help="Open the local app page in the default browser after startup.")
+    args = parser.parse_args()
+
+    ensure_database()
+    server = ThreadingHTTPServer((args.host, args.port), FieldTrialSecretaryHandler)
+    url = f"http://{args.host}:{args.port}/"
+    print(f"Field Trial Secretary running at {url}")
+    print(f"SQLite database: {DB_PATH}")
+    print("Press Ctrl+C to stop.")
+    should_open_browser = args.open_browser or (
+        IS_MAC_APP and not bool(os.environ.get("CI"))
+    )
+    if should_open_browser:
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        app_log("Fatal startup error:\n" + traceback.format_exc())
+        raise
+def infer_asfa_lci_type(form: dict) -> str:
+    for value in (form.get("lciType"), form.get("breed"), form.get("stake"), form.get("judgeBreed"), form.get("judgeStake")):
+        lci_type = asfa_lci_type(clean_text(value))
+        if lci_type:
+            return lci_type
+    for hound in form.get("hounds") or []:
+        for value in (
+            hound.get("breed"),
+            hound.get("className"),
+            hound.get("stake"),
+            hound.get("entryBreed"),
+            hound.get("entryClassName"),
+        ):
+            lci_type = asfa_lci_type(clean_text(value))
+            if lci_type:
+                return lci_type
+    return ""
+
+
+def draw_asfa_lci_mark(pdf: canvas.Canvas, x: float, lci_type: str, y_adjust: float, layout: dict) -> None:
+    x_positions = {
+        "LARGE": x + layout["lciLargeX"],
+        "SMALL": x + layout["lciSmallX"],
+        "SHMIX": x + layout["lciShMixX"],
+    }
+    target_x = x_positions.get(lci_type)
+    if target_x:
+        draw_circle(pdf, target_x, y_from_top(layout["lciCircleY"] + y_adjust), layout["lciCircleW"], layout["lciCircleH"], layout["circleWeight"])
+
+
+def draw_asfa_phase_mark(pdf: canvas.Canvas, x: float, y_adjust: float, layout: dict, phase: object = "") -> None:
+    normalized = clean_text(phase)
+    if normalized == "FINAL":
+        draw_circle(pdf, x + layout["finalPhaseCircleX"], y_from_top(layout["finalPhaseCircleY"] + y_adjust), layout["finalPhaseCircleW"], layout["finalPhaseCircleH"], layout["circleWeight"])
+        return
+    if normalized == "BOB":
+        draw_circle(pdf, x + layout["bobPhaseCircleX"], y_from_top(layout["bobPhaseCircleY"] + y_adjust), layout["bobPhaseCircleW"], layout["bobPhaseCircleH"], layout["circleWeight"])
+        return
+    if normalized == "BIF":
+        draw_circle(pdf, x + layout["bifPhaseCircleX"], y_from_top(layout["bifPhaseCircleY"] + y_adjust), layout["bifPhaseCircleW"], layout["bifPhaseCircleH"], layout["circleWeight"])
+        return
+    if normalized == "BIE":
+        draw_circle(pdf, x + layout["biePhaseCircleX"], y_from_top(layout["biePhaseCircleY"] + y_adjust), layout["biePhaseCircleW"], layout["biePhaseCircleH"], layout["circleWeight"])
+        return
+    if normalized in {"RUNOFF", "TIE", "TIERUNOFF"}:
+        return
+    draw_circle(pdf, x + layout["phaseCircleX"], y_from_top(layout["phaseCircleY"] + y_adjust), layout["phaseCircleW"], layout["phaseCircleH"], layout["circleWeight"])
+
+
+def draw_asfa_runoff_text(pdf: canvas.Canvas, x: float, runoff_text: object, y_adjust: float, layout: dict) -> None:
+    text = str(runoff_text or "").replace(" Tie", "").replace(" Runoff", "").strip()
+    if not text:
+        return
+    pdf.setFont("Helvetica-Bold", layout["fontSize"])
+    pdf.drawString(x + layout["phaseTextX"], y_from_top(layout["phaseTextY"] + y_adjust), safe_text(text, 12))
+
+
+def draw_asfa_flight_mark(pdf: canvas.Canvas, x: float, flight: object, y_adjust: float, layout: dict) -> None:
+    label = str(flight or "A").strip().upper()
+    index = max(0, min(9, ord(label[:1]) - ord("A"))) if label else 0
+    flight_x = layout["flightCircleX"] + (index * layout.get("flightCircleStepX", 31.5))
+    draw_circle(pdf, x + flight_x, y_from_top(layout["flightCircleY"] + y_adjust), layout["flightCircleW"], layout["flightCircleH"], layout["circleWeight"])
 
 
 def draw_asfa_judge_number_mark(pdf: canvas.Canvas, x: float, judge_index: object, y_adjust: float, layout: dict) -> None:
@@ -4428,6 +6267,20 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/template-image/akc-draw":
+            try:
+                body = render_template_page_png(DRAW_TEMPLATES["AKC"], "akc-draw")
+                self.send_png(body, "akc-draw-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/template-image/akc-record":
+            try:
+                body = render_template_page_png(RECORD_TEMPLATES["AKC"], "akc-record")
+                self.send_png(body, "akc-record-sheet-template.png")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/template-image/asfa-secretary-1":
             try:
                 body = render_template_page_png(SECRETARY_REPORT_TEMPLATES["ASFA"], "asfa-secretary-1", 0)
@@ -4454,110 +6307,7 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/api/client-log":
-            length = min(int(self.headers.get("Content-Length", "0")), 8192)
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8") or "{}")
-                event = str(payload.get("event") or "client-event")[:80]
-                details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
-                safe_details = {
-                    str(key)[:60]: str(value)[:300]
-                    for key, value in details.items()
-                }
-                app_log(f"CLIENT {event} {json.dumps(safe_details, ensure_ascii=True)}")
-                self.send_json({"ok": True})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/state":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8"))
-                state = payload.get("state")
-                if not isinstance(state, dict):
-                    raise ValueError("state must be an object")
-                saved = write_state(state)
-                self.send_json({"ok": True, "savedToSQLiteAt": saved["savedToSQLiteAt"]})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/backup":
-            try:
-                backup_path = create_database_backup("manual_api_backup")
-                self.send_json({"ok": True, "backupPath": backup_path})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
-            return
-        if parsed.path == "/api/backup-settings":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8") or "{}")
-                if not isinstance(payload, dict):
-                    raise ValueError("settings payload must be an object")
-                settings = write_app_settings(payload)
-                self.send_json({"ok": True, "settings": settings, "backups": list_database_backups()})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/restore-sqlite-backup":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8") or "{}")
-                if not isinstance(payload, dict):
-                    raise ValueError("restore payload must be an object")
-                restored = restore_database_backup(str(payload.get("fileName") or ""))
-                self.send_json({"ok": True, **restored})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/restart":
-            try:
-                threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
-                self.send_json({"ok": True, "message": "Restarting app server."})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
-            return
-        if parsed.path == "/api/shutdown":
-            try:
-                threading.Thread(target=shutdown_server, args=(self.server,), daemon=False).start()
-                self.send_json({"ok": True, "message": "Field Trial Secretary is closing. You can close this browser tab."})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
-            return
-        if parsed.path == "/api/trial-archive":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8"))
-                if not isinstance(payload, dict):
-                    raise ValueError("archive payload must be an object")
-                body, filename, archive_path = create_trial_archive_package(payload)
-                self.send_zip(body, filename, archive_path)
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/transfer-package":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8") or "{}")
-                if not isinstance(payload, dict):
-                    raise ValueError("transfer payload must be an object")
-                body, filename, archive_path = create_transfer_package(payload)
-                self.send_zip(body, filename, archive_path)
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/program-update-package":
-            try:
-                body, filename, archive_path = create_program_update_package()
-                self.send_zip(body, filename, archive_path)
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if handle_catalog_report_post(self, parsed):
             return
         if parsed.path == "/api/build-portable":
             try:
@@ -4566,111 +6316,93 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        if parsed.path == "/api/restore-transfer-app-files":
-            length = int(self.headers.get("Content-Length", "0"))
+        if parsed.path == "/api/shutdown":
+            try:
+                self.send_json({"ok": True, "message": "Field Trial Secretary has saved your data and closed the app server."})
+                threading.Thread(target=shutdown_server, args=(self.server,), daemon=False).start()
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if parsed.path == "/api/client-log":
+            length = min(int(self.headers.get("Content-Length", "0")), 8192)
             raw = self.rfile.read(length)
             try:
-                payload = json.loads(raw.decode("utf-8") or "{}")
-                if not isinstance(payload, dict):
-                    raise ValueError("restore payload must be an object")
-                restored = restore_app_files_from_transfer_package(payload)
-                self.send_json({"ok": True, **restored})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                payload = {"raw": raw.decode("utf-8", errors="ignore")}
+            app_log(f"CLIENT LOG: {payload}")
+            self.send_json({"ok": True})
             return
-        if parsed.path == "/api/document":
+        if parsed.path == "/api/state":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                if not isinstance(payload, dict):
-                    raise ValueError("document payload must be an object")
-                document = save_entry_document(payload)
-                self.send_json({"ok": True, "document": document})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            state = payload.get("state")
+            if not isinstance(state, dict):
+                self.send_json({"ok": False, "error": "Payload missing state object."}, HTTPStatus.BAD_REQUEST)
+                return
+            write_state(state)
+            self.send_json({"ok": True})
             return
-        if parsed.path == "/api/document-from-url":
+        if parsed.path == "/api/save-trial":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                if not isinstance(payload, dict):
-                    raise ValueError("document link payload must be an object")
-                document = save_linked_entry_document(payload)
-                self.send_json({"ok": True, "document": document})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/import/asfa-judges":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8"))
-                encoded = str(payload.get("pdfBase64") or "")
-                if not encoded:
-                    raise ValueError("Choose an ASFA judge directory PDF first.")
-                pdf_bytes = base64.b64decode(encoded, validate=True)
-                parsed_directory = parse_asfa_judge_directory(
-                    pdf_bytes,
-                    str(payload.get("fileName") or "ASFA Judge Directory"),
-                )
-                self.send_json({"ok": True, **parsed_directory})
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            save_trial_to_db(trial)
+            self.send_json({"ok": True})
             return
         if parsed.path == "/api/draw-sheet":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
-                pdf = generate_draw_sheet_pdf(
-                    trial,
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                    int(payload.get("copies") or 1),
-                )
-                association = str(trial.get("association") or "ASFA").lower()
-                self.send_pdf(pdf, f"{association}-draw-order-sheet.pdf")
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            layout = payload.get("layout")
+            copies = int(payload.get("copies") or 1)
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_draw_sheet_pdf(trial, layout=layout, copies=copies)
+                filename = f"{association.lower()}-draw-sheet.pdf"
+                self.send_pdf(pdf, filename)
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        if parsed.path == "/api/judge-sheets":
+        if parsed.path in {"/api/judge-sheet", "/api/judge-sheets"}:
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
-                pdf = generate_judge_sheets_pdf(
-                    trial,
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                    [str(value or "") for value in payload.get("groupIds")] if isinstance(payload.get("groupIds"), list) else None,
-                )
-                association = str(trial.get("association") or "ASFA").lower()
-                self.send_pdf(pdf, f"{association}-preliminary-judge-sheets.pdf")
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/runoff-judge-sheets":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            group_ids = payload.get("groupIds")
+            layout = payload.get("layout")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
             try:
-                payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
-                pdf = generate_runoff_judge_sheets_pdf(
-                    trial,
-                    str(payload.get("groupId") or ""),
-                    str(payload.get("runoffKey") or ""),
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                )
-                association = str(trial.get("association") or "ASFA").lower()
-                self.send_pdf(pdf, f"{association}-runoff-judge-sheets.pdf")
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_judge_sheets_pdf(trial, layout, group_ids if isinstance(group_ids, list) else None)
+                self.send_pdf(pdf, f"{association.lower()}-judge-sheets.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -4679,17 +6411,46 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
                 pdf = generate_finals_judge_sheets_pdf(
                     trial,
                     str(payload.get("groupId") or ""),
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                    [str(value or "") for value in payload.get("groupIds")] if isinstance(payload.get("groupIds"), list) else None,
+                    payload.get("layout"),
+                    payload.get("groupIds") if isinstance(payload.get("groupIds"), list) else None,
                 )
-                association = str(trial.get("association") or "ASFA").lower()
-                self.send_pdf(pdf, f"{association}-finals-judge-sheets.pdf")
+                self.send_pdf(pdf, f"{association.lower()}-finals-judge-sheets.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/runoff-judge-sheets":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_runoff_judge_sheets_pdf(
+                    trial,
+                    str(payload.get("groupId") or ""),
+                    str(payload.get("runoffKey") or ""),
+                    payload.get("layout"),
+                )
+                self.send_pdf(pdf, f"{association.lower()}-runoff-judge-sheets.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -4698,15 +6459,17 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
-                pdf = generate_bif_judge_sheets_pdf(
-                    trial,
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                )
-                association = str(trial.get("association") or "ASFA").lower()
-                self.send_pdf(pdf, f"{association}-bif-judge-sheets.pdf")
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_bif_judge_sheets_pdf(trial, payload.get("layout"))
+                self.send_pdf(pdf, f"{association.lower()}-bif-judge-sheets.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -4715,67 +6478,39 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            group_id = str(payload.get("groupId") or "")
+            breed = str(payload.get("breed") or "")
+            layout = payload.get("layout")
+            entry_layout = payload.get("entryLayout")
+            lci_entry_layout = payload.get("lciEntryLayout")
+            sort_mode = str(payload.get("sortMode") or "")
+            include_secretary_report = bool(payload.get("includeSecretaryReport"))
+            include_first_time_documents = bool(payload.get("includeFirstTimeDocuments"))
+            combine_mixed_posting = bool(payload.get("combineMixedPosting"))
+            include_signed_judge_sheets = bool(payload.get("includeSignedJudgeSheets"))
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
                 pdf = generate_asfa_record_sheet_pdf(
                     trial,
-                    str(payload.get("groupId") or ""),
-                    str(payload.get("breed") or ""),
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                    str(payload.get("sortMode") or ""),
-                    payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None,
-                    payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None,
-                    None,
-                    False,
-                    False,
-                    bool(payload.get("combineMixedPosting")),
+                    group_id=group_id,
+                    breed=breed,
+                    layout=layout,
+                    sort_mode=sort_mode,
+                    entry_layout=entry_layout,
+                    lci_entry_layout=lci_entry_layout,
+                    include_secretary_report=include_secretary_report,
+                    include_first_time_documents=include_first_time_documents,
+                    combine_mixed_posting=combine_mixed_posting,
+                    include_signed_judge_sheets=include_signed_judge_sheets,
                 )
-                self.send_pdf(pdf, "asfa-record-sheet.pdf")
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/asfa-record-packet":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
-                pdf = generate_asfa_record_sheet_pdf(
-                    trial,
-                    "",
-                    "",
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                    "alpha",
-                    payload.get("entryLayout") if isinstance(payload.get("entryLayout"), dict) else None,
-                    payload.get("lciEntryLayout") if isinstance(payload.get("lciEntryLayout"), dict) else None,
-                    payload.get("secretaryLayout") if isinstance(payload.get("secretaryLayout"), dict) else None,
-                    True,
-                    True,
-                    False,
-                    True,
-                )
-                self.send_pdf(pdf, "asfa-record-sheet-packet.pdf")
-            except Exception as exc:
-                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        if parsed.path == "/api/asfa-entry-forms":
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length)
-            try:
-                payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
-                pdf = generate_asfa_entry_forms_pdf(
-                    trial,
-                    str(payload.get("entryId") or ""),
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                    payload.get("lciLayout") if isinstance(payload.get("lciLayout"), dict) else None,
-                )
-                self.send_pdf(pdf, "asfa-first-time-entry-forms.pdf")
+                association = str(trial.get("association") or "ASFA").upper()
+                self.send_pdf(pdf, f"{association.lower()}-record-sheet.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -4784,44 +6519,47 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             raw = self.rfile.read(length)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                trial = payload.get("trial")
-                if not isinstance(trial, dict):
-                    raise ValueError("trial must be an object")
-                pdf = generate_asfa_secretary_report_pdf(
-                    trial,
-                    payload.get("layout") if isinstance(payload.get("layout"), dict) else None,
-                )
-                self.send_pdf(pdf, "asfa-field-trial-secretary-report.pdf")
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            layout = payload.get("layout")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                association = str(trial.get("association") or "ASFA").upper()
+                pdf = generate_secretary_report_pdf(trial, layout)
+                self.send_pdf(pdf, f"{association.lower()}-secretary-report.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        self.send_error(HTTPStatus.NOT_FOUND)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Field Trial Secretary locally with SQLite storage.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", default=8765, type=int)
-    parser.add_argument("--open-browser", action="store_true", help="Open the local app page in the default browser after startup.")
-    args = parser.parse_args()
-
-    ensure_database()
-    server = ThreadingHTTPServer((args.host, args.port), FieldTrialSecretaryHandler)
-    url = f"http://{args.host}:{args.port}/"
-    print(f"Field Trial Secretary running at {url}")
-    print(f"SQLite database: {DB_PATH}")
-    print("Press Ctrl+C to stop.")
-    should_open_browser = args.open_browser or (
-        IS_MAC_APP and not bool(os.environ.get("CI"))
-    )
-    if should_open_browser:
-        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-    server.serve_forever()
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        app_log("Fatal startup error:\n" + traceback.format_exc())
-        raise
+        if parsed.path == "/api/asfa-record-packet":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                pdf = generate_asfa_record_sheet_pdf(
+                    trial,
+                    layout=payload.get("layout"),
+                    sort_mode=str(payload.get("sortMode") or "alpha"),
+                    entry_layout=payload.get("entryLayout"),
+                    lci_entry_layout=payload.get("lciEntryLayout"),
+                    secretary_layout=payload.get("secretaryLayout"),
+                    include_secretary_report=True,
+                    include_first_time_documents=True,
+                    include_signed_judge_sheets=True,
+                )
+                self.send_pdf(pdf, "asfa-record-packet.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        super().do_POST()

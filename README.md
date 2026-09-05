@@ -32,7 +32,7 @@ Create a portable package with:
 
 The GitHub Actions workflow in `.github/workflows/build-macos.yml` builds
 separate Apple Silicon and Intel disk images. In GitHub, open **Actions**,
-choose **Build macOS Application**, and select **Run workflow**. When both
+choose **Build Installers**, and select **Run workflow**. When both
 jobs finish, download the two DMG artifacts from the workflow run.
 
 The Mac application keeps its live SQLite database and backups outside the
@@ -43,5 +43,7 @@ application bundle at:
 ```
 
 This means replacing the application with a newer build does not replace the
-trial database. The current builds use ad-hoc signing for testing. Public
-distribution will require an Apple Developer ID certificate and notarization.
+trial database. Tagged releases require Developer ID signing and Apple
+notarization before GitHub publishes their installers. See
+[`docs/MACOS_RELEASE.md`](docs/MACOS_RELEASE.md) for the one-time Apple and
+GitHub secret setup.

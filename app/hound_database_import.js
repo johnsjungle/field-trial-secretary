@@ -249,8 +249,17 @@ function parseHoundImportText(text, sourceName) {
     return rows.map((row) => ({ ...row, __sourceName: sourceName }));
 }
 
-function isHoundImportWorkbook(fileName) {
-    return /\.(xlsx|xls)$/i.test(String(fileName || ''));
+function houndImportFileExtension(fileName) {
+    const match = String(fileName || '').trim().toLowerCase().match(/\.([^.]+)$/);
+    return match ? match[1] : '';
+}
+
+function isHoundImportWorkbook(file) {
+    const extension = houndImportFileExtension(file?.name);
+    const mimeType = String(file?.type || '').toLowerCase();
+    return ['xlsx', 'xls'].includes(extension)
+        || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        || mimeType === 'application/vnd.ms-excel';
 }
 
 function uniqueWorkbookHeaders(values) {
@@ -290,7 +299,16 @@ function parseHoundImportWorkbook(arrayBuffer, sourceName, xlsxApi = globalThis.
 }
 
 async function parseHoundImportFile(file) {
-    if (isHoundImportWorkbook(file.name)) return parseHoundImportWorkbook(await file.arrayBuffer(), file.name);
+    const extension = houndImportFileExtension(file.name);
+    if (extension === 'numbers') {
+        throw new Error(`${file.name} is an Apple Numbers file. In Numbers, export it as Excel or CSV, then select the exported file.`);
+    }
+    if (isHoundImportWorkbook(file)) return parseHoundImportWorkbook(await file.arrayBuffer(), file.name);
+    const supportedTextExtensions = ['', 'csv', 'tsv', 'txt', 'json'];
+    const isTextFile = String(file.type || '').toLowerCase().startsWith('text/');
+    if (!supportedTextExtensions.includes(extension) && !isTextFile) {
+        throw new Error(`${file.name} is not a supported hound database file. Use Excel, CSV, tab-delimited text, or JSON.`);
+    }
     return parseHoundImportText(await readTextFile(file), file.name);
 }
 
@@ -656,7 +674,7 @@ async function importSelectedHoundsToDatabase() {
         showHoundImportMessage(`Hound database import saved: ${created} created, ${filled} matched record${filled === 1 ? '' : 's'} filled, and ${updated} updated. No trial entries were changed.`, 'success');
     } catch (error) {
         masterHounds = previous;
-        localStorage.setItem(houndStorageKey, JSON.stringify(masterHounds));
+        saveBrowserCacheValue(houndStorageKey, masterHounds);
         showHoundImportMessage(`The hound database import was not saved. No records were changed. ${error.message}`);
     } finally {
         setHoundImportBusy(false);

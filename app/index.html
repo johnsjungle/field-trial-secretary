@@ -245,6 +245,36 @@
                 </section>
 
                 <section class="form-section" data-tab="setup">
+                    <div class="section-heading">
+                        <h2>Fields & Roll Call Lanes</h2>
+                        <p>Most trials use one field and one roll call lane. Large events can name up to three of each, then assign breeds in Running Order.</p>
+                    </div>
+                    <div class="grid two operational-setup-grid">
+                        <div>
+                            <label>
+                                Number of fields
+                                <select id="eventFieldCount">
+                                    <option value="1">1 field</option>
+                                    <option value="2">2 fields</option>
+                                    <option value="3">3 fields</option>
+                                </select>
+                            </label>
+                            <div id="eventFieldNames" class="named-operation-groups"></div>
+                        </div>
+                        <div>
+                            <label>
+                                Roll call lanes
+                                <select id="rollCallLaneCount">
+                                    <option value="1">1 lane</option>
+                                    <option value="2">2 lanes</option>
+                                    <option value="3">3 lanes</option>
+                                </select>
+                            </label>
+                            <div id="rollCallLaneNames" class="named-operation-groups"></div>
+                        </div>
+                    </div>
+                </section>
+                <section class="form-section" data-tab="setup">
                     <div class="section-heading with-action">
                         <div>
                             <h2>Copy Trial Setup</h2>
@@ -356,7 +386,7 @@
                         <div class="inline-entry">
                             <label>
                                 Import file(s)
-                                <input id="houndDatabaseImportFiles" type="file" multiple accept=".xlsx,.xls,.csv,.tsv,.txt,.json">
+                                <input id="houndDatabaseImportFiles" type="file" multiple>
                                 <small>Use Excel (.xlsx or .xls), CSV, tab-delimited text, JSON, or a Field Trial Secretary JSON backup.</small>
                             </label>
                             <label>
@@ -737,6 +767,7 @@
                                     <th>Owner</th>
                                     <th>Breed</th>
                                     <th>Stake</th>
+                                    <th id="rollCallLaneCheckHeading">Lane</th>
                                     <th>Present</th>
                                     <th>Reason</th>
                                     <th>Group</th>
@@ -894,15 +925,15 @@
                 <section class="form-section" data-tab="wrapup">
                     <div class="section-heading with-action">
                         <div>
-                            <h2>ASFA Secretary Report</h2>
-                            <p>Build the ASFA Field Trial Secretary report for trial submission.</p>
+                            <h2 id="secretaryReportHeading">ASFA Secretary Report</h2>
+                            <p id="secretaryReportDesc">Build the ASFA Field Trial Secretary report for trial submission.</p>
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small report-button" id="printAsfaSecretaryReportButton">Print ASFA Secretary Report</button>
                         </div>
                     </div>
                     <div class="form-message compact" id="wrapUpSecretaryMessage"></div>
-                    <div class="grid two">
+                    <div class="grid two" id="asfaSecretaryQuestions">
                         <label>
                             Were any judges changed from the approved premium list?
                             <select id="secretaryJudgesChanged">
@@ -988,8 +1019,53 @@
                             <input id="secretaryPaypalTransactionId" placeholder="Optional">
                         </label>
                     </div>
+                    <div class="grid two" id="akcSecretaryQuestions" hidden>
+                        <label>
+                            Was there any misconduct, complaint, injury, irregularity, or other matter requiring Field Trial Committee attention?
+                            <select id="akcSecretaryMisconduct">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </label>
+                        <label>
+                            Were there any last-minute judge changes or substitutions?
+                            <select id="akcSecretaryJudgesChanged">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </label>
+                        <label class="wide">
+                            Reasons for judge changes or approved judges not judging their assignments
+                            <textarea id="akcSecretaryJudgeChangeNotes" rows="3"></textarea>
+                        </label>
+                        <label>
+                            Were there any complaints over the judging?
+                            <select id="akcSecretaryJudgeComplaints">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </label>
+                        <label>
+                            Was the place where the trial was held satisfactory?
+                            <select id="akcSecretaryLocationSatisfactory">
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Was any protest against a dog made to the Field Trial Committee?
+                            <select id="akcSecretaryDogProtest">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </label>
+                        <label class="wide">
+                            Field Trial Committee members present, including approximate dates and hours
+                            <textarea id="akcSecretaryCommitteeNotes" rows="4" placeholder="One report line per row"></textarea>
+                        </label>
+                    </div>
                     <div class="info-panel">
-                        <p>The report also fills club, region, chair, secretary email, trial date, location, entry counts, and calculated ASFA fees from the active trial.</p>
+                        <p id="secretaryReportInfo">The report also fills club, region, chair, secretary email, trial date, location, entry counts, and calculated ASFA fees from the active trial.</p>
                     </div>
                     <div class="secretary-fee-summary" id="secretaryFeeSummary"></div>
                 </section>
@@ -997,8 +1073,8 @@
                 <section class="form-section" data-tab="wrapup">
                     <div class="section-heading with-action">
                         <div>
-                            <h2>ASFA Record Packet</h2>
-                            <p>Create the complete end-of-trial ASFA record packet with all record sheets in order.</p>
+                            <h2 id="recordPacketHeading">ASFA Record Packet</h2>
+                            <p id="recordPacketDesc">Create the complete end-of-trial ASFA record packet with all record sheets in order.</p>
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small report-button" id="printAsfaEntryFormsButton">Print First-Time Entry Forms</button>
@@ -1015,7 +1091,7 @@
                     <div class="section-heading with-action">
                         <div>
                             <h2>Submit Paperwork</h2>
-                            <p>Send the completed trial paperwork to records@asfa.org after reviewing the record packet.</p>
+                            <p id="paperworkSubmissionDesc">Send the completed trial paperwork to records@asfa.org after reviewing the record packet.</p>
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small report-button" id="markPaperworkSubmittedButton">Mark Paperwork Submitted</button>
@@ -1083,6 +1159,8 @@
                                 <tr>
                                     <th>Move</th>
                                     <th>Order</th>
+                                    <th id="runPlanFieldHeading">Field</th>
+                                    <th id="runPlanLaneHeading">Roll Call Lane</th>
                                     <th>Breed</th>
                                     <th>Entries</th>
                                     <th>Judge 1</th>
@@ -1111,6 +1189,10 @@
                         </div>
                     </div>
                     <div class="grid three no-print">
+                        <label id="printFieldControl" hidden>
+                            Print for field
+                            <select id="printFieldSelect"></select>
+                        </label>
                         <label>
                             Roll call sort
                             <select id="rollCallSort">
@@ -1119,6 +1201,7 @@
                                 <option value="registeredName">Registered name</option>
                                 <option value="className">Class, breed, call name</option>
                                 <option value="entryNumber">Entry number</option>
+                                <option value="lane">Roll call lane, breed, class</option>
                             </select>
                         </label>
                     </div>
@@ -1138,7 +1221,7 @@
                         <p id="judgesMapTitle"></p>
                         <div class="table-wrap">
                             <table>
-                                <thead>
+                                <thead id="judgesMapHead">
                                     <tr>
                                         <th>Order</th>
                                         <th>Breed</th>
@@ -1166,6 +1249,7 @@
                                         <th>Call Name</th>
                                         <th>Breed</th>
                                         <th>Class</th>
+                                        <th id="rollCallLanePrintHeading">Lane</th>
                                         <th>Notes</th>
                                     </tr>
                                 </thead>
@@ -1429,6 +1513,21 @@
                         <div class="record-visual-editor" id="asfaRecordVisualEditor"></div>
                         <iframe class="pdf-preview-frame" id="asfaRecordAlignmentPreview" title="ASFA record sheet preview"></iframe>
                     </div>
+                    <div class="tool-panel" id="akcRecordAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>AKC Record Sheet Alignment (JERSC3)</h3>
+                                <p>Drag targets on the official AKC Lure Coursing Scoresheet (JERSC3) template to adjust filled-in values, then preview before printing.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAkcRecordAlignmentButton">Preview AKC Scoresheet</button>
+                                <button type="button" class="secondary small" id="resetAkcRecordAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="akcRecordAlignmentControls"></div>
+                        <div class="record-visual-editor" id="akcRecordVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="akcRecordAlignmentPreview" title="AKC record sheet preview"></iframe>
+                    </div>
                     <div class="tool-panel" id="asfaEntryAlignmentTool">
                         <div class="section-heading with-action compact-heading">
                             <div>
@@ -1474,6 +1573,21 @@
                         <div class="draw-visual-editor" id="asfaDrawVisualEditor"></div>
                         <iframe class="pdf-preview-frame" id="asfaDrawAlignmentPreview" title="ASFA draw sheet preview"></iframe>
                     </div>
+                    <div class="tool-panel" id="akcDrawAlignmentTool">
+                        <div class="section-heading with-action compact-heading">
+                            <div>
+                                <h3>AKC Draw Sheet Alignment (JERSC2)</h3>
+                                <p>Drag target boxes on the official AKC draw order sheet (JERSC2) template image to adjust filled-in values, then preview before printing.</p>
+                            </div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="previewAkcDrawAlignmentButton">Preview AKC Draw Sheet</button>
+                                <button type="button" class="secondary small" id="resetAkcDrawAlignmentButton">Reset</button>
+                            </div>
+                        </div>
+                        <div class="alignment-grid" id="akcDrawAlignmentControls"></div>
+                        <div class="draw-visual-editor" id="akcDrawVisualEditor"></div>
+                        <iframe class="pdf-preview-frame" id="akcDrawAlignmentPreview" title="AKC draw sheet preview"></iframe>
+                    </div>
                     <div class="tool-panel" id="asfaJudgeAlignmentTool">
                         <div class="section-heading with-action compact-heading">
                             <div>
@@ -1506,6 +1620,55 @@
                     </div>
                 </section>
 
+                <section class="form-section" data-tab="admin" data-admin-page="Reports">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Catalog Reports</h2>
+                            <p>Select one or more trials, then build either the entries catalog or the completed-results catalog.</p>
+                        </div>
+                        <div class="catalog-selection-count" id="catalogSelectionCount">0 trials selected</div>
+                    </div>
+                    <div class="catalog-report-toolbar">
+                        <button type="button" class="secondary small" id="selectAllCatalogTrialsButton">Select All</button>
+                        <button type="button" class="secondary small" id="selectCatalogWeekendButton">Select Active Weekend</button>
+                        <button type="button" class="secondary small" id="clearCatalogTrialsButton">Clear</button>
+                    </div>
+                    <div class="table-wrap catalog-trial-table-wrap">
+                        <table class="catalog-trial-table">
+                            <thead>
+                                <tr>
+                                    <th class="catalog-check-column">Use</th>
+                                    <th>Date</th>
+                                    <th>Trial</th>
+                                    <th>Club</th>
+                                    <th>Association</th>
+                                    <th>Entries</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="catalogTrialTable"></tbody>
+                        </table>
+                    </div>
+                    <div class="catalog-report-grid">
+                        <article class="catalog-report-card">
+                            <div>
+                                <span class="catalog-report-eyebrow">Before the trial</span>
+                                <h3>Catalog Entries</h3>
+                                <p>Groups hounds by breed and stake with registered name, registration, birth date, sex, pedigree, breeder, owner, and contact information.</p>
+                            </div>
+                            <button type="button" class="secondary report-button" id="buildCatalogEntriesButton">Build Catalog Entries</button>
+                        </article>
+                        <article class="catalog-report-card">
+                            <div>
+                                <span class="catalog-report-eyebrow">After results</span>
+                                <h3>Catalog Final</h3>
+                                <p>Combines the selected trials and shows each hound's placement, BOB/BIF award, or recorded outcome side by side.</p>
+                            </div>
+                            <button type="button" class="secondary report-button" id="buildCatalogFinalButton">Build Catalog Final</button>
+                        </article>
+                    </div>
+                    <div class="form-message compact" id="catalogReportMessage"></div>
+                </section>
                 <section class="form-section" data-tab="admin" data-admin-page="Tools">
                     <div class="section-heading with-action">
                         <div>
@@ -1516,6 +1679,7 @@
                             <button type="button" class="secondary small" id="createAdminTestTrialButton">Create Test Trial</button>
                             <button type="button" class="secondary small" id="populateAdminScoresButton">Populate Preliminary Scores</button>
                             <button type="button" class="secondary small" id="populateAdminFinalsScoresButton">Populate Finals Scores</button>
+                            <button type="button" class="secondary small" id="populateAdminRunoffScoresButton">Populate Runoffs/Ties Scores</button>
                             <button type="button" class="secondary small danger-button" id="removeAdminTestRecordsButton">Remove Test Database Records</button>
                         </div>
                     </div>
@@ -1715,7 +1879,8 @@
     <script src="vendor/sheetjs/xlsx.full.min.js"></script>
     <script src="asfa_recent_hounds.js"></script>
     <script src="default_form_alignment.js?v=20260802"></script>
-    <script src="script.js?v=20260808-worker-conflicts"></script>
-    <script src="hound_database_import.js?v=20260807-export"></script>
+    <script src="association_rules.js?v=20260808-akc-foundation"></script>
+    <script src="script.js?v=20260810-large-hound-import"></script>
+    <script src="hound_database_import.js?v=20260810-mac-file-picker"></script>
 </body>
 </html>

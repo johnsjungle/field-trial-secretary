@@ -1,9 +1,9 @@
 {
-  "name": "Field Trial Secretary",
-  "version": "0.3.6",
-  "releaseDate": "2026-08-08",
-  "channel": "beta",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.6",
-  "latestVersionUrl": "",
-  "notes": "Beta release with improved runoff recovery and record-sheet handling, hound database exports, and expanded Worker Sheet assignments and conflict warnings."
+    "name":  "Field Trial Secretary",
+    "version":  "0.3.8",
+    "releaseDate":  "2026-09-05",
+    "channel":  "beta",
+    "releaseUrl":  "",
+    "latestVersionUrl":  "",
+    "notes":  "Beta with expanded AKC workflows and forms, catalog reports, multi-field event support, association-aware split stakes and BOB handling, improved macOS packaging and imports, and roll-call PDF pagination for large entries."
 }

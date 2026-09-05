@@ -21,6 +21,7 @@ APP_NAME="Field Trial Secretary"
 APP_PATH="$ROOT/dist/$APP_NAME.app"
 DMG_NAME="Field-Trial-Secretary-${VERSION}-macOS-${ARCH}.dmg"
 DMG_PATH="$ROOT/dist/$DMG_NAME"
+SIGN_IDENTITY="${MACOS_SIGN_IDENTITY:-}"
 
 rm -rf "$BUILD_ROOT" "$APP_PATH" "$DMG_PATH"
 mkdir -p "$ICONSET"
@@ -34,22 +35,39 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$ICON_FILE"
 
-python3 -m PyInstaller \
-  --noconfirm \
-  --clean \
-  --windowed \
-  --onedir \
-  --name "$APP_NAME" \
-  --icon "$ICON_FILE" \
-  --osx-bundle-identifier "org.fieldtrialsecretary.app" \
-  --collect-all pypdfium2 \
-  --collect-all pdfplumber \
-  --collect-all pdfminer \
-  --add-data "app:app" \
-  --add-data "database:database" \
-  server.py
+PYINSTALLER_ARGS=(
+  --noconfirm
+  --clean
+  --windowed
+  --onedir
+  --name "$APP_NAME"
+  --icon "$ICON_FILE"
+  --osx-bundle-identifier "org.fieldtrialsecretary.app"
+  --collect-all pypdfium2
+  --collect-all pdfplumber
+  --collect-all pdfminer
+  --add-data "app:app"
+  --add-data "database:database"
+)
 
-codesign --force --deep --sign - "$APP_PATH"
+if [[ -n "$SIGN_IDENTITY" ]]; then
+  PYINSTALLER_ARGS+=(--codesign-identity "$SIGN_IDENTITY")
+fi
+
+python3 -m PyInstaller "${PYINSTALLER_ARGS[@]}" server.py
+
+if [[ -n "$SIGN_IDENTITY" ]]; then
+  codesign \
+    --force \
+    --deep \
+    --options runtime \
+    --timestamp \
+    --sign "$SIGN_IDENTITY" \
+    "$APP_PATH"
+else
+  echo "Warning: building an ad-hoc signed macOS app. Tagged releases must use Developer ID signing."
+  codesign --force --deep --sign - "$APP_PATH"
+fi
 codesign --verify --deep --strict "$APP_PATH"
 
 STAGING="$BUILD_ROOT/dmg"
@@ -64,5 +82,14 @@ hdiutil create \
   -ov \
   -format UDZO \
   "$DMG_PATH"
+
+if [[ -n "$SIGN_IDENTITY" ]]; then
+  codesign \
+    --force \
+    --timestamp \
+    --sign "$SIGN_IDENTITY" \
+    "$DMG_PATH"
+  codesign --verify --strict "$DMG_PATH"
+fi
 
 echo "Created $DMG_PATH"

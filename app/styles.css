@@ -127,8 +127,9 @@ select {
 .topbar {
     display: grid;
     align-items: center;
-    grid-template-columns: auto minmax(0, 1fr) auto minmax(280px, 420px);
-    gap: 16px;
+    grid-template-areas: "brand nav active guide";
+    grid-template-columns: auto minmax(460px, 1fr) minmax(260px, 340px) minmax(280px, 360px);
+    gap: 12px;
     padding: 10px 20px;
     background: var(--panel);
     border-bottom: 1px solid var(--line);
@@ -137,10 +138,16 @@ select {
     z-index: 5;
 }
 
+.brand {
+    grid-area: brand;
+    min-width: 0;
+}
+
 .main-tabs {
     display: flex;
     flex-wrap: wrap;
     gap: 2px;
+    grid-area: nav;
     min-width: 0;
 }
 
@@ -250,6 +257,7 @@ h2 {
 }
 
 .active-trial {
+    grid-area: active;
     min-width: 240px;
     padding: 7px 10px;
     border: 1px solid var(--line);
@@ -455,6 +463,7 @@ h2 {
 }
 
 .trial-guide-card {
+    grid-area: guide;
     position: relative;
     min-width: 280px;
 }
@@ -2646,6 +2655,114 @@ tbody tr.row-flash td {
     size: landscape;
 }
 
+.catalog-selection-count {
+    align-self: center;
+    background: #edf7f2;
+    border: 1px solid #a9cdbf;
+    color: var(--accent-dark);
+    font-size: 13px;
+    font-weight: 700;
+    min-width: 150px;
+    padding: 9px 12px;
+    text-align: center;
+}
+
+.catalog-report-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.catalog-trial-table-wrap {
+    max-height: 410px;
+    overflow: auto;
+}
+
+.catalog-trial-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.catalog-trial-table tr.catalog-trial-selected td {
+    background: #edf7f2;
+}
+
+.catalog-trial-table td,
+.catalog-trial-table th {
+    vertical-align: middle;
+}
+
+.catalog-trial-table .catalog-check-column {
+    text-align: center;
+    width: 54px;
+}
+
+.catalog-trial-table input[type="checkbox"] {
+    height: 18px;
+    margin: 0;
+    width: 18px;
+}
+
+.catalog-trial-status {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.catalog-report-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 14px;
+}
+
+.catalog-report-card {
+    align-items: stretch;
+    background: #fbfcfc;
+    border: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    justify-content: space-between;
+    padding: 16px;
+}
+
+.catalog-report-card h3 {
+    color: var(--accent-dark);
+    font-size: 17px;
+    margin: 4px 0 7px;
+}
+
+.catalog-report-card p {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+}
+
+.catalog-report-eyebrow {
+    color: #8a4d08;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.catalog-report-card button {
+    min-height: 42px;
+    width: 100%;
+}
+
+@media (max-width: 760px) {
+    .catalog-report-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .catalog-selection-count {
+        width: 100%;
+    }
+}
 @media print {
     body {
         background: #fff;
@@ -2719,10 +2836,28 @@ tbody tr.row-flash td {
     }
 
     #workerSheetPrint,
-    #judgesMapPrint,
-    #rollCallPrint {
+    #judgesMapPrint {
         max-height: 7.25in;
         overflow: hidden;
+    }
+
+    #rollCallPrint {
+        max-height: none;
+        overflow: visible;
+    }
+
+    #rollCallPrint .roll-call-print-table {
+        break-inside: auto;
+        page-break-inside: auto;
+    }
+
+    #rollCallPrint .roll-call-print-table thead {
+        display: table-header-group;
+    }
+
+    #rollCallPrint .roll-call-print-table tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     table {
@@ -2914,30 +3049,89 @@ button.danger-button {
     color: var(--muted);
 }
 
+@media (max-width: 1300px) {
+    .topbar {
+        align-items: start;
+        grid-template-areas:
+            "brand active"
+            "nav guide";
+        grid-template-columns: minmax(180px, 1fr) minmax(300px, 420px);
+    }
+
+    .active-trial,
+    .trial-guide-card {
+        min-width: 0;
+    }
+
+    .main-tabs {
+        align-self: stretch;
+    }
+
+    .sub-tabs,
+    .workflow-strip {
+        position: static;
+    }
+
+    body:has(.trial-guide-card[open]) .workspace {
+        padding-right: 20px;
+    }
+}
+
 @media (max-width: 900px) {
-    .topbar,
+    .topbar {
+        gap: 8px;
+        grid-template-areas:
+            "brand"
+            "active"
+            "nav"
+            "guide";
+        grid-template-columns: minmax(0, 1fr);
+        padding: 10px 12px;
+        position: static;
+    }
+
     .layout {
         display: block;
     }
 
     .main-tabs {
-        margin-top: 10px;
+        margin-top: 0;
     }
 
-    .active-trial {
-        min-width: 0;
-        margin-top: 14px;
-    }
-
+    .active-trial,
     .trial-guide-card {
-        margin-top: 12px;
+        margin-top: 0;
         min-width: 0;
     }
 
     .trial-guide-popover {
-        left: 0;
+        box-shadow: none;
+        left: auto;
+        max-height: none;
+        position: static;
         right: auto;
-        width: min(340px, 100%);
+        width: 100%;
+    }
+
+    .sub-tabs {
+        flex-wrap: wrap;
+        overflow-x: visible;
+        padding: 6px 12px;
+    }
+
+    .workflow-strip {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        padding: 8px 12px;
+    }
+
+    .workspace {
+        padding: 12px;
+    }
+
+    .form-section,
+    .status-panel {
+        padding: 14px;
     }
 
     body:has(.trial-guide-card[open]) .workspace {
@@ -3003,6 +3197,39 @@ button.danger-button {
     .owner-separation-group-input {
         margin-left: 0;
         max-width: none;
+    }
+}
+
+@media (max-width: 620px) {
+    .main-tabs {
+        display: grid;
+        gap: 6px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tab-button {
+        border: 1px solid var(--line);
+        min-width: 0;
+        padding: 7px 6px;
+        text-align: center;
+        white-space: normal;
+        width: 100%;
+    }
+
+    .tab-button.active {
+        border-color: var(--accent);
+    }
+
+    .sub-tab-button {
+        flex: 1 1 calc(50% - 6px);
+        min-width: 0;
+        white-space: normal;
+    }
+
+    .active-trial,
+    .trial-guide-card summary,
+    .workflow-strip {
+        overflow-wrap: anywhere;
     }
 }
 
@@ -3308,4 +3535,79 @@ button.danger-button {
 .hound-import-complete {
     background: #eef2f1;
     color: var(--muted);
+}
+
+.named-operation-groups {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.run-plan-field-heading th,
+.roll-call-lane-heading th {
+    background: #dceee8;
+    border-bottom: 2px solid var(--accent-dark);
+    color: var(--accent-dark);
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.run-plan-multi-table {
+    min-width: 1450px;
+}
+
+.operational-select-cell {
+    min-width: 140px;
+}
+
+.operational-select-cell select {
+    min-width: 130px;
+    width: 100%;
+}
+.split-stake-panel {
+    margin-top: 14px;
+    border: 1px solid #b8ccc7;
+    background: #f7fbfa;
+}
+
+.split-stake-panel > summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-weight: 700;
+    color: #075b50;
+}
+
+.split-stake-panel > .field-note {
+    margin: 0;
+    padding: 0 12px 10px;
+}
+
+.split-stake-list {
+    border-top: 1px solid #d5e2df;
+}
+
+.split-stake-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 0.8fr) minmax(240px, 1.8fr);
+    gap: 12px;
+    align-items: center;
+    padding: 9px 12px;
+    border-bottom: 1px solid #e1e9e7;
+}
+
+.split-stake-row.eligible {
+    border-left: 4px solid #16836f;
+}
+
+.split-stake-row.warning {
+    border-left: 4px solid #d38b17;
+    background: #fff9ee;
+}
+
+@media (max-width: 760px) {
+    .split-stake-row {
+        grid-template-columns: 1fr;
+        gap: 3px;
+    }
 }
