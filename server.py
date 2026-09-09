@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import copy
+import hashlib
 import io
 import ipaddress
 import json
@@ -18,6 +19,7 @@ import time
 import traceback
 import webbrowser
 import zipfile
+import zlib
 from datetime import datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -65,9 +67,11 @@ STATE_KEY = "current"
 DEFAULT_MAX_DB_BACKUPS = 30
 MIN_DB_BACKUPS = 5
 MAX_DB_BACKUPS_LIMIT = 250
+MAX_UNDO_HISTORY = 20
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 TEMPLATE_IMAGE_CACHE: dict[str, bytes] = {}
 TEMPLATE_IMAGE_LOCK = threading.Lock()
+STATE_WRITE_LOCK = threading.RLock()
 
 
 class NullWriter:
@@ -566,6 +570,18 @@ def ensure_database() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS state_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                previous_state BLOB NOT NULL,
+                previous_hash TEXT NOT NULL,
+                resulting_hash TEXT NOT NULL,
+                summary TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
 
 
@@ -579,6 +595,123 @@ def read_state() -> dict | None:
     if not row:
         return None
     return json.loads(row[0])
+
+
+def state_content_json(state: dict | None) -> str:
+    data = copy.deepcopy((state or {}).get("data") or {})
+    if isinstance(data, dict):
+        # Changing the selected trial is navigation, not a data action worth undoing.
+        data.pop("activeTrialId", None)
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def state_content_hash(state: dict | None) -> str:
+    return hashlib.sha256(state_content_json(state).encode("utf-8")).hexdigest()
+
+
+def summarize_state_change(previous: dict, current: dict) -> str:
+    previous_data = previous.get("data") if isinstance(previous.get("data"), dict) else {}
+    current_data = current.get("data") if isinstance(current.get("data"), dict) else {}
+    summaries: list[str] = []
+    previous_trials = {
+        str(row.get("id") or row.get("trialId") or index): row
+        for index, row in enumerate(previous_data.get("trials") or [])
+        if isinstance(row, dict)
+    }
+    current_trials = {
+        str(row.get("id") or row.get("trialId") or index): row
+        for index, row in enumerate(current_data.get("trials") or [])
+        if isinstance(row, dict)
+    }
+    changed_trial_ids = {
+        trial_id
+        for trial_id in previous_trials.keys() | current_trials.keys()
+        if previous_trials.get(trial_id) != current_trials.get(trial_id)
+    }
+    if len(changed_trial_ids) == 1:
+        trial_id = next(iter(changed_trial_ids))
+        trial = current_trials.get(trial_id) or previous_trials.get(trial_id) or {}
+        name = str(trial.get("trialName") or trial.get("clubName") or "selected trial").strip()
+        summaries.append(f"Trial change: {name}")
+    elif changed_trial_ids:
+        summaries.append(f"Changes across {len(changed_trial_ids)} trials")
+    collection_labels = (
+        ("masterHounds", "hound database"),
+        ("masterJudges", "judge database"),
+        ("masterWorkers", "worker database"),
+        ("formTemplateStatus", "form templates"),
+        ("formAlignment", "report alignment"),
+        ("entryImportTemplates", "import mappings"),
+        ("deletedTrials", "deleted-trial recovery list"),
+    )
+    for key, label in collection_labels:
+        if previous_data.get(key) != current_data.get(key):
+            summaries.append(label.capitalize())
+    return "; ".join(summaries[:3]) if summaries else "Last saved data change"
+
+
+def undo_status() -> dict:
+    ensure_database()
+    with sqlite3.connect(DB_PATH) as conn:
+        current_row = conn.execute(
+            "SELECT state_json FROM app_state WHERE key = ?", (STATE_KEY,)
+        ).fetchone()
+        history_row = conn.execute(
+            "SELECT created_at, resulting_hash, summary FROM state_history ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        history_count = conn.execute("SELECT COUNT(*) FROM state_history").fetchone()[0]
+    if not current_row or not history_row:
+        return {"available": False, "historyCount": int(history_count or 0), "message": "No recent action is available to undo."}
+    current_state = json.loads(current_row[0])
+    if state_content_hash(current_state) != history_row[1]:
+        return {
+            "available": False,
+            "historyCount": int(history_count or 0),
+            "message": "The current data no longer matches the undo history. Create or restore a SQLite backup instead.",
+        }
+    return {
+        "available": True,
+        "historyCount": int(history_count or 0),
+        "createdAt": history_row[0],
+        "summary": history_row[2],
+    }
+
+
+def undo_last_action() -> dict:
+    ensure_database()
+    status = undo_status()
+    if not status.get("available"):
+        raise ValueError(status.get("message") or "No recent action is available to undo.")
+    safety_backup = create_database_backup("before_undo_last_action")
+    restored_at = utc_now()
+    with sqlite3.connect(DB_PATH) as conn:
+        current_row = conn.execute(
+            "SELECT state_json FROM app_state WHERE key = ?", (STATE_KEY,)
+        ).fetchone()
+        history_row = conn.execute(
+            "SELECT id, previous_state, resulting_hash, summary FROM state_history ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not current_row or not history_row:
+            raise ValueError("No recent action is available to undo.")
+        current_state = json.loads(current_row[0])
+        if state_content_hash(current_state) != history_row[2]:
+            raise ValueError("The data changed before the undo could be completed. Try again.")
+        restored_state = json.loads(zlib.decompress(history_row[1]).decode("utf-8"))
+        restored_state["savedToSQLiteAt"] = restored_at
+        restored_json = json.dumps(restored_state, ensure_ascii=False, separators=(",", ":"))
+        conn.execute(
+            "UPDATE app_state SET state_json = ?, updated_at = ? WHERE key = ?",
+            (restored_json, restored_at, STATE_KEY),
+        )
+        conn.execute("DELETE FROM state_history WHERE id = ?", (history_row[0],))
+        conn.commit()
+    return {
+        "state": restored_state,
+        "undone": history_row[3],
+        "savedToSQLiteAt": restored_at,
+        "safetyBackup": safety_backup,
+        "undo": undo_status(),
+    }
 
 
 def database_integrity_status() -> dict:
@@ -638,7 +771,7 @@ def prune_backups() -> None:
 
 def create_database_backup(reason: str) -> str:
     ensure_database()
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup_path = DB_BACKUP_DIR / f"field_trial_secretary-{timestamp}.sqlite"
     shutil.copy2(DB_PATH, backup_path)
     with sqlite3.connect(DB_PATH) as conn:
@@ -1150,6 +1283,11 @@ def shutdown_server(server: ThreadingHTTPServer) -> None:
 
 
 def write_state(state: dict) -> dict:
+    with STATE_WRITE_LOCK:
+        return write_state_unlocked(state)
+
+
+def write_state_unlocked(state: dict) -> dict:
     ensure_database()
     if DB_PATH.exists():
         create_database_backup("before_state_save")
@@ -1157,6 +1295,37 @@ def write_state(state: dict) -> dict:
     state = {**state, "savedToSQLiteAt": updated_at}
     state_json = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
     with sqlite3.connect(DB_PATH) as conn:
+        previous_row = conn.execute(
+            "SELECT state_json FROM app_state WHERE key = ?", (STATE_KEY,)
+        ).fetchone()
+        if previous_row:
+            previous_state = json.loads(previous_row[0])
+            previous_hash = state_content_hash(previous_state)
+            resulting_hash = state_content_hash(state)
+            if previous_hash != resulting_hash:
+                conn.execute(
+                    """
+                    INSERT INTO state_history (
+                        created_at, previous_state, previous_hash, resulting_hash, summary
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        updated_at,
+                        sqlite3.Binary(zlib.compress(previous_row[0].encode("utf-8"), level=6)),
+                        previous_hash,
+                        resulting_hash,
+                        summarize_state_change(previous_state, state),
+                    ),
+                )
+                conn.execute(
+                    """
+                    DELETE FROM state_history
+                    WHERE id NOT IN (
+                        SELECT id FROM state_history ORDER BY id DESC LIMIT ?
+                    )
+                    """,
+                    (MAX_UNDO_HISTORY,),
+                )
         conn.execute(
             """
             INSERT INTO app_state (key, state_json, updated_at)
@@ -1169,7 +1338,6 @@ def write_state(state: dict) -> dict:
         )
         conn.commit()
     return state
-
 
 def render_template_page_png(template_path: Path, cache_key: str, page_index: int = 0) -> bytes:
     with TEMPLATE_IMAGE_LOCK:
@@ -1541,6 +1709,7 @@ def flatten_draw_courses(groups: list[dict]) -> list[dict]:
                 "mixedStake": bool(group.get("mixedStake")),
                 "manualNote": group.get("manualNote") or "",
                 "phase": group.get("phase") or "",
+                "flight": group.get("flight") or "A",
                 "course": course.get("number") or "",
                 "hounds": hounds,
             })
@@ -1584,7 +1753,7 @@ def draw_asfa_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict 
         draw_asfa_draw_sheet_phase_checks(pdf, column, block, trial, layout)
         pdf.drawString(column + layout["breedTextX"], y_from_top(top + 4 + layout["breedTextYAdjust"]), safe_text(block["breed"], 24))
         pdf.drawString(column + layout["stakeTextX"], y_from_top(top + 21 + layout["stakeTextYAdjust"]), safe_text(block["stake"], 12))
-        pdf.drawString(column + 35, y_from_top(top + 36), "A")
+        pdf.drawString(column + 35, y_from_top(top + 36), safe_text(block.get("flight") or "A", 2))
         pdf.drawString(column + 35, y_from_top(top + 51), str(block["course"]))
         draw_hound_lines(pdf, column + 91, top + 21, block)
 
@@ -3789,10 +3958,13 @@ def append_first_time_documents_for_group(writer: PdfWriter, trial: dict, group:
     lci_layout_settings = asfa_lci_entry_layout(lci_entry_layout)
     for entry_id in group_entry_ids(group):
         entry = entries_by_id.get(entry_id)
-        if not entry or not bool(entry.get("firstTime")):
+        if not entry or not (bool(entry.get("firstTime")) or bool(entry.get("infoChanged"))):
             continue
         append_asfa_entry_form_for_entry(writer, trial, entry, lci_layout_settings if is_lci_entry(entry) else layout_settings)
-        for document_id in first_time_document_ids_for_entry(entry, group):
+        document_ids = first_time_document_ids_for_entry(entry, group) if bool(entry.get("firstTime")) else []
+        if bool(entry.get("infoChanged")):
+            document_ids.extend(information_change_document_ids_for_entry(entry))
+        for document_id in document_ids:
             if not document_id or document_id in seen_documents:
                 continue
             seen_documents.add(document_id)
@@ -3879,6 +4051,22 @@ def first_time_document_ids_for_entry(entry: dict, group: dict) -> list[str]:
         ids.append(lci_registration_id)
     if not ids:
         ids.extend(str(document_id) for document_id in entry.get("documentIds") or [] if document_id)
+    return ids
+
+
+def information_change_document_ids_for_entry(entry: dict) -> list[str]:
+    ids: list[str] = []
+    candidates = [
+        entry.get("registrationCertDocumentId"),
+        entry.get("coursingCertDocumentId"),
+        entry.get("lciRegistrationDocumentId"),
+        *(entry.get("documentIds") or []),
+        *[(record or {}).get("id") for record in entry.get("documentRecords") or []],
+    ]
+    for document_id in candidates:
+        value = str(document_id or "")
+        if value and value not in ids:
+            ids.append(value)
     return ids
 
 
@@ -5641,6 +5829,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/undo-status":
+            try:
+                with STATE_WRITE_LOCK:
+                    self.send_json({"ok": True, "undo": undo_status()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/api/state":
             state = read_state()
             self.send_json({"ok": True, "state": state})
@@ -5763,6 +5958,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/restart":
+            try:
+                self.send_json({"ok": True, "message": "Field Trial Secretary is restarting the app server."})
+                threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/api/shutdown":
             try:
                 self.send_json({"ok": True, "message": "Field Trial Secretary has saved your data and closed the app server."})
@@ -5779,6 +5981,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 payload = {"raw": raw.decode("utf-8", errors="ignore")}
             app_log(f"CLIENT LOG: {payload}")
             self.send_json({"ok": True})
+            return
+        if parsed.path == "/api/undo-last-action":
+            try:
+                with STATE_WRITE_LOCK:
+                    self.send_json({"ok": True, **undo_last_action()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if parsed.path == "/api/state":
             length = int(self.headers.get("Content-Length", "0"))
@@ -6194,6 +6403,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/undo-status":
+            try:
+                with STATE_WRITE_LOCK:
+                    self.send_json({"ok": True, "undo": undo_status()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/api/state":
             state = read_state()
             self.send_json({"ok": True, "state": state})
@@ -6316,6 +6532,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/restart":
+            try:
+                self.send_json({"ok": True, "message": "Field Trial Secretary is restarting the app server."})
+                threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/api/shutdown":
             try:
                 self.send_json({"ok": True, "message": "Field Trial Secretary has saved your data and closed the app server."})
@@ -6332,6 +6555,13 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 payload = {"raw": raw.decode("utf-8", errors="ignore")}
             app_log(f"CLIENT LOG: {payload}")
             self.send_json({"ok": True})
+            return
+        if parsed.path == "/api/undo-last-action":
+            try:
+                with STATE_WRITE_LOCK:
+                    self.send_json({"ok": True, **undo_last_action()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if parsed.path == "/api/state":
             length = int(self.headers.get("Content-Length", "0"))

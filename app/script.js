@@ -34,6 +34,8 @@ const buttonHelpText = {
     newTrialButton: 'Starts a new trial setup record.',
     saveTrialButton: 'Saves the current trial details.',
     createSQLiteBackupButton: 'Creates a restore point of the current SQLite database. Use this before trial day, before restoring, and before major changes.',
+    undoLastActionButton: 'Restores the data from immediately before the most recent saved action. A SQLite safety backup is created first.',
+    refreshUndoStatusButton: 'Checks which recent saved action is currently available to undo.',
     saveBackupRetentionButton: 'Saves how many automatic SQLite backups are kept before older backups are pruned.',
     exportDataBackupButton: 'Exports a JSON copy of the trial data for an extra portable backup. SQLite backup is preferred when server mode is available.',
     refreshSQLiteBackupsButton: 'Reloads the SQLite backup list from the backups folder.',
@@ -1004,6 +1006,9 @@ let lastSQLiteSaveAt = '';
 let lastBrowserSaveAt = '';
 let saveStatusState = 'checking';
 let databaseIntegrityStatus = { status: 'checking', checkedAt: '', messages: [] };
+let undoStatusLoaded = false;
+let undoStatusPayload = { available: false, historyCount: 0, message: 'Checking recent action history...' };
+let undoRequestInProgress = false;
 let appVersionInfo = { version: '0.0.0', channel: 'local', releaseDate: '' };
 let sqliteBackupRows = [];
 let sqliteBackupListLoaded = false;
@@ -1579,6 +1584,8 @@ function renderDatabaseIntegrityStatus() {
 
 function queueSQLiteSave() {
     lastBrowserSaveAt = new Date().toISOString();
+    undoStatusLoaded = false;
+    renderUndoStatus();
     if (!sqliteModeAvailable || !sqliteLoadComplete) {
         renderSaveStatus();
         return;
@@ -1602,6 +1609,10 @@ async function saveToSQLite() {
         body: JSON.stringify({ state: makeBackupSnapshot() }),
     });
     setSaveStatus('saved', payload.savedToSQLiteAt || new Date().toISOString());
+    undoStatusLoaded = false;
+    if (!undoRequestInProgress && currentTab === 'admin' && currentAdminPage === 'Tools') {
+        refreshUndoStatus().catch(() => {});
+    }
     if (storageSafetyMessage && currentTab === 'admintest') {
         showMessage(storageSafetyMessage, `Saved to SQLite at ${formatTimestamp(payload.savedToSQLiteAt)}.`, 'success');
     }
@@ -1614,7 +1625,22 @@ async function loadFromSQLiteIfAvailable() {
         return;
     }
     try {
-        const payload = await apiRequest('/api/state');
+        let payload = null;
+        let lastError = null;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            try {
+                payload = await apiRequest('/api/state');
+                break;
+            } catch (error) {
+                lastError = error;
+                if (attempt < 4) {
+                    await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+                }
+            }
+        }
+        if (!payload) {
+            throw lastError || new Error('SQLite state could not be loaded.');
+        }
         try {
             const status = await apiRequest('/api/status');
             serverRuntimeInfo = { ...serverRuntimeInfo, ...(status.runtime || {}) };
@@ -2039,6 +2065,105 @@ async function saveBackupRetention() {
     }
 }
 
+function renderUndoStatus() {
+    const details = document.getElementById('undoLastActionDetails');
+    const button = document.getElementById('undoLastActionButton');
+    if (!details || !button) {
+        return;
+    }
+    if (!sqliteModeAvailable) {
+        details.textContent = 'Undo is available only while the SQLite app server is running.';
+        details.className = 'backup-restore-note warning';
+        button.disabled = true;
+        return;
+    }
+    if (!undoStatusLoaded) {
+        details.textContent = 'Checking recent action history...';
+        details.className = 'backup-restore-note';
+        button.disabled = true;
+        return;
+    }
+    button.disabled = undoRequestInProgress || !undoStatusPayload.available;
+    if (!undoStatusPayload.available) {
+        details.textContent = undoStatusPayload.message || 'No recent action is available to undo.';
+        details.className = 'backup-restore-note';
+        return;
+    }
+    const count = Number(undoStatusPayload.historyCount || 0);
+    const timestamp = undoStatusPayload.createdAt ? `Saved ${formatTimestamp(undoStatusPayload.createdAt)}. ` : '';
+    details.textContent = `${undoStatusPayload.summary || 'Last saved data change'}. ${timestamp}${count} recent action${count === 1 ? '' : 's'} available.`;
+    details.className = 'backup-restore-note warning';
+}
+
+async function refreshUndoStatus(showError = false) {
+    if (!sqliteModeAvailable) {
+        undoStatusLoaded = true;
+        undoStatusPayload = { available: false, historyCount: 0, message: 'Undo requires SQLite server mode.' };
+        renderUndoStatus();
+        return undoStatusPayload;
+    }
+    try {
+        const payload = await apiRequest('/api/undo-status');
+        undoStatusPayload = payload.undo || { available: false, historyCount: 0 };
+        undoStatusLoaded = true;
+        renderUndoStatus();
+        return undoStatusPayload;
+    } catch (error) {
+        undoStatusPayload = { available: false, historyCount: 0, message: `Undo status could not be loaded: ${error.message}` };
+        undoStatusLoaded = true;
+        renderUndoStatus();
+        if (showError) {
+            showMessage(storageSafetyMessage, undoStatusPayload.message, 'warning');
+        }
+        return undoStatusPayload;
+    }
+}
+
+async function undoLastAction() {
+    if (!sqliteModeAvailable || undoRequestInProgress) {
+        showMessage(storageSafetyMessage, 'Undo requires SQLite server mode.', 'warning');
+        return;
+    }
+    try {
+        undoRequestInProgress = true;
+        renderUndoStatus();
+        clearTimeout(sqliteSaveTimer);
+        await saveToSQLite();
+        const status = await refreshUndoStatus(true);
+        if (!status.available) {
+            showMessage(storageSafetyMessage, status.message || 'No recent action is available to undo.', 'warning');
+            return;
+        }
+        const confirmed = await showTrialConfirm({
+            title: 'Undo Last Action',
+            eyebrow: 'Restore Previous Saved State',
+            message: `${status.summary || 'Last saved data change'} (${formatTimestamp(status.createdAt)}). Undo this action? A complete SQLite safety backup will be created first.`,
+            primaryText: 'Undo Last Action',
+        });
+        if (!confirmed) {
+            return;
+        }
+        const payload = await apiRequest('/api/undo-last-action', { method: 'POST', body: '{}' });
+        if (!payload.state) {
+            throw new Error('The server did not return the restored application state.');
+        }
+        applyBackupSnapshot(payload.state);
+        lastSQLiteSaveAt = payload.savedToSQLiteAt || payload.state.savedToSQLiteAt || new Date().toISOString();
+        setSaveStatus('saved', lastSQLiteSaveAt);
+        undoStatusPayload = payload.undo || { available: false, historyCount: 0 };
+        undoStatusLoaded = true;
+        await writeBrowserSafetyBackup();
+        await refreshSQLiteBackupList();
+        render();
+        showMessage(storageSafetyMessage, `Undid: ${payload.undone}. Safety backup created before undo.`, 'success');
+    } catch (error) {
+        showMessage(storageSafetyMessage, `Undo failed: ${error.message}`, 'warning');
+        await refreshUndoStatus().catch(() => {});
+    } finally {
+        undoRequestInProgress = false;
+        renderUndoStatus();
+    }
+}
 async function restoreSQLiteBackup() {
     if (!sqliteModeAvailable) {
         showMessage(storageSafetyMessage, 'SQLite mode is not active. Start the app with start_field_trial_secretary.ps1 first.', 'warning');
@@ -2869,6 +2994,10 @@ function renderAdminTools() {
     renderDeletedTrials();
     renderBackupSettings();
     renderSQLiteBackupList();
+    renderUndoStatus();
+    if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !undoStatusLoaded) {
+        refreshUndoStatus();
+    }
     if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !backupSettingsLoaded) {
         refreshBackupSettings();
     }
@@ -6930,11 +7059,84 @@ function markOwnerSeparationReviewed() {
     render();
 }
 
-function updateEntryRollCall(entryId, changes) {
+function preliminaryDrawContainsEntry(trial, entryId) {
+    return ((trial.preliminaryDraw || {}).groups || []).some((group) => (
+        (group.courses || []).some((course) => (course.hounds || []).some((hound) => hound.entryId === entryId))
+    ));
+}
+
+function entryHasDownstreamDraw(trial, entryId) {
+    const groups = ((trial.preliminaryDraw || {}).groups || []);
+    return groups.some((group) => (
+        (((group.finalDraw || {}).courses) || []).some((course) => (course.hounds || []).some((hound) => hound.entryId === entryId))
+        || (group.runoffs || []).some((runoff) => (runoff.courses || []).some((course) => (course.hounds || []).some((hound) => hound.entryId === entryId)))
+        || (group.runoffHistory || []).some((runoff) => (runoff.courses || []).some((course) => (course.hounds || []).some((hound) => hound.entryId === entryId)))
+    )) || (trial.bobRunoffs || []).some((runoff) => (runoff.courses || []).some((course) => (course.hounds || []).some((hound) => hound.entryId === entryId)));
+}
+
+function entryHasNumericPrelimScore(trial, entryId) {
+    return ((trial.preliminaryDraw || {}).groups || []).some((group) => (
+        (group.courses || []).some((course) => (course.hounds || []).some((hound) => (
+            hound.entryId === entryId && (
+                hasScoreValue(hound.prelimJudge1Score)
+                || hasScoreValue(hound.prelimJudge2Score)
+                || hasScoreValue(hound.prelimScore)
+            )
+        )))
+    ));
+}
+
+function removeUnscoredEntryFromPreliminaryDraw(trial, entryId) {
+    const draw = trial.preliminaryDraw;
+    if (!draw || !Array.isArray(draw.groups)) return false;
+    let removed = false;
+    const groups = draw.groups.map((group) => {
+        const courses = (group.courses || []).map((course) => {
+            const hounds = (course.hounds || []).filter((hound) => {
+                if (hound.entryId !== entryId) return true;
+                removed = true;
+                return false;
+            });
+            return { ...course, hounds };
+        }).filter((course) => course.hounds.length > 0);
+        return { ...group, courses };
+    }).filter((group) => group.courses.length > 0);
+    if (!removed) return false;
+    trial.preliminaryDraw = {
+        ...draw,
+        groups,
+        entriesFingerprint: entryDrawFingerprint(trial.entries || []),
+        correctedAt: new Date().toISOString(),
+    };
+    return true;
+}
+
+async function updateEntryRollCall(entryId, changes) {
     const trial = readForm();
-    trial.entries = (trial.entries || []).map((entry) => entry.id === entryId ? { ...entry, ...changes } : entry);
+    const entry = (trial.entries || []).find((item) => item.id === entryId);
+    trial.entries = (trial.entries || []).map((item) => item.id === entryId ? { ...item, ...changes } : item);
+    const unavailable = ['absent', 'lame', 'in_season', 'breed_dq', 'scratched', 'excused'].includes(changes.rollCallStatus);
+    let removedFromDraw = false;
+    if (unavailable && preliminaryDrawContainsEntry(trial, entryId)) {
+        const canRemove = !entryHasNumericPrelimScore(trial, entryId) && !entryHasDownstreamDraw(trial, entryId);
+        if (canRemove) {
+            const remove = await showTrialConfirm({
+                title: 'Remove Hound From Draw?',
+                eyebrow: entry?.callName || entry?.registeredName || 'Roll Call Correction',
+                message: 'This hound is already in the preliminary draw but has no entered judge scores or downstream runs. Remove it and delete its course if the course becomes empty?',
+                primaryText: 'Remove From Draw',
+                secondaryText: 'Keep Draw',
+            });
+            if (remove) removedFromDraw = removeUnscoredEntryFromPreliminaryDraw(trial, entryId);
+        }
+    }
     upsertTrial(trial);
     saveTrials();
+    if (removedFromDraw) {
+        showMessage(rollCallMessage, `${entry?.callName || 'Hound'} was removed from the preliminary draw. Empty courses were removed.`, 'success');
+    } else if (unavailable && preliminaryDrawContainsEntry(trial, entryId)) {
+        showMessage(rollCallMessage, 'Roll call was updated, but this hound remains in the draw because scores or downstream runs already exist.', 'warning');
+    }
     render();
 }
 
@@ -8702,7 +8904,7 @@ function renderMainResultsBook(trial) {
                     tr.appendChild(textCell(finalDetails.judge2 || ''));
                     tr.appendChild(textCell(computedScoreDisplay(finalDetails.score, finalDetails.outcome)));
                     tr.appendChild(textCell(finalDetails.combinedScore));
-                    tr.appendChild(textCell(finalDetails.placement));
+                    tr.appendChild(textCell(finalDetails.tieBreakOutcome ? scoreOutcomeLabel(finalDetails.tieBreakOutcome) : finalDetails.placement));
                     tr.appendChild(textCell(bobResultForEntry(trial, hound.entryId)));
                     tr.appendChild(textCell(bifResultForEntry(bifState(trial), hound.entryId)));
                     tbody.appendChild(tr);
@@ -8902,7 +9104,7 @@ function scorebookActionsForGroup(group, mode) {
                 className: 'secondary small report-button',
             },
             {
-                label: 'AKC Draw Sheet',
+                label: isAkc ? 'AKC Draw Sheet' : 'ASFA Draw Sheet',
                 handler: () => printDrawSheet(),
                 className: 'secondary small report-button',
             },
@@ -11588,7 +11790,11 @@ function bobStakeWinnerRowsForGroup(group) {
         return [placedWinner];
     }
 
-    const activeRows = rows.filter((row) => !row.hound.finalOutcome);
+    const qualifyingMinimum = placementQualifyingMinimum(judgeCountForGroup(readForm(), group));
+    const activeRows = rows.filter((row) => (
+        !row.hound.finalOutcome
+        && Number(row.hound.combinedScore || 0) >= qualifyingMinimum
+    ));
     const hasFirstPlaceTie = tieBreakGroups(group).some((tie) => isFirstPlaceTie(tie));
     if (activeRows.length === 1 && !hasFirstPlaceTie) {
         return [activeRows[0]];
@@ -11690,7 +11896,23 @@ function orderRunoffItems(trial, items) {
             return a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' });
         })
         .map((item) => item.id);
-    return [...known, ...remaining].map((id) => byId.get(id)).filter(Boolean);
+    const baseOrder = [...known, ...remaining];
+    const childrenByParent = new Map();
+    baseOrder.forEach((id) => {
+        if (!String(id).startsWith('bobtie:')) return;
+        const parentId = String(id).slice('bobtie:'.length);
+        if (!ids.has(parentId)) return;
+        if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+        childrenByParent.get(parentId).push(id);
+    });
+    const childIds = new Set([...childrenByParent.values()].flat());
+    const ordered = [];
+    const appendWithRepeatTies = (id) => {
+        ordered.push(id);
+        (childrenByParent.get(id) || []).forEach(appendWithRepeatTies);
+    };
+    baseOrder.filter((id) => !childIds.has(id)).forEach(appendWithRepeatTies);
+    return ordered.map((id) => byId.get(id)).filter(Boolean);
 }
 
 function runoffDisplayRows(trial, item) {
@@ -14449,6 +14671,7 @@ function finalDetailsForEntry(group, entryId) {
                 outcome: hound.finalOutcome || '',
                 combinedScore: hound.combinedScore || '',
                 placement: hound.placement || '',
+                tieBreakOutcome: hound.tieBreakOutcome || '',
             };
         }
     }
@@ -24046,6 +24269,8 @@ document.getElementById('buildCatalogFinalButton')?.addEventListener('click', ()
 document.getElementById('deleteSelectedTrialButton').addEventListener('click', deleteSelectedAdminTrial);
 document.getElementById('restoreBrowserBackupButton').addEventListener('click', restoreBrowserSafetyBackup);
 document.getElementById('createSQLiteBackupButton').addEventListener('click', createSQLiteBackup);
+document.getElementById('undoLastActionButton')?.addEventListener('click', undoLastAction);
+document.getElementById('refreshUndoStatusButton')?.addEventListener('click', () => refreshUndoStatus(true));
 document.getElementById('saveBackupRetentionButton')?.addEventListener('click', saveBackupRetention);
 document.getElementById('restoreSQLiteBackupButton')?.addEventListener('click', restoreSQLiteBackup);
 sqliteBackupSelect?.addEventListener('change', updateSQLiteBackupDetails);

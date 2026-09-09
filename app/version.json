@@ -1,9 +1,9 @@
 {
     "name":  "Field Trial Secretary",
-    "version":  "0.3.8",
-    "releaseDate":  "2026-09-05",
+    "version":  "0.3.9",
+    "releaseDate":  "2026-09-08",
     "channel":  "beta",
     "releaseUrl":  "",
     "latestVersionUrl":  "",
-    "notes":  "Beta with expanded AKC workflows and forms, catalog reports, multi-field event support, association-aware split stakes and BOB handling, improved macOS packaging and imports, and roll-call PDF pagination for large entries."
+    "notes":  "Beta with safer SQLite startup and undo support, corrected split-flight draw sheets, improved runoff ordering and tie outcomes, qualifying-score BOB enforcement, roll-call draw correction, owner-change packet documents, and association-correct scoring controls."
 }

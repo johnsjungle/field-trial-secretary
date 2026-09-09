@@ -1793,6 +1793,15 @@
                         </div>
 
                         <div class="backup-tool-card">
+                            <h3>Undo Recent Change</h3>
+                            <p>Reverse the most recent saved data action. A SQLite safety backup is created before anything is changed.</p>
+                            <div class="backup-restore-note" id="undoLastActionDetails">Checking recent action history...</div>
+                            <div class="button-row">
+                                <button type="button" class="secondary small" id="refreshUndoStatusButton">Refresh Undo Status</button>
+                                <button type="button" class="secondary small danger-button" id="undoLastActionButton">Undo Last Action</button>
+                            </div>
+                        </div>
+                        <div class="backup-tool-card">
                             <h3>Restore Data</h3>
                             <p>Use only when data needs recovered. SQLite restore replaces the current database after making a safety copy.</p>
                             <div class="grid two backup-restore-grid compact">
