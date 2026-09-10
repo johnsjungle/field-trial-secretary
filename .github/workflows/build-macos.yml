@@ -2,6 +2,14 @@ name: Build Installers
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Installers to build
+        type: choice
+        default: All
+        options:
+          - All
+          - Intel
   push:
     branches:
       - master
@@ -14,6 +22,7 @@ permissions:
 jobs:
   windows:
     name: Build Windows portable package
+    if: github.event_name != 'workflow_dispatch' || inputs.target != 'Intel'
     runs-on: windows-latest
     timeout-minutes: 35
 
@@ -66,14 +75,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - architecture: Apple-Silicon
-            runner: macos-latest
-          - architecture: Intel
-            runner: macos-15-intel
+        include: ${{ fromJSON(inputs.target == 'Intel' && '[{"architecture":"Intel","runner":"macos-15-intel"}]' || '[{"architecture":"Apple-Silicon","runner":"macos-latest"},{"architecture":"Intel","runner":"macos-15-intel"}]') }}
 
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: 120
 
     steps:
       - name: Check out source
@@ -169,7 +174,16 @@ jobs:
 
           python3 -c 'import json; data=json.load(open("build/macos-status.json")); assert data["ok"] is True; print(data["dbPath"])'
 
+      - name: Save recovery installer before notarization
+        uses: actions/upload-artifact@v4
+        with:
+          name: Recovery-macOS-${{ matrix.architecture }}-before-notarization
+          path: dist/Field-Trial-Secretary-*-macOS-*.dmg
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Notarize and staple macOS installer
+        timeout-minutes: 105
         shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -242,6 +256,7 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           path: release-assets
+          pattern: Field-Trial-Secretary-*
           merge-multiple: true
 
       - name: Create checksums
