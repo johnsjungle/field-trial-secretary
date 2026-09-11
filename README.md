@@ -8,7 +8,7 @@ This version adds specialty stakes, flexible multi-day BIE setup and optional el
 
 ## Update checker
 
-Use **Admin → Updates & Versions** to check for releases, read version-specific documentation, and open installer downloads. Installers can be hosted in the public Google Drive folder. See [maintaining the version index](docs/UPDATES.md).
+Use **Admin → Updates & Versions** to check for releases, read version-specific documentation, and open installer downloads. Installers are hosted in the public GitHub Releases repository, separately from the private application source. See [maintaining the version index](docs/UPDATES.md).
 
 ## Run Locally
 

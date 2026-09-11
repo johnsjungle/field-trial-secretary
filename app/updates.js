@@ -11,7 +11,7 @@ function safeReleaseUrl(value) {
 function validateVersionIndex(value) {
     if(!value || value.schemaVersion!==1 || !Array.isArray(value.versions) || value.versions.length>200) throw new Error('Unsupported version list.');
     const seen=new Set();
-    value.versions.forEach(v=>{compareReleaseVersions(v.version,v.version);if(seen.has(v.version)||!['available','pending'].includes(v.status)||!['stable','beta'].includes(v.channel))throw new Error('Invalid release entry.');seen.add(v.version);});
+    value.versions.forEach(v=>{compareReleaseVersions(v.version,v.version);if(seen.has(v.version)||!['available','pending','archived'].includes(v.status)||!['stable','beta'].includes(v.channel))throw new Error('Invalid release entry.');seen.add(v.version);});
     return value;
 }
 function versionLink(label,url) {
@@ -22,12 +22,12 @@ function renderVersionBrowser() {
     document.getElementById('installedVersionText').textContent=`Installed: v${appVersionInfo.version} (${appVersionInfo.channel || 'local'})`;
     const list=document.getElementById('availableVersions'),folder=document.getElementById('versionFolderLink');list.replaceChildren();folder.replaceChildren();
     if(!versionBrowserIndex)return;
-    const folderLink=versionLink('Open installer folder on Google Drive',versionBrowserIndex.downloadFolderUrl);if(folderLink)folder.appendChild(folderLink);
+    const folderLink=versionLink('Open public installer downloads',versionBrowserIndex.releasesUrl);if(folderLink)folder.appendChild(folderLink);
     const beta=document.getElementById('includeBetaVersions').checked;
     const versions=versionBrowserIndex.versions.filter(v=>beta || v.channel==='stable').slice().sort((a,b)=>compareReleaseVersions(b.version,a.version));
     for(const release of versions){
         const card=document.createElement('article');card.className='version-card';
-        const title=document.createElement('h3');title.textContent=`v${release.version} · ${release.channel}${release.version===appVersionInfo.version?' · Installed':''}${release.status==='pending'?' · Downloads pending':''}`;
+        const title=document.createElement('h3');title.textContent=`v${release.version} · ${release.channel}${release.version===appVersionInfo.version?' · Installed':''}${release.status==='pending'?' · Downloads pending':release.status==='archived'?' · Documentation only':''}`;
         const date=document.createElement('p');date.textContent=release.date || '';
         const summary=document.createElement('p');summary.textContent=release.summary || '';
         const links=document.createElement('div');links.className='button-row';
@@ -55,7 +55,7 @@ async function checkAvailableVersions(){
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
     try{
         const url=new URL(appVersionInfo.latestVersionUrl);
-        if(url.protocol!=='https:' || url.hostname!=='raw.githubusercontent.com' || !url.pathname.startsWith('/johnsjungle/field-trial-secretary/'))throw new Error();
+        if(url.protocol!=='https:' || url.hostname!=='raw.githubusercontent.com' || !url.pathname.startsWith('/johnsjungle/field-trial-secretary-updates/'))throw new Error();
         const response=await fetch(url.href,{cache:'no-store',signal:controller.signal,credentials:'omit',referrerPolicy:'no-referrer'});
         if(!response.ok)throw new Error();
         const text=await response.text();if(text.length>1000000)throw new Error();

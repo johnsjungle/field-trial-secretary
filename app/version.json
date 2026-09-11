@@ -3,7 +3,7 @@
     "version": "0.3.10",
     "releaseDate": "2026-09-11",
     "channel": "beta",
-    "releaseUrl": "https://drive.google.com/drive/folders/1RbREdoJLkXvay-av2BzuAjXSpQp1EZOE",
-    "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary/codex/trial-entry-redesign/app/version-index.json",
+    "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases",
+    "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
     "notes": "Beta with specialty stakes and paired teams; multi-day BIE selection, manual courses and optional elimination rounds; expanded test tools; safer redraws and SQLite loading; sticky navigation; corrected breed aliases, AKC stake splits and printed reports."
 }
