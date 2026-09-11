@@ -3776,3 +3776,6 @@ button.danger-button {
 .bie-round-controls { margin-block: 12px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; }
 .bie-round-controls > label { display: block; margin: 8px 0; }
 .bie-round-controls details { margin-block: 10px; }
+
+.version-card { border: 1px solid #ccc; border-radius: 8px; padding: 14px; margin-block: 12px; }
+.version-download-link { display: inline-block; margin: 6px 12px 6px 0; }

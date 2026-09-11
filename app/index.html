@@ -1902,6 +1902,17 @@
                     <ul id="setupChecklist"></ul>
                 </section>
 
+                <section class="form-section" data-tab="admin" data-admin-page="Updates &amp; Versions">
+                    <h2>Updates &amp; Versions</h2>
+                    <p id="installedVersionText"></p>
+                    <div class="button-row"><button type="button" class="secondary" id="checkVersionsButton">Check for Updates</button>
+                    <label><input type="checkbox" id="includeBetaVersions" checked> Include beta releases</label></div>
+                    <p id="versionCheckMessage" role="status" aria-live="polite">Check online for newer releases, or browse the bundled version list.</p>
+                    <div id="versionFolderLink"></div>
+                    <p class="field-note">Downloads open in your browser. Back up the database and close the app before installing an update. Checking for updates does not send trial data or change your installation.</p>
+                    <div id="availableVersions"></div>
+                </section>
+
                 <footer class="actions" data-tab="setup">
                     <button type="submit">Save Trial</button>
                 </footer>
@@ -1918,6 +1929,7 @@
     <script src="bie.js"></script>
     <script src="bie_rounds.js"></script>
     <script src="test_trial_tools.js"></script>
+    <script src="updates.js"></script>
     <script src="script.js?v=20260810-large-hound-import"></script>
     <script src="hound_database_import.js?v=20260810-mac-file-picker"></script>
 </body>

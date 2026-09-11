@@ -6,6 +6,10 @@ Offline-first field trial secretary application for setting up lure coursing tri
 
 This version adds specialty stakes, flexible multi-day BIE setup and optional elimination rounds, expanded test-trial tools, safer redraws, and AKC report corrections. See [full release notes](docs/RELEASE_NOTES_0.3.10.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
 
+## Update checker
+
+Use **Admin → Updates & Versions** to check for releases, read version-specific documentation, and open installer downloads. Installers can be hosted in the public Google Drive folder. See [maintaining the version index](docs/UPDATES.md).
+
 ## Run Locally
 
 Start the local server:

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "downloadFolderUrl": "https://drive.google.com/drive/folders/1RbREdoJLkXvay-av2BzuAjXSpQp1EZOE",
+  "versions": [
+    {
+      "version": "0.3.10",
+      "date": "2026-09-11",
+      "channel": "beta",
+      "status": "pending",
+      "summary": "Beta with specialty stakes and paired teams; multi-day BIE selection, manual courses and optional elimination rounds; expanded test tools; safer redraws and SQLite loading; sticky navigation; corrected breed aliases, AKC stake splits and printed reports.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.10/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.10/docs/RELEASE_NOTES_0.3.10.md",
+      "releaseUrl": "",
+      "downloads": {}
+    },
+    {
+      "version": "0.3.8",
+      "date": "2026-09-05",
+      "channel": "beta",
+      "status": "available",
+      "summary": "Beta with expanded AKC workflows and forms, catalog reports, multi-field event support, association-aware split stakes and BOB handling, improved macOS packaging and imports, and roll-call PDF pagination for large entries.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.8/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.8",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.8",
+      "downloads": {}
+    },
+    {
+      "version": "0.3.6",
+      "date": "2026-08-08",
+      "channel": "beta",
+      "status": "available",
+      "summary": "Beta release with improved runoff recovery and record-sheet handling, hound database exports, and expanded Worker Sheet assignments and conflict warnings.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.6/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.6",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.6",
+      "downloads": {}
+    },
+    {
+      "version": "0.3.5",
+      "date": "2026-08-07",
+      "channel": "beta",
+      "status": "available",
+      "summary": "Beta release with improved entry and hound imports, ASFA judge-directory tools, document handling, and record-sheet corrections.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.5/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.5",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.5",
+      "downloads": {}
+    },
+    {
+      "version": "0.3.4",
+      "date": "2026-08-02",
+      "channel": "stable",
+      "status": "available",
+      "summary": "Adds offline Excel hound database imports with sortable previews, matched/new row selection, and bulk decisions for checked hounds.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.4/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.4",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.4",
+      "downloads": {}
+    },
+    {
+      "version": "0.3.3",
+      "date": "2026-08-01",
+      "channel": "stable",
+      "status": "available",
+      "summary": "Preserves calibrated paperwork alignment in clean Windows and macOS installations while keeping trial, hound, and personnel data out of the starter database.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.3/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.3",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.3",
+      "downloads": {}
+    },
+    {
+      "version": "0.3.2",
+      "date": "2026-08-01",
+      "channel": "stable",
+      "status": "available",
+      "summary": "Adds reusable hound database importing with mapping templates, automatic and manual hound matching, preview controls, and protected SQLite saving.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.2/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.2",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.2",
+      "downloads": {}
+    },
+    {
+      "version": "0.3.1",
+      "date": "2026-08-01",
+      "channel": "stable",
+      "status": "available",
+      "summary": "Intel macOS packaging compatibility fix; trial-day workflow refinements, improved imports and reports, ASFA judge directory, and Windows and macOS release packaging.",
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary/blob/v0.3.1/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.1",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary/releases/tag/v0.3.1",
+      "downloads": {}
+    }
+  ]
+}

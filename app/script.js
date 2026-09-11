@@ -219,7 +219,7 @@ function applyAssociationControlState(trial = getSelectedTrial()) {
     populateEntryBreedSelect(trial);
     renderClassOptions(trial);
 }
-const adminPageTabs = ['Judges & Workers', 'Paperwork', 'Hound DB', 'Reports', 'Tools'];
+const adminPageTabs = ['Judges & Workers', 'Paperwork', 'Hound DB', 'Reports', 'Tools', 'Updates & Versions'];
 
 let stagedPremiumJudgeMatrix = null;
 let premiumJudgeGridImageFile = null;
@@ -23910,6 +23910,7 @@ async function buildCatalogReport(reportType) {
     );
 }
 function renderAdminPages() {
+    if (currentAdminPage === "Updates & Versions") initializeVersionBrowser();
     if (!adminPageTabs.includes(currentAdminPage)) {
         currentAdminPage = adminPageTabs[0];
     }
