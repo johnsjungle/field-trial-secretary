@@ -2,6 +2,10 @@
 
 Offline-first field trial secretary application for setting up lure coursing trials, entering hounds, managing workers and judges, drawing courses, scoring, and producing ASFA/AKC paperwork.
 
+## Current release: v0.3.10 beta
+
+This version adds specialty stakes, flexible multi-day BIE setup and optional elimination rounds, expanded test-trial tools, safer redraws, and AKC report corrections. See [full release notes](docs/RELEASE_NOTES_0.3.10.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
+
 ## Run Locally
 
 Start the local server:

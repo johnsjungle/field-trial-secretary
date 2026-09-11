@@ -3611,3 +3611,168 @@ button.danger-button {
         gap: 3px;
     }
 }
+/* Keep navigation, trial status, and guidance together at every window width. */
+.sticky-navigation {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--panel);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 8%);
+}
+.sticky-navigation .topbar {
+    position: static;
+    grid-template-areas: "brand nav guide";
+    grid-template-columns: auto minmax(0, 1fr) minmax(150px, 210px);
+    gap: 8px;
+    padding: 6px 20px 2px;
+    border-bottom: 0;
+    align-items: center;
+}
+.sticky-navigation .main-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 2px;
+}
+.sticky-navigation .tab-button {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+}
+.sticky-navigation .sub-tabs {
+    position: static;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    min-height: 36px;
+    padding: 3px 20px;
+    gap: 4px;
+}
+.sticky-navigation .sub-tab-button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    min-height: 28px;
+    padding: 4px 9px;
+}
+.sticky-navigation .active-trial {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+    min-width: 0;
+    padding: 4px 20px;
+    border-width: 0 0 1px;
+}
+.sticky-navigation .active-trial > * {
+    flex: 0 0 auto;
+    margin: 0;
+}
+.sticky-navigation .workflow-strip {
+    position: static;
+    min-height: 34px;
+    padding: 5px 20px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+}
+.sticky-navigation .trial-guide-card {
+    min-width: 0;
+}
+.sticky-navigation .trial-guide-popover {
+    position: fixed;
+    top: var(--navigation-height, 170px);
+    right: 12px;
+    left: auto;
+    width: min(340px, calc(100vw - 24px));
+    max-height: calc(100dvh - var(--navigation-height, 170px) - 12px);
+    overflow: auto;
+    box-shadow: var(--shadow);
+}
+.form-section, #trialEntryFields {
+    scroll-margin-top: calc(var(--navigation-height, 170px) + 14px);
+}
+@media (max-width: 1000px) {
+    .sticky-navigation .topbar {
+        grid-template-areas: "brand guide" "nav nav";
+        grid-template-columns: minmax(0, 1fr) minmax(140px, 210px);
+        padding: 5px 12px 0;
+        gap: 3px 8px;
+    }
+    .sticky-navigation .brand h1 { font-size: 17px; }
+    .sticky-navigation .sub-tabs,
+    .sticky-navigation .active-trial,
+    .sticky-navigation .workflow-strip { padding-left: 12px; padding-right: 12px; }
+    .sticky-navigation .workflow-strip > :first-child { min-width: 220px; }
+    .sticky-navigation .workflow-strip button { flex-shrink: 0; }
+}
+@media print {
+    .sticky-navigation { display: none !important; }
+}
+/* Main menu and compact status share the first row; guide joins submenus. */
+.sticky-navigation .topbar {
+    grid-template-areas: "brand nav active";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.sticky-navigation .brand h1 { font-size: 17px; white-space: nowrap; }
+.sticky-navigation .active-trial {
+    gap: 5px;
+    padding: 3px 6px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+}
+.sticky-navigation .active-trial strong {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sticky-navigation .save-status {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+.sticky-navigation .active-trial .label { font-size: 10px; }
+.sticky-navigation .active-trial .app-version,
+.sticky-navigation .active-trial .save-status,
+.sticky-navigation .active-trial .database-integrity-status { font-size: 11px; padding: 3px 5px; }
+.submenu-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 20px;
+    border-bottom: 1px solid var(--line);
+}
+.sticky-navigation .submenu-row .sub-tabs { flex: 1; min-width: 0; border: 0; }
+.sticky-navigation .submenu-row .trial-guide-card { flex: 0 0 auto; margin: 0; }
+.sticky-navigation .submenu-row .trial-guide-card summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+    padding: 5px 9px;
+}
+@media (max-width: 1600px) {
+    .sticky-navigation .active-trial .label { display: none; }
+    .sticky-navigation .active-trial strong { max-width: 110px; }
+    .sticky-navigation .tab-button { font-size: 13px; padding: 6px 8px 6px 18px; }
+    .sticky-navigation .brand h1 { font-size: 15px; }
+}
+@media (max-width: 1100px) {
+    .sticky-navigation .topbar {
+        grid-template-areas: "brand active" "nav nav";
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+}
+@media (max-width: 620px) {
+    .sticky-navigation .topbar { grid-template-areas: "brand" "nav" "active"; grid-template-columns: minmax(0, 1fr); }
+    .sticky-navigation .active-trial { overflow-x: auto; }
+    .submenu-row { gap: 3px; padding-right: 6px; }
+    .sticky-navigation .submenu-row .trial-guide-card summary { gap: 4px; padding: 5px; }
+    .sticky-navigation .submenu-row .trial-guide-card summary strong { font-size: 11px; }
+}
+.bie-configuration { padding: 12px; border: 1px solid var(--border, #ccc); border-radius: 8px; margin-bottom: 12px; }
+.bie-configuration select { max-width: 100%; margin: 6px; }
+.bie-configuration button { margin: 4px; }
+
+.bie-round-controls { margin-block: 12px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; }
+.bie-round-controls > label { display: block; margin: 8px 0; }
+.bie-round-controls details { margin-block: 10px; }

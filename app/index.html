@@ -17,8 +17,9 @@
         </div>
         <div class="splash-title">Field Trial Secretary</div>
     </div>
+    <div class="sticky-navigation">
     <header class="topbar">
-        <div>
+        <div class="brand">
             <h1>Field Trial Secretary</h1>
         </div>
         <nav class="main-tabs" aria-label="Trial areas">
@@ -38,6 +39,10 @@
             <span class="database-integrity-status checking" id="databaseIntegrityStatusBadge">Checking database...</span>
             <button type="button" class="text-button danger app-exit-button" id="exitAppButton">Exit</button>
         </div>
+    </header>
+
+    <div class="submenu-row">
+    <nav class="sub-tabs" id="subTabs" aria-label="Area sections"></nav>
         <details class="trial-guide-card" id="trialGuideCard" open>
             <summary>
                 <span>Trial Guide</span>
@@ -48,11 +53,11 @@
                 <ol class="trial-guide-list" id="trialGuideList"></ol>
             </div>
         </details>
-    </header>
+    </div>
 
-    <nav class="sub-tabs" id="subTabs" aria-label="Area sections"></nav>
 
     <section class="workflow-strip" id="workflowStrip" aria-live="polite"></section>
+    </div>
     <button type="button" class="return-top-button no-print" id="returnTopButton" aria-label="Return to top">Top</button>
 
     <main class="layout">
@@ -604,7 +609,7 @@
                                 <label class="switch"><input id="entryInfoChanged" type="checkbox"> <span>Info changed</span></label>
                                 <label class="switch"><input id="entryAdditionalKennel" type="checkbox"> <span>Kennel</span></label>
                                 <label class="switch"><input id="entryAdditionalBreeder" type="checkbox"> <span>Breeder</span></label>
-                                <label class="switch"><input id="entryAdditionalBench" type="checkbox"> <span>Bench</span></label>
+                                <label class="switch"><input id="entryAdditionalBench" type="checkbox"> <span>Bench (Dual Champion)</span></label>
                             </div>
                             <div class="grid two" id="entryFirstTimeDocs">
                                 <label>
@@ -663,6 +668,11 @@
                     </div>
                 </section>
 
+                <section class="form-section" data-tab="entries" id="specialtyEntriesPanel" hidden>
+                    <div class="section-heading"><h2>Specialty Stakes</h2><p>Mark Kennel, Breeder, or Bench in each entry, then select Kennel and Breeder partners here. Each pair contains two hounds of the same breed. Partner selections save automatically. Use Bench for individual Dual Champion entries.</p></div>
+                    <div id="specialtyPairs"></div>
+                    <div id="specialtyMessage" class="form-message compact"></div>
+                </section>
                 <section class="form-section" data-tab="entries">
                     <div class="section-heading table-heading">
                         <h2>Import Dogs</h2>
@@ -860,7 +870,7 @@
                             <p>Manage all tie runoffs and Best of Breed runs after finals are scored.</p>
                         </div>
                         <div class="button-row">
-                            <button type="button" class="secondary small" id="redrawAllRunoffsButton">Redraw All Runoffs</button>
+                            <button type="button" class="secondary small" id="redrawAllRunoffsButton">Draw All Runoffs</button>
                             <button type="button" class="secondary small report-button" id="printRunoffDrawSheetButton">Print Runoff Draw Sheet</button>
                             <button type="button" class="secondary small report-button" id="printAllRunoffJudgeSheetsButton">Print Runoff Judge Sheets</button>
                         </div>
@@ -876,7 +886,7 @@
                     <div class="section-heading with-action">
                         <div>
                             <h2>BIF / BIE</h2>
-                            <p>Bring in BOB winners, check the hounds running in Best in Field, and assign BIF judges.</p>
+                            <p>Choose Best in Field or configure Best in Event across trial days, select runners, and assign judges.</p>
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small draw-needed-button" id="buildBifDrawButton">Draw BIF Draw</button>
@@ -913,6 +923,7 @@
                             <button type="button" class="secondary small report-button" id="printRibbonReportButton">Print Ribbon Report</button>
                         </div>
                     </div>
+                    <div class="button-row"><button type="button" class="secondary report-button" id="printSpecialtyResultsButton" hidden>Print Specialty Stakes Results</button></div>
                     <div class="form-message compact" id="mainResultsMessage"></div>
                     <div id="mainResultsBook" class="scorebook"></div>
                     <div class="print-area sheet-preview" id="scoreReportPrint">
@@ -1667,6 +1678,10 @@
                             <button type="button" class="secondary report-button" id="buildCatalogFinalButton">Build Catalog Final</button>
                         </article>
                     </div>
+                    <article class="catalog-report-card">
+                        <div><h3>Specialty Stakes Catalog</h3><p>Lists individual Dual Champion entries marked Bench and numbered Breeder and Kennel pairs with breeder or owner names.</p></div>
+                        <button type="button" class="secondary report-button" id="buildSpecialtyCatalogButton">Build Specialty Stakes Catalog</button>
+                    </article>
                     <div class="form-message compact" id="catalogReportMessage"></div>
                 </section>
                 <section class="form-section" data-tab="admin" data-admin-page="Tools">
@@ -1680,6 +1695,7 @@
                             <button type="button" class="secondary small" id="populateAdminScoresButton">Populate Preliminary Scores</button>
                             <button type="button" class="secondary small" id="populateAdminFinalsScoresButton">Populate Finals Scores</button>
                             <button type="button" class="secondary small" id="populateAdminRunoffScoresButton">Populate Runoffs/Ties Scores</button>
+                            <button type="button" class="secondary small" id="populateAdminBifScoresButton">Populate BIF / BIE Scores</button>
                             <button type="button" class="secondary small danger-button" id="removeAdminTestRecordsButton">Remove Test Database Records</button>
                         </div>
                     </div>
@@ -1711,6 +1727,15 @@
                         <label class="switch"><input id="adminTestUseImportedHounds" type="checkbox" checked> <span>Use imported ASFA hounds when available</span></label>
                         <label class="switch"><input id="adminTestSetActive" type="checkbox" checked> <span>Set as active trial</span></label>
                     </div>
+                    <fieldset>
+                        <legend>Specialty stakes in the new test trial</legend>
+                        <div class="switch-row">
+                            <label class="switch"><input id="adminTestKennel" type="checkbox"> <span>Kennel stakes — pair same-breed dogs</span></label>
+                            <label class="switch"><input id="adminTestBreeder" type="checkbox"> <span>Breeder stakes — pair same-breed dogs</span></label>
+                            <label class="switch"><input id="adminTestBench" type="checkbox"> <span>Bench (Dual Champion) entries</span></label>
+                        </div>
+                        <p class="field-note">Creates named Kennel/Breeder teams where distinct same-breed hounds are available. Bench marks alternating entries. Unmatched dogs remain outside paired stakes.</p>
+                    </fieldset>
                     <div class="section-heading table-heading">
                         <h2>Run Group Test Plan</h2>
                         <p>Add specific breed, Singles, or LCI groups to test draw sizes and owner separation.</p>
@@ -1889,6 +1914,10 @@
     <script src="asfa_recent_hounds.js"></script>
     <script src="default_form_alignment.js?v=20260802"></script>
     <script src="association_rules.js?v=20260808-akc-foundation"></script>
+    <script src="specialty_stakes.js"></script>
+    <script src="bie.js"></script>
+    <script src="bie_rounds.js"></script>
+    <script src="test_trial_tools.js"></script>
     <script src="script.js?v=20260810-large-hound-import"></script>
     <script src="hound_database_import.js?v=20260810-mac-file-picker"></script>
 </body>

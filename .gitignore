@@ -29,3 +29,7 @@ Thumbs.db
 !app/data/asfa-judge-directory-07-26.json
 .codex-remote-attachments/
 mac-test-builds/
+
+# Local review previews and exported historical documentation
+.tmp/
+version-documentation/

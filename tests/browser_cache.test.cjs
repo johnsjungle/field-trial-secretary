@@ -1,0 +1,13 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('app/script.js','utf8');
+const helpers=source.slice(source.indexOf('function saveBrowserCacheValue('),source.indexOf('function saveTrials('));
+let serverMode=true;let writes=[];
+const ctx=vm.createContext({localStorage:{setItem:(k,v)=>writes.push([k,v])},isLocalServerMode:()=>serverMode,logClientEvent:()=>{}});
+vm.runInContext(helpers,ctx);
+assert.equal(ctx.saveBrowserCacheValue('data',{a:1}),true);assert.equal(writes[0][1],'{"a":1}');
+ctx.saveBrowserCacheText('active','trial-id');assert.equal(writes[1][1],'trial-id');
+const quota=Object.assign(new Error('Cache full'),{name:'QuotaExceededError'});ctx.localStorage.setItem=()=>{throw quota};
+assert.equal(ctx.saveBrowserCacheValue('data',{}),false);assert.equal(ctx.saveBrowserCacheText('active','id'),false);
+serverMode=false;assert.throws(()=>ctx.saveBrowserCacheValue('data',{}),/Cache full/);
+serverMode=true;ctx.localStorage.setItem=()=>{throw new Error('Unexpected failure')};assert.throws(()=>ctx.saveBrowserCacheValue('data',{}),/Unexpected failure/);
+console.log('Browser-cache quota regression checks passed.');

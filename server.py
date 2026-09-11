@@ -23,6 +23,7 @@ import zlib
 from datetime import datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import socket
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse, urlunparse
@@ -86,6 +87,15 @@ if sys.stdout is None:
     sys.stdout = NullWriter()
 if sys.stderr is None:
     sys.stderr = NullWriter()
+
+
+class ExclusiveTrialHTTPServer(ThreadingHTTPServer):
+    """Prevent a second Windows process from serving stale code on this port."""
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.allow_reuse_address = False
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 def app_log(message: str) -> None:
@@ -1707,6 +1717,10 @@ def flatten_draw_courses(groups: list[dict]) -> list[dict]:
                 "breed": group.get("breed") or "",
                 "stake": "Mixed" if group.get("mixedStake") else abbreviate_stake(group.get("stake") or ""),
                 "mixedStake": bool(group.get("mixedStake")),
+                "judgeBreed": group.get("judgeBreed"),
+                "drawStake": group.get("drawStake"),
+                "runoffText": group.get("runoffText") or "",
+                "sourceFlight": group.get("flight") or "",
                 "manualNote": group.get("manualNote") or "",
                 "phase": group.get("phase") or "",
                 "flight": group.get("flight") or "A",
@@ -1894,7 +1908,7 @@ def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict],
         column_x = column + global_x
         block_top = top + global_y
 
-        raw_breed = clean_text(block.get("breed") or "")
+        raw_breed = clean_text(block.get("judgeBreed") or block.get("breed") or "")
         breed_key = raw_breed if raw_breed in breed_centers else breed_aliases.get(raw_breed)
         breed_offset = breed_centers.get(breed_key)
         if breed_offset is not None:
@@ -1924,6 +1938,27 @@ def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict],
             y_from_top(block_top + course_num_y_offset),
             str(block["course"]),
         )
+
+        # Keep the stake and flight with the course number when courses restart.
+        stake_label = str(block.get("drawStake") or block.get("stake") or "").strip()
+        if clean_text(stake_label) in {"FIELDCHAMPION", "FCH", "FC", "SPECIAL", "SPECIALS"}:
+            stake_label = "Special"
+        elif clean_text(stake_label) == "VETERAN":
+            stake_label = "Veteran"
+        label_size = 7.0
+        while pdf.stringWidth(stake_label, "Helvetica-Bold", label_size) > 34 and label_size > 4:
+            label_size -= 0.25
+        pdf.setFont("Helvetica-Bold", label_size)
+        pdf.drawCentredString(column_x + 18, y_from_top(block_top + course_num_y_offset + 8), stake_label)
+        flight = str(block.get("sourceFlight") if block.get("judgeBreed") else block.get("flight") or "").strip()
+        if flight:
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawCentredString(column_x + 18, y_from_top(block_top + course_num_y_offset + 16), "Flight " + flight)
+
+        runoff_label = str(block.get("runoffText") or "").strip()
+        if runoff_label:
+            pdf.setFont("Helvetica-Bold", 8)
+            pdf.drawString(column_x + yellow_x_offset, y_from_top(block_top + max(yellow_y_offset, pink_y_offset, blue_y_offset) + 12), safe_text("Runoff: " + runoff_label, 36))
 
         pdf.setFont("Helvetica-Bold", hound_font_size)
         pdf.setFillColorRGB(0.8, 0, 0)
@@ -2405,7 +2440,7 @@ def generate_akc_record_sheet_pdf(
                 fields["OPEN"] = "/Yes"
             if "VETERAN" in raw_stake:
                 fields["open veteran"] = "/Yes"
-            if "SPECIAL" in raw_stake:
+            if "SPECIAL" in raw_stake or raw_stake in {"FIELDCHAMPION", "FCH", "FC"}:
                 fields["Special"] = "/Yes"
             if "BIF" in raw_stake or raw_breed_grp == "BIF":
                 fields["BIF"] = "/Yes"
@@ -3852,6 +3887,9 @@ def record_score_outcome_label(value: object) -> str:
 
 def bif_results_by_entry(trial: dict) -> dict[str, str]:
     bif = (trial.get("scorebook") or {}).get("bif") or {}
+    if bif.get("eventType") == "BIE" and bif.get("elimination"):
+        winner = str(bif.get("finalWinner") or "")
+        return {winner: "BIE"} if winner else {}
     results = bif_main_results_by_entry(bif)
     tie_results = bif_tie_results_by_entry(bif)
     results.update({entry_id: result for entry_id, result in tie_results.items() if result})
@@ -4572,6 +4610,8 @@ def secretary_breed_code(breed: object) -> str:
         "DEERHOUND": "SD",
         "DH": "SD",
         "SCOTTISHDEERHOUND": "SD",
+        "SCOTTISHDEERHOUNDS": "SD",
+        "G": "GH", "GREYHOUND": "GH", "P": "PH", "PHARAOHHOUND": "PH",
         "S": "SA",
         "SALUKI": "SA",
         "W": "WH",
@@ -4811,10 +4851,10 @@ def flatten_bif_judge_courses(trial: dict) -> list[dict]:
             for hound in hounds
         ]
         courses.append({
-            "breed": "BIF",
+            "breed": "BIE" if bif.get("eventType") == "BIE" else "BIF",
             "stake": "",
             "course": course.get("number") or "",
-            "phase": "bif",
+            "phase": "bie" if bif.get("eventType") == "BIE" else "bif",
             "mixedStake": False,
             "judges": judges,
             "hounds": normalized_hounds,
@@ -4927,8 +4967,9 @@ def draw_akc_split_stake_mark(pdf: canvas.Canvas, flight: object) -> None:
     label = str(flight or "").strip().upper()
     if label not in {"A", "B", "C", "D", "E"}:
         return
-    center_x = 260 + ((ord(label) - ord("A")) * 26)
-    draw_circle(pdf, center_x, 642, 7.5, 6.0, 1.4)
+    # Centers measured from the A-E glyphs in the bundled AKC judge template.
+    center_x = {"A": 240.8, "B": 257.8, "C": 274.9, "D": 292.4, "E": 309.6}[label]
+    draw_circle(pdf, center_x, 640.5, 7.5, 6.0, 1.4)
 
 def draw_akc_stake_check(pdf: canvas.Canvas, stake: object) -> bool:
     normalized = clean_text(stake)
@@ -5328,11 +5369,11 @@ CATALOG_BREED_NAMES = {
     "BA": "Basenji", "B": "Borzoi", "BZ": "Borzoi", "C": "Cirneco dell'Etna",
     "CE": "Cirneco dell'Etna", "G": "Greyhound", "GH": "Greyhound",
     "IB": "Ibizan Hound", "IG": "Italian Greyhound", "IW": "Irish Wolfhound",
-    "N": "Norrbottenspets", "P": "Pharaoh Hound", "PH": "Pharaoh Hound",
+    "N": "Norrbottenspets", "NBS": "Norrbottenspets", "HW": "Hortaya Borzaya", "P": "Pharaoh Hound", "PH": "Pharaoh Hound",
     "PIO": "Peruvian Inca Orchid", "PP": "Portuguese Podengo Pequeno",
     "PPP": "Portuguese Podengo Pequeno", "RR": "Rhodesian Ridgeback",
     "S": "Saluki", "SA": "Saluki", "SD": "Scottish Deerhound",
-    "DH": "Scottish Deerhound", "SL": "Sloughi", "SW": "Silken Windhound",
+    "DH": "Scottish Deerhound", "DEERHOUND": "Scottish Deerhound", "SCOTTISHDEERHOUND": "Scottish Deerhound", "SCOTTISHDEERHOUNDS": "Scottish Deerhound", "SL": "Sloughi", "SW": "Silken Windhound",
     "TR": "Thai Ridgeback", "W": "Whippet", "WH": "Whippet",
     "CH": "Chart Polski", "GA": "Galgo Espanol", "MA": "Magyar Agar",
     "POD": "Portuguese Podengo", "SINGLES": "Singles",
@@ -5728,8 +5769,125 @@ def catalog_report_filename(kind: str, trials: list[dict]) -> str:
     return f"catalog-{kind}-{suffix}.pdf"
 
 
+def specialty_score(trial: dict, entry: dict) -> dict:
+    """Regular preliminary + final only; runoffs and BOB never contribute."""
+    import math
+    def number(value):
+        if value is None or isinstance(value, bool) or not str(value).strip():
+            return None
+        try:
+            result = float(value)
+            return result if math.isfinite(result) else None
+        except (ValueError, TypeError):
+            return None
+    result = {"prelim": None, "final": None, "total": None, "status": "Awaiting scores"}
+    if entry.get("rollCallStatus") in {"absent", "lame", "in_season", "breed_dq", "scratched", "excused"}:
+        result["status"] = str(entry["rollCallStatus"]).replace("_", " ").title()
+        return result
+    for group in (trial.get("preliminaryDraw") or {}).get("groups") or []:
+        prelim = next((h for c in group.get("courses") or [] for h in c.get("hounds") or [] if h.get("entryId") == entry.get("id")), None)
+        if prelim is None:
+            continue
+        final = next((h for c in (group.get("finalDraw") or {}).get("courses") or [] for h in c.get("hounds") or [] if h.get("entryId") == entry.get("id")), {})
+        result["prelim"] = number(prelim.get("prelimScore"))
+        result["final"] = number(final.get("finalScore"))
+        outcome = prelim.get("prelimOutcome") or final.get("finalOutcome")
+        if outcome:
+            result["status"] = str(outcome).replace("_", " ").title()
+        elif result["prelim"] is not None and result["final"] is not None:
+            result["total"] = result["prelim"] + result["final"]
+            result["status"] = "Complete"
+        return result
+    return result
+
+
+def specialty_records(trial: dict, kind: str) -> list[dict]:
+    flag = "additional" + kind
+    partner_key = "specialty" + kind + "PartnerId"
+    name_key = "specialty" + kind + "Name"
+    entries = [e for e in trial.get("entries") or [] if entry_flag(e, flag)]
+    by_id = {str(e.get("id")): e for e in entries}
+    seen = set()
+    records = []
+    for entry in sorted(entries, key=lambda e: (str(e.get("callName") or "").casefold(), str(e.get("id")))):
+        entry_id = str(entry.get("id"))
+        if entry_id in seen:
+            continue
+        members = [entry]
+        issue = ""
+        if kind != "Bench":
+            partner = by_id.get(str(entry.get(partner_key) or ""))
+            same_hound = partner and ((entry.get("houndId") and entry.get("houndId") == partner.get("houndId")) or (entry.get("registrationNumber") and clean_text(entry.get("registrationNumber")) == clean_text(partner.get("registrationNumber"))))
+            if partner and partner is not entry and not same_hound and str(partner.get(partner_key)) == entry_id and catalog_breed_label(partner.get("breed")) == catalog_breed_label(entry.get("breed")):
+                members.append(partner)
+            else:
+                issue = "Needs a valid partner"
+        seen.update(str(e.get("id")) for e in members)
+        scores = [specialty_score(trial, e) for e in members]
+        total = sum(s["total"] for s in scores) if not issue and all(s["total"] is not None for s in scores) else None
+        names = list(dict.fromkeys(catalog_clean_text(e.get(name_key) or e.get("breeder" if kind == "Breeder" else "owner")) for e in members))
+        records.append({"members": members, "scores": scores, "name": "; ".join(n for n in names if n), "breed": catalog_breed_label(entry.get("breed")), "total": total, "status": issue or ("Complete" if total is not None else "; ".join(dict.fromkeys(s["status"] for s in scores if s["total"] is None)))})
+    for i, record in enumerate(records, 1):
+        record["number"] = i
+        record["rank"] = ""
+    # Compete within a breed, across the regular stakes and split flights.
+    for breed in {r["breed"] for r in records}:
+        ranked = sorted([r for r in records if r["breed"] == breed and r["total"] is not None], key=lambda r: -r["total"])
+        for record in ranked:
+            position = 1 + sum(r["total"] > record["total"] for r in ranked)
+            tied = sum(r["total"] == record["total"] for r in ranked) > 1
+            record["rank"] = ("T" if tied else "") + str(position)
+    return records
+
+
+def generate_specialty_pdf(trials: list[dict], results: bool = False) -> bytes:
+    if not any(entry_flag(e, "additional" + kind) for t in trials for e in t.get("entries") or [] for kind in ("Bench", "Breeder", "Kennel")):
+        raise ValueError("No Bench, Breeder, or Kennel entries are selected in these trials.")
+    document = CatalogPdfCanvas("SPECIALTY STAKES - " + ("RESULTS" if results else "CATALOG"), trials)
+    def line(text, bold=False, size=10):
+        for wrapped in catalog_wrap_lines(text, "Helvetica-Bold" if bold else "Helvetica", size, letter[0] - 86):
+            document.ensure(size + 5)
+            document.pdf.setFillColorRGB(0.08, 0.09, 0.09)
+            document.pdf.setFont("Helvetica-Bold" if bold else "Helvetica", size)
+            document.pdf.drawString(43, document.y, wrapped)
+            document.y -= size + 4
+    for trial in trials:
+        document.section = ""
+        document.ensure(80)
+        line(catalog_clean_text(trial.get("trialName") or trial.get("clubName")) + " | " + catalog_trial_label(trial), True, 11)
+        if results:
+            line("Totals use preliminary and final scores only. Rankings are by breed; ties remain tied. Incomplete entries are not ranked. Rankings are provisional while scores or partners are missing.", size=8)
+        for kind in ("Bench", "Breeder", "Kennel"):
+            records = specialty_records(trial, kind)
+            if not records:
+                continue
+            label = "Dual Champion" if kind == "Bench" else kind
+            document.section = ""
+            document.ensure(65)
+            document.draw_section(label + " Stake")
+            if results:
+                records.sort(key=lambda r: (r["breed"], r["total"] is None, -(r["total"] or 0), r["number"]))
+            for record in records:
+                document.ensure(75 if results else 45)
+                names = " & ".join(catalog_clean_text(e.get("callName") or e.get("registeredName") or "Unnamed hound") for e in record["members"])
+                if kind == "Bench":
+                    entry = record["members"][0]
+                    line('"' + names + '"  ' + catalog_clean_text(entry.get("registeredName")))
+                else:
+                    line(f'#{record["number"]}  {names} [{record["name"] or "Name not entered"}]', True)
+                if results:
+                    for entry, score in zip(record["members"], record["scores"]):
+                        fmt = lambda v: "--" if v is None else f"{v:g}"
+                        line(f'{entry.get("callName") or "Hound"}: Prelim {fmt(score["prelim"])} + Final {fmt(score["final"])} = {fmt(score["total"])}', size=9)
+                    total = "--" if record["total"] is None else f'{record["total"]:g}'
+                    line(f'{record["breed"]} | Rank {record["rank"] or "--"} | Total {total} | {record["status"]}', True, 9)
+                elif len(record["members"]) != 2 and kind != "Bench":
+                    line(record["status"], size=8)
+                document.y -= 9
+    return document.finish()
+
 def handle_catalog_report_post(handler, parsed) -> bool:
-    if parsed.path not in {"/api/catalog-entries", "/api/catalog-final"}:
+    if parsed.path not in {"/api/catalog-entries", "/api/catalog-final", "/api/specialty-catalog", "/api/specialty-results"}:
         return False
     length = int(handler.headers.get("Content-Length", "0"))
     raw = handler.rfile.read(length)
@@ -5759,7 +5917,10 @@ def handle_catalog_report_post(handler, parsed) -> bool:
         handler.send_json({"ok": False, "error": "Select at least one saved trial for the catalog."}, HTTPStatus.BAD_REQUEST)
         return True
     try:
-        if parsed.path == "/api/catalog-final":
+        if parsed.path in {"/api/specialty-catalog", "/api/specialty-results"}:
+            body = generate_specialty_pdf(trials, results=parsed.path == "/api/specialty-results")
+            filename = catalog_report_filename("specialty-results" if parsed.path.endswith("results") else "specialty-entries", trials)
+        elif parsed.path == "/api/catalog-final":
             body = generate_catalog_final_pdf(trials)
             filename = catalog_report_filename("final", trials)
         else:
@@ -6229,7 +6390,7 @@ def main() -> None:
     args = parser.parse_args()
 
     ensure_database()
-    server = ThreadingHTTPServer((args.host, args.port), FieldTrialSecretaryHandler)
+    server = ExclusiveTrialHTTPServer((args.host, args.port), FieldTrialSecretaryHandler)
     url = f"http://{args.host}:{args.port}/"
     print(f"Field Trial Secretary running at {url}")
     print(f"SQLite database: {DB_PATH}")

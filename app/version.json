@@ -1,9 +1,9 @@
 {
-    "name":  "Field Trial Secretary",
-    "version":  "0.3.9",
-    "releaseDate":  "2026-09-08",
-    "channel":  "beta",
-    "releaseUrl":  "",
-    "latestVersionUrl":  "",
-    "notes":  "Beta with safer SQLite startup and undo support, corrected split-flight draw sheets, improved runoff ordering and tie outcomes, qualifying-score BOB enforcement, roll-call draw correction, owner-change packet documents, and association-correct scoring controls."
+    "name": "Field Trial Secretary",
+    "version": "0.3.10",
+    "releaseDate": "2026-09-11",
+    "channel": "beta",
+    "releaseUrl": "",
+    "latestVersionUrl": "",
+    "notes": "Beta with specialty stakes and paired teams; multi-day BIE selection, manual courses and optional elimination rounds; expanded test tools; safer redraws and SQLite loading; sticky navigation; corrected breed aliases, AKC stake splits and printed reports."
 }

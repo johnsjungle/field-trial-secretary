@@ -252,6 +252,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out release notes
+        uses: actions/checkout@v5
+
+      - name: Select version release notes
+        shell: bash
+        run: echo "RELEASE_NOTES=docs/RELEASE_NOTES_${GITHUB_REF_NAME#v}.md" >> "$GITHUB_ENV"
+
       - name: Download installers
         uses: actions/download-artifact@v5
         with:
@@ -270,5 +277,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Field Trial Secretary ${{ github.ref_name }}
-          generate_release_notes: true
+          prerelease: true
+          body_path: ${{ env.RELEASE_NOTES }}
           files: release-assets/*

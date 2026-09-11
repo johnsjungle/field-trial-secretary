@@ -24,7 +24,7 @@ const buttonHelpText = {
     removeAdminTestRecordsButton: 'Removes generated test hounds, judges, and workers from the reusable databases without deleting any trials.',
     buildCatalogEntriesButton: 'Builds a detailed catalog of the selected trials, grouped by breed and stake, with hound, pedigree, breeder, owner, and contact information.',
     buildCatalogFinalButton: "Builds a combined final catalog showing each selected trial's placement, BOB/BIF award, or recorded outcome for every hound.",
-    redrawAllRunoffsButton: 'Builds or redraws all current tie runoff and BOB draws, assigning course numbers and blanket colors.',
+    redrawAllRunoffsButton: 'Draws current tie and BOB runoffs. Replacing an existing draw requires confirmation because posted course assignments, blanket colors, and scores can change.',
     printRunoffDrawSheetButton: 'Prints the runoff running order sheet after colors have been drawn.',
     printAllRunoffJudgeSheetsButton: 'Prints judge sheets for the current runoff order after colors have been drawn.',
     printBifJudgeSheetsButton: 'Prints judge sheets for the current BIF draw using the BIF judges assigned on this page.',
@@ -111,7 +111,7 @@ const breedOptions = [
     ['BZ', 'Borzoi'],
     ['CE', "Cirneco dell'Etna"],
     ['CH', 'Chart Polski'],
-    ['DH', 'Deerhound'],
+    ['DH', 'Scottish Deerhound'],
     ['GA', 'Galgo Espanol'],
     ['GH', 'Greyhound'],
     ['HW', 'Hortaya Borzaya'],
@@ -1267,7 +1267,7 @@ function normalizeLoadedTrials(rows) {
         return list;
     }, []);
     if (changed) {
-        localStorage.setItem(storageKey, JSON.stringify(normalized));
+        saveBrowserCacheValue(storageKey, normalized);
     }
     return normalized;
 }
@@ -1282,7 +1282,7 @@ function normalizeLoadedHounds(rows) {
         return next;
     });
     if (changed) {
-        localStorage.setItem(houndStorageKey, JSON.stringify(normalized));
+        saveBrowserCacheValue(houndStorageKey, normalized);
     }
     return normalized;
 }
@@ -1307,8 +1307,12 @@ function isBlankPlaceholderTrial(trial) {
 }
 
 function saveBrowserCacheValue(key, value) {
+    return saveBrowserCacheText(key, JSON.stringify(value));
+}
+
+function saveBrowserCacheText(key, value) {
     try {
-        localStorage.setItem(key, JSON.stringify(value));
+        localStorage.setItem(key, value);
         return true;
     } catch (error) {
         const quotaExceeded = error?.name === 'QuotaExceededError'
@@ -1348,14 +1352,14 @@ function saveMasterWorkers() {
 }
 
 function saveFormTemplateStatus() {
-    localStorage.setItem(formTemplateStatusKey, JSON.stringify(formTemplateStatus));
+    saveBrowserCacheValue(formTemplateStatusKey, formTemplateStatus);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
 
 function saveFormAlignment() {
     formAlignment = normalizeFormAlignment(formAlignment);
-    localStorage.setItem(formAlignmentKey, JSON.stringify(formAlignment));
+    saveBrowserCacheValue(formAlignmentKey, formAlignment);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
@@ -1366,14 +1370,14 @@ function isAlignmentLocked(reportKey) {
 }
 
 function saveEntryImportTemplates() {
-    localStorage.setItem(entryImportTemplateKey, JSON.stringify(entryImportTemplates));
+    saveBrowserCacheValue(entryImportTemplateKey, entryImportTemplates);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
 
 function saveDeletedTrials() {
     deletedTrials = Array.isArray(deletedTrials) ? deletedTrials.slice(0, 5) : [];
-    localStorage.setItem(deletedTrialsKey, JSON.stringify(deletedTrials));
+    saveBrowserCacheValue(deletedTrialsKey, deletedTrials);
     queueBrowserSafetyBackup();
     queueSQLiteSave();
 }
@@ -1755,16 +1759,16 @@ function applyBackupSnapshot(backup) {
     deletedTrials = Array.isArray(backup.data.deletedTrials) ? backup.data.deletedTrials.slice(0, 5) : [];
     selectedTrialId = backup.data.activeTrialId || (trials[0] && trials[0].id) || '';
 
-    localStorage.setItem(storageKey, JSON.stringify(trials));
-    localStorage.setItem(houndStorageKey, JSON.stringify(masterHounds));
-    localStorage.setItem(judgeStorageKey, JSON.stringify(masterJudges));
-    localStorage.setItem(workerStorageKey, JSON.stringify(masterWorkers));
-    localStorage.setItem(formTemplateStatusKey, JSON.stringify(formTemplateStatus));
-    localStorage.setItem(formAlignmentKey, JSON.stringify(formAlignment));
-    localStorage.setItem(entryImportTemplateKey, JSON.stringify(entryImportTemplates));
-    localStorage.setItem(deletedTrialsKey, JSON.stringify(deletedTrials));
+    saveBrowserCacheValue(storageKey, trials);
+    saveBrowserCacheValue(houndStorageKey, masterHounds);
+    saveBrowserCacheValue(judgeStorageKey, masterJudges);
+    saveBrowserCacheValue(workerStorageKey, masterWorkers);
+    saveBrowserCacheValue(formTemplateStatusKey, formTemplateStatus);
+    saveBrowserCacheValue(formAlignmentKey, formAlignment);
+    saveBrowserCacheValue(entryImportTemplateKey, entryImportTemplates);
+    saveBrowserCacheValue(deletedTrialsKey, deletedTrials);
     if (selectedTrialId) {
-        localStorage.setItem(activeKey, selectedTrialId);
+        saveBrowserCacheText(activeKey, selectedTrialId);
     } else {
         localStorage.removeItem(activeKey);
     }
@@ -2977,8 +2981,8 @@ function populateEntryBreedSelect(trial = getSelectedTrial()) {
 
 function renderAdminTools() {
     const selected = getSelectedTrial();
-    const scoreToolsEnabled = Boolean(selected && selected.testTrial);
-    ['populateAdminScoresButton', 'populateAdminFinalsScoresButton', 'populateAdminRunoffScoresButton'].forEach((id) => {
+    const scoreToolsEnabled = Boolean(selected && selected.testTrial && !selected.archivedAt);
+    ['populateAdminScoresButton', 'populateAdminFinalsScoresButton', 'populateAdminRunoffScoresButton', 'populateAdminBifScoresButton'].forEach((id) => {
         const button = document.getElementById(id);
         if (!button) {
             return;
@@ -3151,13 +3155,14 @@ function renderDeletedTrials() {
 }
 
 function breedLabel(code) {
+    code = normalizeBreedCode(code);
     const match = breedOptions.find(([value]) => value === code);
     return match ? breedOptionLabel(match[0], match[1]) : code;
 }
 
 function breedDisplayCode(code) {
-    const cleaned = clean(code);
-    return asfaJudgeSheetBreedCodes[cleaned] || code;
+    const normalized = normalizeBreedCode(code);
+    return asfaJudgeSheetBreedCodes[clean(normalized)] || normalized;
 }
 
 function displayBreedCode(code) {
@@ -3245,7 +3250,7 @@ function setActiveTrial(id) {
         return;
     }
 
-    localStorage.setItem(activeKey, id);
+    saveBrowserCacheText(activeKey, id);
     selectedTrialId = id;
     queueSQLiteSave();
     render();
@@ -3272,7 +3277,7 @@ function isActiveTrialLocked() {
 
 function setActiveTrialLocked(locked) {
     if (locked) {
-        localStorage.setItem(activeLockKey, 'true');
+        saveBrowserCacheText(activeLockKey, 'true');
     } else {
         localStorage.removeItem(activeLockKey);
     }
@@ -7365,7 +7370,7 @@ function akcRegionForTrial(trial) {
 }
 
 function akcFivePointMajorSize(trial, breed) {
-    const code = breedDisplayCode(breed).toUpperCase();
+    const code = normalizeBreedCode(breed).toUpperCase();
     const region = akcRegionForTrial(trial);
     if (!region) return 0;
     const regional = {
@@ -7380,7 +7385,7 @@ function isRegularSplitStake(trial, group) {
     if (group.mixedStake || isQuasiBreedGroup(group)) return false;
     const stake = clean(group.stake);
     return rulesForTrial(trial).association === 'AKC'
-        ? ['OPEN', 'SPECIAL', 'SPECIALS', 'VETERAN'].includes(stake)
+        ? ['OPEN', 'SPECIAL', 'SPECIALS', 'FIELDCHAMPION', 'FCH', 'FC', 'VETERAN'].includes(stake)
         : ['OPEN', 'FIELDCHAMPION', 'FCH', 'VETERAN', 'PROVISIONAL'].includes(stake);
 }
 
@@ -8131,7 +8136,7 @@ function renderPreliminaryDraw(trial) {
                 color.textContent = hound.blanketColor;
                 const text = document.createElement('span');
                 const houndDetail = isQuasiBreedGroup(group)
-                    ? `${hound.breed || 'Unknown breed'}${hound.stake ? ` - ${hound.stake}` : ''}`
+                    ? `${displayBreedCode(hound.breed) || 'Unknown breed'}${hound.stake ? ` - ${hound.stake}` : ''}`
                     : (hound.stake || group.stake);
                 text.textContent = `${drawHoundName(hound)} - ${houndDetail}${hound.manuallyMoved ? ' [manual]' : ''}`;
                 const groupInput = document.createElement('input');
@@ -8771,6 +8776,8 @@ function scoringRunoffAnchor(item) {
 }
 
 function scrollOffset() {
+    const navigation = document.querySelector('.sticky-navigation');
+    if (navigation) return navigation.getBoundingClientRect().height + 14;
     return ['.topbar', '.sub-tabs', '.workflow-strip']
         .map((selector) => document.querySelector(selector))
         .filter(Boolean)
@@ -9831,6 +9838,11 @@ function renderRunoffBoard(trial) {
         selectedRunoffItemId = '';
     }
     renderSelectedRunoffLabel(items);
+    const bulkDrawButton = document.getElementById('redrawAllRunoffsButton');
+    if (bulkDrawButton) {
+        bulkDrawButton.textContent = items.some(item => runoffItemAlreadyDrawn(trial, item)) ? 'Redraw All Runoffs' : 'Draw All Runoffs';
+        bulkDrawButton.disabled = !items.length || Boolean(trial?.archivedAt);
+    }
 
     if (!trial || !trial.preliminaryDraw || !Array.isArray(trial.preliminaryDraw.groups)) {
         const empty = document.createElement('p');
@@ -10070,6 +10082,7 @@ function renderBifBieCheck(trial) {
         return;
     }
     panel.innerHTML = '';
+    panel.appendChild(renderBieConfiguration(trial));
     const winners = bobWinnersForTrial(trial);
     const bif = bifState(trial);
     const selectedIds = selectedBifEntryIds(bif);
@@ -10079,7 +10092,7 @@ function renderBifBieCheck(trial) {
     if (winners.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'empty';
-        empty.textContent = 'No BOB winners are finalized yet.';
+        empty.textContent = bif.eventType === 'BIE' ? 'Choose trial days above and add BOB winners or individual hounds.' : 'No BOB winners are finalized yet.';
         panel.appendChild(empty);
         return;
     }
@@ -10137,6 +10150,13 @@ function renderBifBieCheck(trial) {
     wrap.appendChild(table);
     panel.appendChild(wrap);
     panel.appendChild(bifDrawTable(trial, winners));
+    if (bif.eventType === "BIE") panel.appendChild(renderBieRoundControls(trial, "results"));
+    if (bif.eventType === 'BIE') {
+        const walker = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+            if (!walker.currentNode.parentElement.closest('.bie-configuration')) walker.currentNode.textContent = walker.currentNode.textContent.replace(/\bBIF\b/g, 'BIE');
+        }
+    }
 }
 
 function bifState(trial) {
@@ -10176,7 +10196,8 @@ function updateBifDrawButton(bif, winners) {
     const runningCount = winners.filter((winner) => visibleRunning.has(bifEntryKey(winner.entryId))).length;
     const hasJudge = Boolean((bif.judge1 || '').trim() || (bif.judge2 || '').trim());
     button.className = `secondary small ${hasCurrentBifDraw ? 'draw-complete-button' : 'draw-needed-button'}`;
-    button.textContent = hasCurrentBifDraw ? 'ReDraw BIF Draw' : 'Draw BIF Draw';
+    button.textContent = `${hasCurrentBifDraw ? 'Redraw' : 'Draw'} ${bif.eventType === 'BIE' ? 'BIE' : 'BIF'}`;
+    ['printBifDrawSheetButton', 'printBifJudgeSheetsButton'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = `Print ${bif.eventType === 'BIE' ? 'BIE' : 'BIF'} ${id.includes('Judge') ? 'Judge Sheets' : 'Draw Sheet'}`; });
     button.disabled = winners.length === 0 || runningCount === 0 || !hasJudge;
     button.dataset.help = !hasJudge
         ? 'Assign at least one BIF judge before building the BIF draw.'
@@ -10216,6 +10237,11 @@ function bobWinnersForTrial(trial) {
 }
 
 function bifCandidateHoundsForTrial(trial) {
+    if (bifState(trial).eventType === "BIE") return bifState(trial).bieCandidates || [];
+    return standardBifCandidates(trial);
+}
+
+function standardBifCandidates(trial) {
     const entriesById = new Map((trial.entries || []).map((entry) => [bifEntryKey(entry.id), entry]));
     const profile = rulesForTrial(trial);
     const bifEligible = new Set(((trial.resultState || {}).bifEligibleEntryIds || []).map(bifEntryKey));
@@ -10287,9 +10313,10 @@ function isBifIneligibleEntry(profile, hound = {}, entry = {}, group = {}) {
         || clean(hound.stake || entry.className || group.stake) === 'SINGLES';
 }
 
-function updateBifStatus(entryId, status) {
+async function updateBifStatus(entryId, status) {
     const trial = readForm();
     const bif = bifState(trial);
+    if (!await approveBifChange(trial)) { render(); return; }
     const key = bifEntryKey(entryId);
     const selected = selectedBifEntryIds(bif);
     const statuses = { ...(bif.statusByEntryId || {}) };
@@ -10309,10 +10336,12 @@ function updateBifStatus(entryId, status) {
             ...bif,
             selectedEntryIds: [...selected],
             statusByEntryId: statuses,
+            outcomes: {}, tieRunoff: null, tieRunoffs: [], courseWinners: {}, finalWinner: "",
             draw: null,
         },
     };
     upsertTrial(trial);
+    saveTrials();
     render();
 }
 
@@ -10333,7 +10362,7 @@ function updateBifJudge(key, value) {
     render();
 }
 
-function buildBifDraw() {
+async function buildBifDraw() {
     const trial = readForm();
     recalculateTrialResults(trial);
     const bif = bifState(trial);
@@ -10363,14 +10392,15 @@ function buildBifDraw() {
         );
         return;
     }
+    if (!await approveBifChange(trial)) return;
     const sizes = courseSizesForEntryCount(hounds.length);
-    const courses = sizes.map((size, index) => ({
+    const courses = bif.eventType === 'BIE' ? buildBieCourses(hounds, bif) : sizes.map((size, index) => ({
         id: crypto.randomUUID(),
         number: index + 1,
         capacity: size,
         hounds: [],
     }));
-    secureShuffle(hounds).forEach((hound) => {
+    if (bif.eventType !== 'BIE') secureShuffle(hounds).forEach((hound) => {
         chooseCourseForEntry(courses, hound).hounds.push(hound);
     });
     courses.forEach((course) => {
@@ -10389,6 +10419,7 @@ function buildBifDraw() {
         ...(trial.scorebook || {}),
         bif: {
             ...bif,
+            outcomes: {}, tieRunoff: null, tieRunoffs: [], courseWinners: {}, finalWinner: "",
             selectedEntryIds: hounds.map((hound) => bifEntryKey(hound.entryId)),
             statusByEntryId: hounds.reduce((next, hound) => {
                 next[bifEntryKey(hound.entryId)] = 'running';
@@ -10406,17 +10437,17 @@ function buildBifDraw() {
     };
     upsertTrial(trial);
     saveTrials();
-    showMessage(bifMessage, `Built BIF draw for ${hounds.length} hound${hounds.length === 1 ? '' : 's'}.`, 'success');
+    showMessage(bifMessage, `Built ${bif.eventType === "BIE" ? "BIE" : "BIF"} draw for ${hounds.length} hound${hounds.length === 1 ? '' : 's'}.`, 'success');
     render();
 }
 
-function runBifDrawFromButton() {
+async function runBifDrawFromButton() {
     if (window.__bifDrawClickInProgress) {
         return;
     }
     window.__bifDrawClickInProgress = true;
     try {
-        buildBifDraw();
+        await buildBifDraw();
     } catch (error) {
         showMessage(bifMessage, `BIF draw failed: ${error.message}`, 'warning');
     } finally {
@@ -10461,7 +10492,7 @@ function bifDrawTable(trial, winners) {
     const title = document.createElement('h3');
     title.textContent = bif.draw ? 'BIF Draw' : 'Checked BIF Hounds';
     const meta = document.createElement('span');
-    meta.textContent = bif.draw ? 'Randomized course order' : 'Build draw when ready';
+    meta.textContent = bif.draw?.manualDraft ? "Manual setup in progress" : bif.draw ? 'Randomized course order' : 'Build draw when ready';
     heading.append(title, meta);
     if (bif.draw) {
         heading.appendChild(manualDrawToggleButton('bif:draw'));
@@ -10518,11 +10549,11 @@ function bifDrawTable(trial, winners) {
         tr.appendChild(textCell(displayBreedCode(row.hound.breed || row.winner?.breed || '')));
         tr.appendChild(textCell(row.hound.bobStake || row.hound.stake || row.winner?.stake || ''));
         const judge1 = document.createElement('td');
-        judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value) || !bif.draw, (value) => updateBifScore(entryKey, { judge1: value })));
+        judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value) || (!bif.draw || bif.draw.manualDraft), (value) => updateBifScore(entryKey, { judge1: value })));
         tr.appendChild(judge1);
         if (judgeCount > 1) {
             const judge2 = document.createElement('td');
-            judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value) || !bif.draw, (value) => updateBifScore(entryKey, { judge2: value })));
+            judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value) || (!bif.draw || bif.draw.manualDraft), (value) => updateBifScore(entryKey, { judge2: value })));
             tr.appendChild(judge2);
         }
         tr.appendChild(textCell(computedScoreDisplay(outcome.score, outcome.value)));
@@ -10536,7 +10567,7 @@ function bifDrawTable(trial, winners) {
             status.appendChild(option);
         });
         status.value = outcome.value || '';
-        status.disabled = !bif.draw;
+        status.disabled = !bif.draw || bif.draw.manualDraft;
         status.addEventListener('change', () => updateBifScore(entryKey, { outcome: status.value }));
         statusCell.appendChild(status);
         tr.appendChild(statusCell);
@@ -10557,7 +10588,7 @@ function bifDrawTable(trial, winners) {
         }));
         renderDrawAuditLog(section, bif.draw);
     }
-    const tieSection = renderBifTieRunoffSection(bif);
+    const tieSection = bif.eventType === "BIE" && bif.elimination ? null : renderBifTieRunoffSection(bif);
     if (tieSection) {
         section.appendChild(tieSection);
     }
@@ -10720,7 +10751,7 @@ function renderBifTieRunoffTable(bif, tieRunoff, readOnly, label, roundIndex = -
     return section;
 }
 
-function moveManualBifDrawHound(entryId, targetCourseId) {
+async function moveManualBifDrawHound(entryId, targetCourseId) {
     if (!targetCourseId) {
         return;
     }
@@ -10728,6 +10759,15 @@ function moveManualBifDrawHound(entryId, targetCourseId) {
     const bif = bifState(trial);
     if (!bif.draw) {
         return;
+    }
+    if (trial.archivedAt) return;
+    if (bif.eventType === 'BIE') {
+        const target = bif.draw.courses.find(c => c.id === targetCourseId);
+        if (!target || (target.hounds || []).length >= bieCourseLimit(bif)) {
+            showMessage(bifMessage, `That course is full (maximum ${bieCourseLimit(bif)} dogs). Add a course or choose another.`, 'warning');
+            render(); return;
+        }
+        if (!await approveBifChange(trial, true)) { render(); return; }
     }
     const moved = moveHoundWithinDraw(bif.draw, entryId, targetCourseId, 'bif', 'BIF Draw');
     if (!moved) {
@@ -10739,6 +10779,7 @@ function moveManualBifDrawHound(entryId, targetCourseId) {
         ...(trial.scorebook || {}),
         bif: {
             ...bif,
+            ...(bif.eventType === 'BIE' ? {outcomes: {}, tieRunoff: null, tieRunoffs: []} : {}),
             draw: moved.draw,
         },
     };
@@ -10776,6 +10817,7 @@ function updateManualBifDrawBlanket(entryId, color) {
 function updateBifScore(entryId, changes) {
     const trial = readForm();
     const bif = bifState(trial);
+    if (trial.archivedAt || bif.draw?.manualDraft) return;
     const entryKey = bifEntryKey(entryId);
     const outcomes = { ...(bif.outcomes || {}) };
     const current = normalizedBobOutcome(outcomes[entryKey]);
@@ -10806,9 +10848,11 @@ function updateBifScore(entryId, changes) {
         bif: {
             ...bif,
             outcomes,
+            ...(bif.elimination ? {courseWinners: Object.fromEntries(Object.entries(bif.courseWinners || {}).filter(([id]) => !(bif.draw?.courses.find(c => c.id === id)?.hounds || []).some(h => String(h.entryId) === entryKey))), finalWinner: ""} : {}),
         },
     };
     upsertTrial(trial);
+    saveTrials();
     render();
 }
 
@@ -10945,6 +10989,7 @@ function updateBifTieScore(entryId, changes, roundIndex = -1) {
 }
 
 function bifResultForEntry(bif, entryId) {
+    if (bif.eventType === "BIE" && bif.elimination) return bif.finalWinner === String(entryId) ? "BIF" : (bieWinningIds(bif).includes(String(entryId)) ? "Advances" : "");
     const targetKey = bifEntryKey(entryId);
     const tieResult = bifTieResultForEntry(bif, entryId);
     if (bifTieRunoffIncludesEntry(bif, entryId) && bifTieRunoffIsComplete(bif)) {
@@ -11113,7 +11158,7 @@ function reconcileBifStateWithBobWinners(trial) {
     }
 
     const eligible = new Set([
-        ...((trial.resultState || {}).bifEligibleEntryIds || []).map(bifEntryKey),
+        ...(bif.eventType === 'BIE' ? [] : ((trial.resultState || {}).bifEligibleEntryIds || [])).map(bifEntryKey),
         ...bifCandidateHoundsForTrial(trial).map((candidate) => bifEntryKey(candidate.entryId)),
     ]);
     if (eligible.size === 0 && !hasExistingBifState) {
@@ -12068,6 +12113,8 @@ function runoffPrintTrial(trial) {
             breed,
             judgeBreed,
             judgeStake,
+            flight: item.group?.flight || '',
+            drawStake: judgeStake || (phase === 'bob' ? 'BOB' : 'Runoff'),
             stake: item.type === 'tie' ? `${item.tie.label} Runoff` : (item.type === 'combinedTieBob' ? 'BOB + Tie' : (item.type === 'bobTie' ? 'BOB Tie' : (item.type === 'stakeOverall' ? ('Overall ' + item.stake) : 'BOB'))),
             phase,
             runoffText,
@@ -12652,13 +12699,45 @@ function createBobRunoffDraw(item, trial) {
     };
 }
 
-function redrawAllRunoffs() {
+function runoffItemAlreadyDrawn(trial, item) {
+    const draw = drawnRunoffForItem(trial, item);
+    return Boolean(draw && (draw.courses || []).some(course => (course.hounds || []).length));
+}
+
+async function confirmRunoffReplacement(trial, items) {
+    if (trial.archivedAt) {
+        showMessage(runoffMessage, 'Archived trials are read-only.', 'warning');
+        return false;
+    }
+    const existing = items.filter(item => runoffItemAlreadyDrawn(trial, item));
+    if (!existing.length) return true;
+    const fingerprint = value => JSON.stringify([value.id, value.entries, value.preliminaryDraw, value.bobRunoffs, value.runoffOrder, value.archivedAt]);
+    const before = fingerprint(trial);
+    const proceed = await showTrialConfirm({
+        title: 'Replace Existing Runoff Draws?',
+        eyebrow: `${existing.length} existing runoff / BOB draw${existing.length === 1 ? '' : 's'}`,
+        message: 'Blanket colors and course assignments may already be posted or handed to exhibitors and judges. Redrawing changes those assignments and can clear existing runoff scores. Continue only if you intend to replace these draws. Remove the old postings, reprint the affected sheets, and notify the field crew and exhibitors before running.',
+        primaryText: 'Replace Draws and Colors',
+        secondaryText: 'Keep Existing Draws',
+        focusSecondary: true,
+    });
+    if (!proceed) return false;
+    if (fingerprint(readForm()) !== before) {
+        showMessage(runoffMessage, 'The trial changed while the warning was open. Review the current runoffs before trying again.', 'warning');
+        return false;
+    }
+    return true;
+}
+async function redrawAllRunoffs() {
     const trial = readForm();
     const items = collectRunoffItems(trial);
     if (items.length === 0) {
         showMessage(runoffMessage, 'No runoffs or BOB runs are ready to draw.', 'warning');
         return;
     }
+
+    const replacing = items.some(item => runoffItemAlreadyDrawn(trial, item));
+    if (!await confirmRunoffReplacement(trial, items)) return;
 
     const tieItems = items.filter((item) => item.type === 'tie');
     const bobItems = items.filter((item) => item.type === 'bob' || item.type === 'combinedTieBob' || item.type === 'bobTie' || item.type === 'stakeOverall');
@@ -12694,14 +12773,16 @@ function redrawAllRunoffs() {
     ];
     trial.runoffOrder = items.map((item) => item.id);
     upsertTrial(trial);
-    showMessage(runoffMessage, `Redrew ${tieDraws.size + bobDraws.length} runoff run${tieDraws.size + bobDraws.length === 1 ? '' : 's'}.`, 'success');
+    saveTrials();
+    showMessage(runoffMessage, `${replacing ? 'Redrew' : 'Drew'} ${tieDraws.size + bobDraws.length} runoff run${tieDraws.size + bobDraws.length === 1 ? '' : 's'}.`, 'success');
     render();
+    return true;
 }
 
 function drawRunoffsForBreed(breed) {
     const trial = readForm();
     const allItems = collectRunoffItems(trial);
-    const items = allItems.filter((item) => clean(item.breed || item.group?.breed || '') === clean(breed));
+    const items = allItems.filter((item) => clean(normalizeBreedCode(item.breed || item.group?.breed || '')) === clean(normalizeBreedCode(breed)) && !runoffItemAlreadyDrawn(trial, item));
     if (items.length === 0) {
         return 0;
     }
@@ -12745,7 +12826,7 @@ function drawRunoffsForBreed(breed) {
     return tieDraws.size + bobDraws.length;
 }
 
-function drawSingleRunoff(itemId) {
+async function drawSingleRunoff(itemId) {
     const trial = readForm();
     const items = collectRunoffItems(trial);
     const item = items.find((candidate) => candidate.id === itemId);
@@ -12753,6 +12834,8 @@ function drawSingleRunoff(itemId) {
         showMessage(runoffMessage, 'Could not find that runoff to draw.', 'warning');
         return;
     }
+
+    if (!await confirmRunoffReplacement(trial, [item])) return;
 
     if (item.type === 'tie') {
         const continuationRows = continuationTieRunoffRows(item.group, item.tie);
@@ -12806,6 +12889,7 @@ function drawSingleRunoff(itemId) {
     trial.runoffOrder = items.map((candidate) => candidate.id);
     selectedRunoffItemId = item.id;
     upsertTrial(trial);
+    saveTrials();
     showMessage(runoffMessage, `Drew ${item.title}.`, 'success');
     render();
 }
@@ -14144,7 +14228,7 @@ function renderRibbonBifSection(trial, container) {
     const block = document.createElement('div');
     block.className = 'draw-sheet-group ribbon-report-group';
     const h3 = document.createElement('h3');
-    h3.textContent = 'BIF';
+    h3.textContent = bif.eventType === 'BIE' ? 'BIE' : 'BIF';
     block.appendChild(h3);
 
     if (rows.length === 0) {
@@ -14172,7 +14256,7 @@ function renderRibbonBifSection(trial, container) {
             ribbonHoundName(row.hound),
             row.hound.breed || '',
             row.hound.bobStake || row.hound.stake || '',
-            result,
+            bif.eventType === 'BIE' ? result.replace('BIF', 'BIE') : result,
         ].forEach((value) => tr.appendChild(textCell(value)));
         if (result === 'BIF') {
             tr.classList.add('ribbon-winner-row');
@@ -14187,7 +14271,7 @@ function renderRibbonBifSection(trial, container) {
     if (winner) {
         const note = document.createElement('p');
         note.className = 'ribbon-winner-note';
-        note.textContent = `BIF Winner: ${ribbonHoundName(winner.hound)} (${displayBreedCode(winner.hound.breed)})`;
+        note.textContent = ` ${bif.eventType === "BIE" ? "BIE" : "BIF"} Winner: ${ribbonHoundName(winner.hound)} (${displayBreedCode(winner.hound.breed)})`;
         block.appendChild(note);
     }
     container.appendChild(block);
@@ -15575,7 +15659,7 @@ function promptAfterPrelimStakeComplete(group) {
     });
 }
 
-function showTrialActionModal({ title, eyebrow, message, primaryText = 'Continue', secondaryText = 'Cancel', input = null }) {
+function showTrialActionModal({ title, eyebrow, message, primaryText = 'Continue', secondaryText = 'Cancel', input = null, focusSecondary = false }) {
     return new Promise((resolve) => {
         const existing = document.querySelector('.trial-action-modal-backdrop');
         if (existing) {
@@ -15643,6 +15727,9 @@ function showTrialActionModal({ title, eyebrow, message, primaryText = 'Continue
                 close(false);
             }
         });
+        modal.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); close(false); }
+        });
         modal.append(eyebrowEl, titleEl, messageEl);
         if (inputEl) {
             modal.appendChild(inputEl);
@@ -15650,15 +15737,15 @@ function showTrialActionModal({ title, eyebrow, message, primaryText = 'Continue
         modal.appendChild(actions);
         backdrop.appendChild(modal);
         document.body.appendChild(backdrop);
-        (inputEl || primary).focus();
+        (inputEl || (focusSecondary ? secondary : primary)).focus();
         if (inputEl) {
             inputEl.select();
         }
     });
 }
 
-function showTrialConfirm({ title = 'Confirm Action', eyebrow = 'Please Confirm', message = '', primaryText = 'Continue', secondaryText = 'Cancel' } = {}) {
-    return showTrialActionModal({ title, eyebrow, message, primaryText, secondaryText });
+function showTrialConfirm({ title = 'Confirm Action', eyebrow = 'Please Confirm', message = '', primaryText = 'Continue', secondaryText = 'Cancel', focusSecondary = false } = {}) {
+    return showTrialActionModal({ title, eyebrow, message, primaryText, secondaryText, focusSecondary });
 }
 
 function showTrialPrompt({ title = 'Input Needed', eyebrow = 'Please Enter', message = '', defaultValue = '', primaryText = 'Continue', secondaryText = 'Cancel', inputType = 'text', min, max, step } = {}) {
@@ -15891,24 +15978,22 @@ function populateAdminFinalsScores() {
     render();
 }
 
-function populateAdminRunoffScores() {
+async function populateAdminRunoffScores() {
     let trial = readForm();
     if (!trial || !trial.id) {
         showMessage(adminTestMessage, 'Choose or create a trial before populating runoff scores.', 'warning');
         return;
     }
 
-    if (!trial.testTrial) {
+    if (!trial.testTrial || trial.archivedAt) {
         showMessage(adminTestMessage, 'Runoff score population is blocked for real trials. Mark the trial as a Test Trial on the Trials page before using this tool.', 'warning');
         return;
     }
 
-    redrawAllRunoffs();
-    trial = readForm();
 
-    const items = collectRunoffItems(trial);
+    const items = collectRunoffItems(trial).filter(item => runoffItemAlreadyDrawn(trial,item));
     if (!items || items.length === 0) {
-        showMessage(adminTestMessage, 'No runoffs or tie breaks found for this trial. Build prelim/finals draws and populate scores to generate ties first.', 'warning');
+        showMessage(adminTestMessage, 'No runoffs or tie breaks found for this trial. Draw the tie/runoff courses first; this button fills existing draws without changing colors.', 'warning');
         return;
     }
 
@@ -18292,13 +18377,13 @@ async function printRunoffDrawSheet() {
     const trial = readForm();
     const missingDraws = undrawnRunoffItems(trial);
     if (missingDraws.length > 0) {
-        showMessage(runoffMessage, `Click Redraw All Runoffs before printing. Missing colors for: ${missingDraws.map((item) => item.title).join(', ')}.`, 'warning');
+        showMessage(runoffMessage, `Draw the missing runoffs before printing. Missing colors for: ${missingDraws.map((item) => item.title).join(', ')}.`, 'warning');
         return;
     }
     const printTrial = runoffPrintTrial(trial);
     const groups = ((printTrial.preliminaryDraw || {}).groups || []);
     if (groups.length === 0) {
-        showMessage(runoffMessage, 'Click Redraw All Runoffs before printing the runoff draw sheet.', 'warning');
+        showMessage(runoffMessage, 'Draw the missing runoffs before printing the runoff draw sheet.', 'warning');
         return;
     }
     if (!isLocalServerMode()) {
@@ -18367,12 +18452,12 @@ function bifDrawPrintTrial(trial) {
         ...trial,
         preliminaryDraw: {
             id: `bif-draw-${trial.id || ''}`,
-            phase: 'bif',
+            phase: bif.eventType === 'BIE' ? 'bie' : 'bif',
             groups: [{
                 id: 'bif-draw-sheet',
-                breed: 'BIF',
-                stake: 'BIF',
-                phase: 'bif',
+                breed: (bif.eventType === 'BIE' ? 'BIE' : 'BIF'),
+                stake: (bif.eventType === 'BIE' ? 'BIE' : 'BIF'),
+                phase: bif.eventType === 'BIE' ? 'bie' : 'bif',
                 runOrder: 1,
                 courses,
             }],
@@ -18382,6 +18467,7 @@ function bifDrawPrintTrial(trial) {
 
 async function printBifDrawSheet() {
     const trial = readForm();
+    if (bifState(trial).draw?.manualDraft) { showMessage(bifMessage, "Finish manual setup before printing.", "warning"); return; }
     const printTrial = bifDrawPrintTrial(trial);
     if (!printTrial) {
         showMessage(bifMessage, 'Draw BIF before printing the BIF draw sheet.', 'warning');
@@ -18631,6 +18717,7 @@ async function printFinalsJudgeSheetsForGroups(groupIds) {
 
 async function printBifJudgeSheets() {
     const trial = readForm();
+    if (bifState(trial).draw?.manualDraft) { showMessage(bifMessage, "Finish manual setup before printing.", "warning"); return; }
     const bif = bifState(trial);
     if (!isLocalServerMode()) {
         showMessage(bifMessage, 'BIF judge sheets require SQLite/server mode.', 'warning');
@@ -18704,13 +18791,13 @@ async function printAllRunoffJudgeSheets() {
     const trial = readForm();
     const missingDraws = undrawnRunoffItems(trial);
     if (missingDraws.length > 0) {
-        showMessage(runoffMessage, `Click Redraw All Runoffs before printing judge sheets. Missing colors for: ${missingDraws.map((item) => item.title).join(', ')}.`, 'warning');
+        showMessage(runoffMessage, `Draw the missing runoffs before printing judge sheets. Missing colors for: ${missingDraws.map((item) => item.title).join(', ')}.`, 'warning');
         return;
     }
     const printTrial = runoffPrintTrial(trial);
     const groups = ((printTrial.preliminaryDraw || {}).groups || []);
     if (groups.length === 0) {
-        showMessage(runoffMessage, 'Click Redraw All Runoffs before printing runoff judge sheets.', 'warning');
+        showMessage(runoffMessage, 'Draw the missing runoffs before printing runoff judge sheets.', 'warning');
         return;
     }
     if (!isLocalServerMode()) {
@@ -18771,7 +18858,7 @@ function createAdminTestTrial() {
     const workers = ensureAdminTestWorkers();
 
     const plan = adminBreedPlan.length ? adminBreedPlan : buildRandomAdminBreedPlan(dogCount, groupCount);
-    const entries = createAdminTestEntries(plan, useImported, association);
+    const entries = populateTestSpecialties(createAdminTestEntries(plan, useImported, association), Object.fromEntries(['Kennel','Breeder','Bench'].map(kind=>[kind, Boolean(document.getElementById('adminTest'+kind)?.checked)])));
     const classes = uniqueNames(plan.map((row) => adminEntryClassForPlan(row)));
 
     const trial = {
@@ -18820,7 +18907,7 @@ function createAdminTestTrial() {
     saveTrials();
 
     if (document.getElementById('adminTestSetActive').checked) {
-        localStorage.setItem(activeKey, trial.id);
+        saveBrowserCacheText(activeKey, trial.id);
         queueSQLiteSave();
     }
 
@@ -19118,7 +19205,7 @@ async function deleteTrialById(trialId, messageElement) {
     }
     if (localStorage.getItem(activeKey) === trialId) {
         if (selectedTrialId) {
-            localStorage.setItem(activeKey, selectedTrialId);
+            saveBrowserCacheText(activeKey, selectedTrialId);
         } else {
             localStorage.removeItem(activeKey);
         }
@@ -21992,14 +22079,27 @@ function inferRegistry(label, number) {
     return knownRegistries.find((registry) => new RegExp(`\\b${registry}\\b`, 'i').test(source)) || '';
 }
 
+function normalizeBreedCode(value) {
+    const key = clean(value);
+    const aliases = {
+        ...asfaPremiumBreedAliases,
+        DEERHOUND: 'DH', SCOTTISH: 'DH', SCOTTISHDEERHOUND: 'DH', SCOTTISHDEERHOUNDS: 'DH',
+        AFGHANHOUNDS: 'AH', CIRNECODELLETNA: 'CE', CD: 'CE',
+        GALGOESPANOL: 'GA', MAGYARAGAR: 'MA',
+        N: 'NBS', PP: 'PPP', PORTUGUESEPODENGO: 'POD',
+        PORTUGUESEPODENGOMEDIO: 'POD', PORTUGUESEPODENGOGRANDE: 'POD',
+        PORTUGUESEPODENGOMEDIOGRANDE: 'POD',
+    };
+    const found = breedOptions.find(([code, label]) => key === clean(code) || key === clean(label));
+    return found ? found[0] : (aliases[key] || String(value || '').trim());
+}
 function normalizeImportedBreed(value) {
     const cleaned = clean(value);
     const lci = normalizeImportedLciParts(value, '');
     if (lci) {
         return lci.breed;
     }
-    const found = breedOptions.find(([code, label]) => cleaned === clean(code) || cleaned === clean(label));
-    return found ? found[0] : String(value || '').trim();
+    return normalizeBreedCode(value);
 }
 
 function normalizeImportedClass(value) {
@@ -22346,9 +22446,9 @@ async function importStagedJotformEntries() {
         });
 
         selectedTrialId = target.id;
-        localStorage.setItem(houndStorageKey, JSON.stringify(masterHounds));
-        localStorage.setItem(storageKey, JSON.stringify(trials));
-        localStorage.setItem(activeKey, selectedTrialId);
+        saveBrowserCacheValue(houndStorageKey, masterHounds);
+        saveBrowserCacheValue(storageKey, trials);
+        saveBrowserCacheText(activeKey, selectedTrialId);
         queueBrowserSafetyBackup();
         if (sqliteModeAvailable && sqliteLoadComplete) {
             clearTimeout(sqliteSaveTimer);
@@ -22371,8 +22471,8 @@ async function importStagedJotformEntries() {
     } catch (error) {
         masterHounds = houndsBefore;
         trials = trialsBefore;
-        localStorage.setItem(houndStorageKey, JSON.stringify(masterHounds));
-        localStorage.setItem(storageKey, JSON.stringify(trials));
+        saveBrowserCacheValue(houndStorageKey, masterHounds);
+        saveBrowserCacheValue(storageKey, trials);
         showMessage(entryImportMessageElement(), `Entry import was not completed. No trial entries were changed. ${error.message}`, 'warning');
     } finally {
         if (importButton) {
@@ -22497,7 +22597,7 @@ function renderEntryEditBanner(entry) {
     }
 
     document.getElementById('entryEditTitle').textContent = `Editing ${entry.callName || entry.registeredName || 'entry'}`;
-    document.getElementById('entryEditDetails').textContent = [entry.breed, entry.className, entry.registrationNumber].filter(Boolean).join(' | ');
+    document.getElementById('entryEditDetails').textContent = [displayBreedCode(entry.breed), entry.className, entry.registrationNumber].filter(Boolean).join(' | ');
 }
 
 function focusEntryEditor(entry) {
@@ -23253,7 +23353,8 @@ function normalizeLciEntryShape(entry) {
     }
     const parts = normalizeImportedLciParts(entry.breed, entry.className) || parseLciClass(entry.className);
     if (!parts && !clean(entry.breed).startsWith('LCI')) {
-        return entry;
+        const breed = normalizeBreedCode(entry.breed);
+        return breed === entry.breed ? entry : { ...entry, breed };
     }
     const breed = parts ? (parts.breed || parts.division) : entry.breed;
     const className = parts
@@ -23274,9 +23375,11 @@ function normalizeLciHoundShape(hound) {
         return hound;
     }
     const parts = normalizeImportedLciParts(hound.breed, '');
-    if (!parts || hound.breed === parts.breed) {
-        return hound;
+    if (!parts) {
+        const breed = normalizeBreedCode(hound.breed);
+        return breed === hound.breed ? hound : { ...hound, breed };
     }
+    if (hound.breed === parts.breed) return hound;
     return {
         ...hound,
         breed: parts.breed,
@@ -23297,7 +23400,7 @@ function runGroupBreedForEntry(entry) {
     if (clean(entry.className) === 'SINGLES') {
         return 'Singles';
     }
-    return entry.breed || 'Unknown';
+    return normalizeBreedCode(entry.breed) || 'Unknown';
 }
 
 function runGroupStakeForEntry(entry) {
@@ -23387,6 +23490,7 @@ function switchTab(tab) {
     if (tab === 'admin') {
         renderAdminPages();
     }
+    renderSpecialtyEntries(getSelectedTrial());
     renderSubTabs(tab);
 }
 
@@ -24260,6 +24364,7 @@ document.getElementById('createAdminTestTrialButton').addEventListener('click', 
 document.getElementById('populateAdminScoresButton').addEventListener('click', populateAdminPreliminaryScores);
 document.getElementById('populateAdminFinalsScoresButton').addEventListener('click', populateAdminFinalsScores);
 document.getElementById('populateAdminRunoffScoresButton')?.addEventListener('click', populateAdminRunoffScores);
+document.getElementById('populateAdminBifScoresButton')?.addEventListener('click', populateAdminBifScores);
 document.getElementById('removeAdminTestRecordsButton')?.addEventListener('click', removeAdminTestRecords);
 document.getElementById('selectAllCatalogTrialsButton')?.addEventListener('click', selectAllCatalogTrials);
 document.getElementById('selectCatalogWeekendButton')?.addEventListener('click', selectActiveCatalogWeekend);
@@ -24336,3 +24441,20 @@ window.addEventListener('beforeunload', flushSQLiteSaveBeforeClose);
 
 startApp();
 
+
+document.getElementById('printSpecialtyResultsButton')?.addEventListener('click', () => printSpecialtyReport(true));
+document.getElementById('buildSpecialtyCatalogButton')?.addEventListener('click', () => printSpecialtyReport(false));
+
+const stickyNavigation = document.querySelector('.sticky-navigation');
+if (stickyNavigation) {
+    const updateNavigationHeight = () => document.documentElement.style.setProperty('--navigation-height', `${stickyNavigation.getBoundingClientRect().height}px`);
+    new ResizeObserver(updateNavigationHeight).observe(stickyNavigation);
+    updateNavigationHeight();
+}
+// Keep full status text accessible when the compact header truncates it.
+const headerStatus = document.getElementById('activeTrialBadge');
+if (headerStatus) {
+    const updateStatusTitles = () => headerStatus.querySelectorAll('strong, .save-status').forEach(element => { element.title = element.textContent; });
+    new MutationObserver(updateStatusTitles).observe(headerStatus, {childList: true, subtree: true, characterData: true});
+    updateStatusTitles();
+}
