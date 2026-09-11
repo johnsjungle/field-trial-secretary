@@ -1,9 +1,9 @@
 {
     "name": "Field Trial Secretary",
-    "version": "0.3.10",
+    "version": "0.4.0",
     "releaseDate": "2026-09-11",
     "channel": "beta",
     "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases",
     "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-    "notes": "Beta with specialty stakes and paired teams; multi-day BIE selection, manual courses and optional elimination rounds; expanded test tools; safer redraws and SQLite loading; sticky navigation; corrected breed aliases, AKC stake splits and printed reports."
+    "notes": "Application updates release: online version checks, verified installer downloads, database backup, program-only installation, restart verification and rollback. Includes all v0.3.10 trial features."
 }

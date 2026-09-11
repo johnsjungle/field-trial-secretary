@@ -1,3 +1,4 @@
+let programUpdateState=null, programUpdateTimer=null;
 let versionBrowserStarted=false, versionBrowserIndex=null, versionBrowserOnline=false;
 function compareReleaseVersions(a,b) {
     const parse=v=>/^\d+\.\d+\.\d+$/.test(String(v)) ? String(v).split('.').map(Number) : null;
@@ -33,6 +34,11 @@ function renderVersionBrowser() {
         const links=document.createElement('div');links.className='button-row';
         for(const [label,url] of [['README',release.readmeUrl],['Release notes',release.notesUrl]]){const link=versionLink(label,url);if(link)links.appendChild(link);}
         if(release.status==='available'){
+            if(programUpdateState?.supported && compareReleaseVersions(release.version,appVersionInfo.version)>0 && release.updates?.[programUpdateState.platform]) {
+                const button=document.createElement('button');button.type='button';button.textContent='Prepare Update';
+                button.disabled=['preparing','ready','installing'].includes(programUpdateState.phase);
+                button.addEventListener('click',()=>programUpdateAction('prepare',{version:release.version}));links.appendChild(button);
+            }
             for(const [key,label] of [['windows','Download Windows'],['appleSilicon','Download Mac — Apple Silicon'],['intel','Download Mac — Intel']]){const link=versionLink(label,release.downloads?.[key]);if(link)links.appendChild(link);}
             const legacy=versionLink('Release downloads',release.releaseUrl);if(legacy)links.appendChild(legacy);
         }
@@ -46,6 +52,7 @@ async function initializeVersionBrowser(){
     if(versionBrowserStarted){renderVersionBrowser();return;}versionBrowserStarted=true;
     document.getElementById('checkVersionsButton').addEventListener('click',checkAvailableVersions);
     document.getElementById('includeBetaVersions').addEventListener('change',renderVersionBrowser);
+    refreshProgramUpdate();
     try {const r=await fetch('version-index.json');if(!r.ok)throw new Error();versionBrowserIndex=validateVersionIndex(await r.json());renderVersionBrowser();}
     catch {document.getElementById('versionCheckMessage').textContent='Bundled list unavailable. Click Check for Updates to try online.';}
 }
@@ -62,4 +69,37 @@ async function checkAvailableVersions(){
         versionBrowserIndex=validateVersionIndex(JSON.parse(text));versionBrowserOnline=true;renderVersionBrowser();
     }catch{versionBrowserOnline=false;renderVersionBrowser();document.getElementById('versionCheckMessage').textContent='Could not check online. Check your internet connection and try again. The last loaded version list remains below.';}
     finally{clearTimeout(timer);button.disabled=false;}
+}
+
+async function programUpdateAction(action,payload={}) {
+    try {
+        const response=await fetch(`/api/update-${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        const result=await response.json();if(!response.ok || !result.ok)throw new Error(result.error || 'Update request failed.');
+        programUpdateState=result;renderProgramUpdate();renderVersionBrowser();scheduleProgramUpdate();
+    } catch(error) {document.getElementById('programUpdateStatus').textContent=error.message;}
+}
+function scheduleProgramUpdate() {
+    clearTimeout(programUpdateTimer);
+    if(['preparing','installing'].includes(programUpdateState?.phase))programUpdateTimer=setTimeout(refreshProgramUpdate,2000);
+}
+async function refreshProgramUpdate() {
+    try {
+        const response=await fetch('/api/update-status',{cache:'no-store'});if(!response.ok)throw new Error();
+        programUpdateState=await response.json();renderProgramUpdate();if(versionBrowserIndex)renderVersionBrowser();scheduleProgramUpdate();
+    } catch {
+        document.getElementById('programUpdateStatus').textContent=programUpdateState?.phase==='installing'?'Application restarting. This page will reconnect automatically.':'Automatic installation is unavailable. Use the download links below.';
+        if(programUpdateState?.phase==='installing')programUpdateTimer=setTimeout(refreshProgramUpdate,2000);
+    }
+}
+function renderProgramUpdate() {
+    const box=document.getElementById('programUpdateStatus');box.replaceChildren();
+    const state=programUpdateState;
+    box.appendChild(document.createTextNode(state.supported?(state.message || state.lastResult?.message || 'Select Prepare Update when a newer verified release is available.'):state.reason));
+    if(state.phase==='ready') {
+        for(const [label,action] of [['Install and Restart','install'],['Cancel Update','cancel']]) {
+            const button=document.createElement('button');button.type='button';button.textContent=label;
+            button.addEventListener('click',()=>programUpdateAction(action,{token:state.token}));box.appendChild(button);
+        }
+    }
+    if(state.lastResult?.phase==='complete' && state.lastResult.version!==appVersionInfo.version)location.reload();
 }

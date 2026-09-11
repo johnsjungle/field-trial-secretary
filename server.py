@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import update_manager
+
+# The copied updater runs without starting the application server.
+if __name__ == "__main__" and "--apply-program-update" in __import__("sys").argv:
+    update_manager.apply_update_job(__import__("sys").argv[__import__("sys").argv.index("--apply-program-update") + 1])
+    raise SystemExit(0)
+
 import base64
 import copy
 import hashlib
@@ -936,6 +943,8 @@ def app_version_info() -> dict:
     return merged
 
 
+PROGRAM_UPDATER = update_manager.UpdateManager(ROOT, STORAGE_ROOT, DB_PATH, app_version_info().get("version", "0.0.0"))
+
 def app_version_label() -> str:
     version = app_version_info().get("version") or "0.0.0"
     return re.sub(r"[^0-9A-Za-z._-]+", "-", str(version)).strip("-") or "0.0.0"
@@ -1188,6 +1197,7 @@ def create_program_update_package() -> tuple[bytes, str, str]:
 
 
 RESTORABLE_ROOT_FILES = {
+    "update_manager.py",
     "server.py",
     "start_field_trial_secretary.ps1",
     "build_portable_package.ps1",
@@ -1298,6 +1308,8 @@ def write_state(state: dict) -> dict:
 
 
 def write_state_unlocked(state: dict) -> dict:
+    if PROGRAM_UPDATER.installing:
+        raise RuntimeError("An update is installing; state writes are paused.")
     ensure_database()
     if DB_PATH.exists():
         create_database_backup("before_state_save")
@@ -5989,6 +6001,8 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if update_manager.handle_update_request(self, PROGRAM_UPDATER, STATE_WRITE_LOCK, shutdown_server):
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/undo-status":
             try:
@@ -6109,6 +6123,11 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        if update_manager.handle_update_request(self, PROGRAM_UPDATER, STATE_WRITE_LOCK, shutdown_server):
+            return
+        if PROGRAM_UPDATER.installing:
+            self.send_json({"ok": False, "error": "An update is installing. Please wait for restart."}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         parsed = urlparse(self.path)
         if handle_catalog_report_post(self, parsed):
             return
@@ -6563,6 +6582,8 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if update_manager.handle_update_request(self, PROGRAM_UPDATER, STATE_WRITE_LOCK, shutdown_server):
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/undo-status":
             try:
@@ -6683,6 +6704,11 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        if update_manager.handle_update_request(self, PROGRAM_UPDATER, STATE_WRITE_LOCK, shutdown_server):
+            return
+        if PROGRAM_UPDATER.installing:
+            self.send_json({"ok": False, "error": "An update is installing. Please wait for restart."}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         parsed = urlparse(self.path)
         if handle_catalog_report_post(self, parsed):
             return

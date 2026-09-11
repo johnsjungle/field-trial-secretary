@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.4.0",
+      "date": "2026-09-11",
+      "channel": "beta",
+      "status": "pending",
+      "summary": "Application updates release: online version checks, verified installer downloads, database backup, program-only installation, restart verification and rollback. Includes all v0.3.10 trial features.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.0",
+      "downloads": {}
+    },
+    {
       "version": "0.3.10",
       "date": "2026-09-11",
       "channel": "beta",
