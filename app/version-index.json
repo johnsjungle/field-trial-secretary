@@ -6,13 +6,14 @@
       "date": "2026-09-11",
       "channel": "beta",
       "status": "available",
-      "summary": "Beta with specialty stakes and paired teams; multi-day BIE selection, manual courses and optional elimination rounds; expanded test tools; safer redraws and SQLite loading; sticky navigation; corrected breed aliases, AKC stake splits and printed reports. Windows and Apple Silicon downloads are available; Intel is pending. The update checker will be included in a subsequent installer build.",
+      "summary": "Beta with specialty stakes and paired teams; multi-day BIE selection, manual courses and optional elimination rounds; expanded test tools; safer redraws and SQLite loading; sticky navigation; corrected breed aliases, AKC stake splits and printed reports. Windows, Apple Silicon, and Intel downloads are available. The update checker will be included in a subsequent installer build.",
       "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.3.10/README.md",
       "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.3.10/RELEASE_NOTES.md",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.3.10",
       "downloads": {
         "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.3.10/Field-Trial-Secretary-0.3.10-portable-20260911-154157.zip",
-        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.3.10/Field-Trial-Secretary-0.3.10-macOS-arm64.dmg"
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.3.10/Field-Trial-Secretary-0.3.10-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.3.10/Field-Trial-Secretary-0.3.10-macOS-x86_64.dmg"
       }
     },
     {
