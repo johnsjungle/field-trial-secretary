@@ -3779,3 +3779,8 @@ button.danger-button {
 
 .version-card { border: 1px solid #ccc; border-radius: 8px; padding: 14px; margin-block: 12px; }
 .version-download-link { display: inline-block; margin: 6px 12px 6px 0; }
+
+.split-stake-controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.split-stake-controls > p { flex-basis: 100%; margin: 0; }
+.split-stake-controls > label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; }
+.split-stake-controls input { width: 100%; box-sizing: border-box; }

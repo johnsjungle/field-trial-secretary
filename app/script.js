@@ -2649,6 +2649,8 @@ function readForm() {
     data.ownerSeparationReviewedAt = existing && existing.ownerSeparationReviewedAt ? existing.ownerSeparationReviewedAt : '';
     data.mixedStakeBreeds = existing && Array.isArray(existing.mixedStakeBreeds) ? existing.mixedStakeBreeds : [];
     data.splitStakeReview = existing && existing.splitStakeReview ? existing.splitStakeReview : {};
+    data.splitStakeOverrides = existing?.splitStakeOverrides || {};
+    data.splitStakeOverrideHistory = existing?.splitStakeOverrideHistory || [];
     data.premiumJudgeAssignments = existing && existing.premiumJudgeAssignments ? existing.premiumJudgeAssignments : null;
     data.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
     data.archivedAt = existing && existing.archivedAt ? existing.archivedAt : '';
@@ -7389,7 +7391,7 @@ function isRegularSplitStake(trial, group) {
         : ['OPEN', 'FIELDCHAMPION', 'FCH', 'VETERAN', 'PROVISIONAL'].includes(stake);
 }
 
-function splitStakeRuleForGroup(trial, group) {
+function automaticSplitStakeRuleForGroup(trial, group) {
     const count = group.entries.length;
     const association = rulesForTrial(trial).association;
     if (!isRegularSplitStake(trial, group)) return { eligible: false, association, count };
@@ -7426,6 +7428,41 @@ function splitStakeRuleForGroup(trial, group) {
         region: akcRegionForTrial(trial),
         reason: 'AKC requires a split whenever the entry is sufficient for two or more five-point majors.',
     };
+}
+
+function splitStakeOverrideKey(trial, breed) {
+    return rulesForTrial(trial).association + '|' + normalizeBreedCode(breed).toUpperCase();
+}
+
+function splitStakeRuleForGroup(trial, group) {
+    const automatic = automaticSplitStakeRuleForGroup(trial, group);
+    if (!isRegularSplitStake(trial, group)) return automatic;
+    const override = trial.splitStakeOverrides?.[splitStakeOverrideKey(trial, group.breed)];
+    if (!override || !Number.isInteger(override.minimumPerSplit) || override.minimumPerSplit < 2 || override.minimumPerSplit > 1000 || !String(override.reason || '').trim()) return automatic;
+    const splitCount = Math.max(1, Math.floor(group.entries.length / override.minimumPerSplit));
+    return {...automatic, eligible: splitCount >= 2, needsRegion: false, splitCount,
+        minimumPerSplit: override.minimumPerSplit, automaticMinimum: automatic.minimumPerSplit || null,
+        override: true, overrideReason: override.reason,
+        reason: 'Manual override: ' + override.reason};
+}
+
+function setSplitStakeOverride(trial, breed, minimum, reason) {
+    if (isPreliminaryDrawLocked(trial)) throw new Error('Split settings cannot change after preliminary scoring starts or prelims are locked.');
+    const key = splitStakeOverrideKey(trial, breed);
+    const previous = trial.splitStakeOverrides?.[key] || null;
+    let next = null;
+    if (minimum !== null) {
+        const value = Number(minimum);
+        if (!Number.isInteger(value) || value < 2 || value > 1000) throw new Error('Enter a whole number from 2 to 1000.');
+        const explanation = String(reason || '').trim();
+        if (!explanation) throw new Error('Enter the reason or association direction for this override.');
+        next = {minimumPerSplit: value, reason: explanation, updatedAt: new Date().toISOString()};
+    }
+    trial.splitStakeOverrides = {...trial.splitStakeOverrides};
+    if (next) trial.splitStakeOverrides[key] = next;
+    else delete trial.splitStakeOverrides[key];
+    trial.splitStakeOverrideHistory = [...(trial.splitStakeOverrideHistory || []), {key, previous, next, changedAt: new Date().toISOString()}];
+    if (trial.preliminaryDraw) trial.preliminaryDraw.entriesFingerprint = 'split-settings-changed';
 }
 
 function balancedSplitEntries(entries, splitCount) {
@@ -7490,7 +7527,7 @@ function renderSplitStakeEligibility(container, trial, entries) {
     });
     const rows = [...grouped.values()]
         .map((group) => ({ group, rule: splitStakeRuleForGroup(trial, group) }))
-        .filter(({ rule }) => rule.eligible || (rule.needsRegion && rule.count >= 12));
+        .filter(({ group }) => isRegularSplitStake(trial, group));
     if (!rows.length) return;
 
     const details = document.createElement('details');
@@ -7500,7 +7537,10 @@ function renderSplitStakeEligibility(container, trial, entries) {
     details.appendChild(summary);
     const note = document.createElement('p');
     note.className = 'field-note';
-    note.textContent = 'This appears only when current entries require a split or AKC eligibility needs a region. Required splits are applied automatically when the preliminary draw is built.';
+    note.textContent = 'Automatic rules are the default. An override applies to this breed’s regular stakes in this trial only. Splitting starts at twice the minimum below. Record the reason or association direction for any exception. Changes require rebuilding an existing draw before scoring; they do not rearrange it automatically.';
+    if (rulesForTrial(trial).association === 'ASFA') {
+        note.textContent += ' ASFA automatic rules: split regular stakes at 20 hounds, with at least 10 per flight, regardless of breed or region. If a split stake drops below 20 before its first course, redraw it.';
+    }
     details.appendChild(note);
     const bobNote = document.createElement('p');
     bobNote.className = 'field-note split-stake-bob-note';
@@ -7518,8 +7558,37 @@ function renderSplitStakeEligibility(container, trial, entries) {
         const status = document.createElement('span');
         status.textContent = rule.eligible
             ? rule.splitCount + ' ' + rule.label + (rule.splitCount === 1 ? '' : 's') + ' (' + rule.count + ' hounds)'
-            : rule.reason;
-        row.append(title, status);
+            : (rule.needsRegion ? rule.reason : 'No split required (' + rule.count + ' hounds)');
+        const automatic = automaticSplitStakeRuleForGroup(trial, group);
+        const explanation = document.createElement('p');explanation.className = 'field-note';
+        explanation.textContent = (automatic.region ? 'AKC Region ' + automatic.region + '. ' : '')
+            + (automatic.minimumPerSplit ? 'Automatic: minimum ' + automatic.minimumPerSplit + ', split at ' + (2 * automatic.minimumPerSplit) + '. ' : automatic.reason + ' ')
+            + (rule.override ? 'OVERRIDE: minimum ' + rule.minimumPerSplit + ', split at ' + (2 * rule.minimumPerSplit) + '. Reason: ' + rule.overrideReason : 'Using automatic rules.');
+        if (rule.eligible) explanation.textContent += ' Sizes: ' + Array.from({length:rule.splitCount}, (_, i) => Math.floor(rule.count / rule.splitCount) + (i < rule.count % rule.splitCount ? 1 : 0)).join(' / ') + '.';
+        const controls = document.createElement('div');controls.className = 'split-stake-controls';
+        const minimumLabel = document.createElement('label');
+        minimumLabel.textContent = rule.association === 'AKC' ? 'Dogs for a five-point major (override)' : 'Minimum dogs per flight (override)';
+        const minimum = document.createElement('input');minimum.type = 'number';minimum.min = '2';minimum.max = '1000';minimum.step = '1';minimum.value = rule.minimumPerSplit || '';
+        minimumLabel.appendChild(minimum);
+        const reasonLabel = document.createElement('label');reasonLabel.textContent = 'Reason / association direction';
+        const reason = document.createElement('input');reason.type = 'text';reason.maxLength = 500;reason.value = rule.overrideReason || '';reasonLabel.appendChild(reason);
+        const message = document.createElement('p');message.setAttribute('role','status');
+        const apply = document.createElement('button');apply.type = 'button';apply.textContent = 'Save Override';
+        const reset = document.createElement('button');reset.type = 'button';reset.className = 'secondary';reset.textContent = 'Reset to Automatic';
+        const locked = isPreliminaryDrawLocked(trial);
+        minimum.disabled = reason.disabled = apply.disabled = locked;reset.disabled = locked || !rule.override;
+        if (locked) message.textContent = 'Split settings are locked because preliminary scoring has started or prelims are locked.';
+        const save = (resetting) => {
+            try {
+                const current = readForm();
+                setSplitStakeOverride(current, group.breed, resetting ? null : minimum.value, reason.value);
+                upsertTrial(current);saveTrials();render();
+                showMessage(rollCallMessage, (resetting ? 'Automatic split rules restored.' : 'Split override saved for this breed in this trial.') + (current.preliminaryDraw ? ' Rebuild the preliminary draw before scoring.' : ''), current.preliminaryDraw ? 'warning' : 'success');
+            } catch (error) {message.textContent = error.message;}
+        };
+        apply.addEventListener('click', () => save(false));reset.addEventListener('click', () => save(true));
+        controls.append(explanation, minimumLabel, reasonLabel, apply, reset, message);
+        row.append(title, status, controls);
         list.appendChild(row);
     });
     details.appendChild(list);

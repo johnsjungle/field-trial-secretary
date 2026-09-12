@@ -2,13 +2,42 @@
   "schemaVersion": 1,
   "versions": [
     {
-      "version": "0.4.0",
+      "version": "0.4.1",
       "date": "2026-09-11",
       "channel": "beta",
       "status": "pending",
+      "summary": "Adds per-trial, per-breed split-stake overrides for AKC and ASFA, with required reasons, change history, automatic reset, split-size previews and scoring locks. Retains the verified application updater.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.1",
+      "downloads": {}
+    },
+    {
+      "version": "0.4.0",
+      "date": "2026-09-11",
+      "channel": "beta",
+      "status": "available",
       "summary": "Application updates release: online version checks, verified installer downloads, database backup, program-only installation, restart verification and rollback. Includes all v0.3.10 trial features.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.0",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.0/Field-Trial-Secretary-0.4.0-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.0/Field-Trial-Secretary-0.4.0-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.0/Field-Trial-Secretary-0.4.0-portable-20260911-235454.zip"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.0/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.0/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.0/Field-Trial-Secretary-0.4.0-macOS-arm64.dmg",
+          "sha256": "91b912322adf71f2c0f4534dfc988abb2486c3cf2ffecc156415734f6543ef53"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.0/Field-Trial-Secretary-0.4.0-macOS-x86_64.dmg",
+          "sha256": "29be78c4bcc6eebe64927edb1d9b0df7a5f02c534c65c1e80d4a59b379288670"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.0/Field-Trial-Secretary-0.4.0-portable-20260911-235454.zip",
+          "sha256": "42c956316822af191f961ab5c3b7f964c857b849ecf63e91e05518bf03b54c33"
+        }
+      }
     },
     {
       "version": "0.3.10",

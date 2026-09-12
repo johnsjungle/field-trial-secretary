@@ -1,9 +1,9 @@
 {
     "name": "Field Trial Secretary",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "releaseDate": "2026-09-11",
     "channel": "beta",
     "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases",
     "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-    "notes": "Application updates release: online version checks, verified installer downloads, database backup, program-only installation, restart verification and rollback. Includes all v0.3.10 trial features."
+    "notes": "Adds per-trial, per-breed split-stake overrides for AKC and ASFA, with required reasons, change history, automatic reset, split-size previews and scoring locks. Retains the verified application updater."
 }
