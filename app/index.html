@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260808-worker-conflicts">
+    <link rel="stylesheet" href="styles.css?v=20260912-roll-call-formats">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -1199,23 +1199,31 @@
                             <button type="button" class="secondary small report-button" id="printRollCallButton">Print Roll Call</button>
                         </div>
                     </div>
-                    <div class="grid three no-print">
-                        <label id="printFieldControl" hidden>
-                            Print for field
-                            <select id="printFieldSelect"></select>
-                        </label>
-                        <label>
-                            Roll call sort
-                            <select id="rollCallSort">
-                                <option value="breedClass">Breed, class, call name</option>
-                                <option value="callName">Call name</option>
-                                <option value="registeredName">Registered name</option>
-                                <option value="className">Class, breed, call name</option>
-                                <option value="entryNumber">Entry number</option>
-                                <option value="lane">Roll call lane, breed, class</option>
-                            </select>
-                        </label>
+                    <div class="grid four no-print roll-call-print-controls">
+                        <label id="printFieldControl" hidden>Worker/Judges field<select id="printFieldSelect"></select></label>
+                        <label>Roll call sheets<select id="rollCallGrouping">
+                            <option value="selectedField">Selected field only</option>
+                            <option value="all">All dogs, one combined sheet</option>
+                            <option value="lane">Separate sheet for each lane (all fields)</option>
+                            <option value="field">Separate sheet for each field</option>
+                            <option value="fieldLane">Separate sheet for each field and lane</option>
+                        </select></label>
+                        <label>Sort within each sheet<select id="rollCallSort">
+                            <option value="runningOrder">Running order, breed, class</option>
+                            <option value="breedClass">Breed, class, call name</option>
+                            <option value="callName">Call name</option>
+                            <option value="registeredName">Registered name</option>
+                            <option value="className">Class, breed, call name</option>
+                            <option value="entryNumber">Entry number</option>
+                            <option value="lane">Roll call lane, breed, class</option>
+                        </select></label>
+                        <label>Sheet format<select id="rollCallFormat">
+                            <option value="checkIn">Standard check-in</option>
+                            <option value="quick">Quick check-in</option>
+                            <option value="detailed">Detailed identification (best in landscape)</option>
+                        </select></label>
                     </div>
+                    <p class="field-note no-print" id="rollCallPrintChoiceSummary"></p>
                     <div class="print-area sheet-preview" id="workerSheetPrint">
                         <h2>Worker Sheet</h2>
                         <p id="workerSheetTitle"></p>
@@ -1247,26 +1255,12 @@
                         </div>
                     </div>
                     <div class="print-area sheet-preview" id="rollCallPrint">
-                        <h2>Roll Call Sheet</h2>
+                        <h2>Roll Call Sheets</h2>
                         <div class="roll-call-print-meta">
                             <p id="rollCallTitle"></p>
                             <p id="rollCallTotal"></p>
                         </div>
-                        <div class="table-wrap roll-call-print-wrap">
-                            <table class="roll-call-print-table">
-                                <thead>
-                                    <tr>
-                                        <th class="check-column">Present</th>
-                                        <th>Call Name</th>
-                                        <th>Breed</th>
-                                        <th>Class</th>
-                                        <th id="rollCallLanePrintHeading">Lane</th>
-                                        <th>Notes</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="rollCallTable"></tbody>
-                            </table>
-                        </div>
+                        <div id="rollCallSheets"></div>
                     </div>
                 </section>
 
@@ -1931,7 +1925,8 @@
     <script src="bie_rounds.js"></script>
     <script src="test_trial_tools.js"></script>
     <script src="updates.js"></script>
-    <script src="script.js?v=20260810-large-hound-import"></script>
+    <script src="script.js?v=20260912-runoff-fields"></script>
     <script src="hound_database_import.js?v=20260810-mac-file-picker"></script>
+    <script src="help.js?v=20260912-field-labels"></script>
 </body>
 </html>

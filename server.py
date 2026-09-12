@@ -1626,6 +1626,53 @@ def safe_text(value: object, limit: int = 28) -> str:
     return text[: max(0, limit - 1)].rstrip() + "."
 
 
+def field_name_for_breed(trial: dict, breed: object) -> str:
+    """Return a field label only when this trial actually uses multiple fields."""
+    fields = list(trial.get("eventFields") or [])
+    if len(fields) <= 1:
+        return ""
+    target = clean_text(breed)
+    run_row = next((row for row in trial.get("runPlan") or [] if clean_text(row.get("breed")) == target), None)
+    if not run_row:
+        return ""
+    field_id = str(run_row.get("fieldId") or "")
+    field = next((item for item in fields if str(item.get("id") or "") == field_id), None)
+    return str((field or {}).get("name") or field_id).strip()
+
+
+def printable_field_label(trial: dict, breed: object) -> str:
+    name = field_name_for_breed(trial, breed)
+    return f"FIELD: {name}" if name else ""
+
+def draw_field_label(pdf: canvas.Canvas, field_name: object, x: float, y: float, *, right: bool = False, font_size: float = 7) -> None:
+    name = str(field_name or "").strip()
+    if not name:
+        return
+    pdf.saveState()
+    pdf.setFillColorRGB(0.75, 0, 0)
+    pdf.setFont("Helvetica-Bold", font_size)
+    label = safe_text(f"FIELD: {name}", 34)
+    if right:
+        pdf.drawRightString(x, y, label)
+    else:
+        pdf.drawString(x, y, label)
+    pdf.restoreState()
+
+
+def draw_courses_by_field(course_blocks: list[dict]) -> list[tuple[str, list[dict]]]:
+    """Keep every printed draw page within one field while preserving run order."""
+    grouped: list[tuple[str, list[dict]]] = []
+    positions: dict[str, int] = {}
+    for block in course_blocks:
+        field_name = str(block.get("fieldName") or "").strip()
+        key = clean_text(field_name) or "__UNASSIGNED__"
+        if key not in positions:
+            positions[key] = len(grouped)
+            grouped.append((field_name, []))
+        grouped[positions[key]][1].append(block)
+    return grouped
+
+
 def printable_hound_name(hound: dict) -> str:
     name = hound.get("callName") or hound.get("registeredName") or "Unnamed hound"
     text = re.sub(r"\s*\(\s*sep(?:arate)?\s+[A-Z0-9]{1,3}\s*\)\s*$", "", str(name), flags=re.IGNORECASE)
@@ -1639,7 +1686,7 @@ def generate_draw_sheet_pdf(trial: dict, layout: dict | None = None, copies: int
     if not template_path.exists():
         raise FileNotFoundError(f"Draw sheet template not found: {template_path}")
 
-    course_blocks = flatten_draw_courses(draw_groups_for_print(trial))
+    course_blocks = flatten_draw_courses(draw_groups_for_print(trial), trial)
     if not course_blocks:
         raise ValueError("No preliminary draw courses were found.")
 
@@ -1648,44 +1695,43 @@ def generate_draw_sheet_pdf(trial: dict, layout: dict | None = None, copies: int
     page_capacity = draw_sheet_page_capacity(association)
     writer = PdfWriter()
 
-    if association == "ASFA" and copy_count > 1 and len(course_blocks) <= 7:
-        for copy_start in range(0, copy_count, 3):
-            copies_on_page = min(3, copy_count - copy_start)
-            page_courses = []
-            for _ in range(copies_on_page):
-                page_courses.extend(course_blocks)
-                page_courses.extend([None] * (7 - len(course_blocks)))
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_draw_overlay(
-                trial,
-                association,
-                page_courses,
-                copy_start // 3 + 1,
-                1,
-                layout_settings,
-                True,
-            ))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
-        output = io.BytesIO()
-        writer.write(output)
-        return output.getvalue()
+    for _field_name, field_courses in draw_courses_by_field(course_blocks):
+        if association == "ASFA" and copy_count > 1 and len(field_courses) <= 7:
+            for copy_start in range(0, copy_count, 3):
+                copies_on_page = min(3, copy_count - copy_start)
+                page_courses = []
+                for _ in range(copies_on_page):
+                    page_courses.extend(field_courses)
+                    page_courses.extend([None] * (7 - len(field_courses)))
+                page = fresh_template_page(template_path)
+                overlay = PdfReader(io.BytesIO(build_draw_overlay(
+                    trial,
+                    association,
+                    page_courses,
+                    copy_start // 3 + 1,
+                    1,
+                    layout_settings,
+                    True,
+                ))).pages[0]
+                page.merge_page(overlay)
+                writer.add_page(page)
+            continue
 
-    for _copy_index in range(copy_count):
-        for page_start in range(0, len(course_blocks), page_capacity):
-            page_courses = course_blocks[page_start:page_start + page_capacity]
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_draw_overlay(
-                trial,
-                association,
-                page_courses,
-                page_start // page_capacity + 1,
-                page_start + 1,
-                layout_settings,
-                False,
-            ))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+        for _copy_index in range(copy_count):
+            for page_start in range(0, len(field_courses), page_capacity):
+                page_courses = field_courses[page_start:page_start + page_capacity]
+                page = fresh_template_page(template_path)
+                overlay = PdfReader(io.BytesIO(build_draw_overlay(
+                    trial,
+                    association,
+                    page_courses,
+                    page_start // page_capacity + 1,
+                    page_start + 1,
+                    layout_settings,
+                    False,
+                ))).pages[0]
+                page.merge_page(overlay)
+                writer.add_page(page)
 
     output = io.BytesIO()
     writer.write(output)
@@ -1720,13 +1766,14 @@ def draw_sheet_page_capacity(association: str) -> int:
     return 15 if association == "AKC" else 21
 
 
-def flatten_draw_courses(groups: list[dict]) -> list[dict]:
+def flatten_draw_courses(groups: list[dict], trial: dict | None = None) -> list[dict]:
     blocks: list[dict] = []
     for group in groups:
         for course in group.get("courses") or []:
             hounds = sorted(course.get("hounds") or [], key=lambda hound: int(hound.get("drawPosition") or 0))
             blocks.append({
                 "breed": group.get("breed") or "",
+                "fieldName": field_name_for_breed(trial or {}, group.get("breed")),
                 "stake": "Mixed" if group.get("mixedStake") else abbreviate_stake(group.get("stake") or ""),
                 "mixedStake": bool(group.get("mixedStake")),
                 "judgeBreed": group.get("judgeBreed"),
@@ -1769,7 +1816,9 @@ def draw_asfa_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict 
         logical_count = next((index for index, block in enumerate(course_blocks) if block is None), len(non_empty_blocks))
     else:
         logical_count = len(non_empty_blocks)
-    draw_page_header(pdf, trial, page_number, first_order, first_order + max(0, logical_count - 1))
+    field_name = next((str(block.get("fieldName") or "").strip() for block in non_empty_blocks if block.get("fieldName")), "")
+    draw_page_header(pdf, trial, page_number, first_order, first_order + max(0, logical_count - 1), field_name)
+    draw_field_above_draw_titles(pdf, field_name, columns, len(course_blocks), len(rows), 130)
     draw_sheet_numbers(pdf, columns, rows, len(course_blocks), page_number, 195, 58, duplicate_copy_numbers)
     pdf.setFont("Helvetica", 6)
     for index, block in enumerate(course_blocks):
@@ -1814,7 +1863,8 @@ def draw_akc_existing_checkbox_mark(pdf: canvas.Canvas, x: float, top: float) ->
 
 def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict], page_number: int, first_order: int, layout: dict | None = None) -> None:
     columns = [27, 279, 540]
-    draw_page_header(pdf, trial, page_number, first_order, first_order + len(course_blocks) - 1)
+    field_name = next((str(block.get("fieldName") or "").strip() for block in course_blocks if block and block.get("fieldName")), "")
+    draw_page_header(pdf, trial, page_number, first_order, first_order + len(course_blocks) - 1, field_name)
 
     layout_cfg = layout or {}
     global_x = float(layout_cfg.get("globalXAdjust", 0))
@@ -1822,6 +1872,7 @@ def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict],
     block_start_y = float(layout_cfg.get("blockStartY", 132))
     block_y_step = float(layout_cfg.get("blockYStep", 91))
     rows = [block_start_y + (index * block_y_step) for index in range(5)]
+    draw_field_above_draw_titles(pdf, field_name, columns, len(course_blocks), len(rows), 126)
     sheet_number_x = float(layout_cfg.get("sheetNumberX", 166))
     sheet_number_y = float(layout_cfg.get("sheetNumberY", 58))
     sheet_number_font_size = float(layout_cfg.get("sheetNumberFontSize", 12))
@@ -1920,6 +1971,7 @@ def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict],
         column_x = column + global_x
         block_top = top + global_y
 
+
         raw_breed = clean_text(block.get("judgeBreed") or block.get("breed") or "")
         breed_key = raw_breed if raw_breed in breed_centers else breed_aliases.get(raw_breed)
         breed_offset = breed_centers.get(breed_key)
@@ -1997,7 +2049,7 @@ def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict],
             )
         pdf.setFillColorRGB(0, 0, 0)
 
-def draw_page_header(pdf: canvas.Canvas, trial: dict, page_number: int, first_order: int, last_order: int) -> None:
+def draw_page_header(pdf: canvas.Canvas, trial: dict, page_number: int, first_order: int, last_order: int, field_name: str = "") -> None:
     pdf.setFont("Helvetica-Bold", 6)
     title = " | ".join(str(part) for part in [
         trial.get("trialName") or "Trial",
@@ -2005,7 +2057,21 @@ def draw_page_header(pdf: canvas.Canvas, trial: dict, page_number: int, first_or
         trial.get("clubName") or "",
     ] if part)
     pdf.drawRightString(780, 604, safe_text(title, 95))
-    pdf.drawRightString(780, 594, f"Courses {first_order}-{last_order}")
+    if not field_name:
+        pdf.drawRightString(780, 594, f"Courses {first_order}-{last_order}")
+
+
+def draw_field_above_draw_titles(pdf: canvas.Canvas, field_name: str, columns: list[int], course_count: int, row_count: int, center_offset: float) -> None:
+    if not field_name or not course_count or not row_count:
+        return
+    active_columns = min(len(columns), (course_count + row_count - 1) // row_count)
+    pdf.saveState()
+    pdf.setFillColorRGB(0.75, 0, 0)
+    pdf.setFont("Helvetica-Bold", 8)
+    label = safe_text(f"FIELD: {field_name}", 34)
+    for column in columns[:active_columns]:
+        pdf.drawCentredString(column + center_offset, y_from_top(20), label)
+    pdf.restoreState()
 
 
 def draw_block_position(index: int, columns: list[int], rows: list[int]) -> tuple[int, int]:
@@ -2070,6 +2136,21 @@ def y_from_top(top: float) -> float:
     return 612 - top
 
 
+def append_judge_sheets_by_field(writer: PdfWriter, trial: dict, courses: list[dict], template_path: Path, association: str, layout: dict | None = None) -> None:
+    """Paginate judge forms without placing different fields on the same page."""
+    for _field_name, field_courses in draw_courses_by_field(courses):
+        if association == "AKC":
+            append_akc_judge_forms(writer, trial, field_courses, template_path)
+            continue
+        forms = flatten_asfa_judge_forms(field_courses)
+        layout_settings = asfa_judge_layout(layout)
+        for start in range(0, len(forms), 2):
+            page = fresh_template_page(template_path)
+            overlay = PdfReader(io.BytesIO(build_asfa_judge_overlay(trial, forms[start:start + 2], layout_settings))).pages[0]
+            page.merge_page(overlay)
+            writer.add_page(page)
+
+
 def generate_judge_sheets_pdf(trial: dict, layout: dict | None = None, group_ids: list[str] | None = None) -> bytes:
     association = str(trial.get("association") or "ASFA").upper()
     template_path = JUDGE_TEMPLATES.get(association, JUDGE_TEMPLATES["ASFA"])
@@ -2081,17 +2162,7 @@ def generate_judge_sheets_pdf(trial: dict, layout: dict | None = None, group_ids
         raise ValueError("No preliminary draw courses were found.")
 
     writer = PdfWriter()
-
-    if association == "AKC":
-        append_akc_judge_forms(writer, trial, courses, template_path)
-    else:
-        forms = flatten_asfa_judge_forms(courses)
-        layout_settings = asfa_judge_layout(layout)
-        for start in range(0, len(forms), 2):
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_asfa_judge_overlay(trial, forms[start:start + 2], layout_settings))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+    append_judge_sheets_by_field(writer, trial, courses, template_path, association, layout)
 
     output = io.BytesIO()
     writer.write(output)
@@ -2109,16 +2180,7 @@ def generate_runoff_judge_sheets_pdf(trial: dict, group_id: str, runoff_key: str
         raise ValueError("No runoff draw courses were found.")
 
     writer = PdfWriter()
-    if association == "AKC":
-        append_akc_judge_forms(writer, trial, courses, template_path)
-    else:
-        forms = flatten_asfa_judge_forms(courses)
-        layout_settings = asfa_judge_layout(layout)
-        for start in range(0, len(forms), 2):
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_asfa_judge_overlay(trial, forms[start:start + 2], layout_settings))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+    append_judge_sheets_by_field(writer, trial, courses, template_path, association, layout)
 
     output = io.BytesIO()
     writer.write(output)
@@ -2141,16 +2203,7 @@ def generate_finals_judge_sheets_pdf(trial: dict, group_id: str, layout: dict | 
         raise ValueError("No finals draw courses were found for the selected stake.")
 
     writer = PdfWriter()
-    if association == "AKC":
-        append_akc_judge_forms(writer, trial, courses, template_path)
-    else:
-        forms = flatten_asfa_judge_forms(courses)
-        layout_settings = asfa_judge_layout(layout)
-        for start in range(0, len(forms), 2):
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_asfa_judge_overlay(trial, forms[start:start + 2], layout_settings))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+    append_judge_sheets_by_field(writer, trial, courses, template_path, association, layout)
 
     output = io.BytesIO()
     writer.write(output)
@@ -2168,16 +2221,7 @@ def generate_bif_judge_sheets_pdf(trial: dict, layout: dict | None = None) -> by
         raise ValueError("No BIF draw courses were found.")
 
     writer = PdfWriter()
-    if association == "AKC":
-        append_akc_judge_forms(writer, trial, courses, template_path)
-    else:
-        forms = flatten_asfa_judge_forms(courses)
-        layout_settings = asfa_judge_layout(layout)
-        for start in range(0, len(forms), 2):
-            page = fresh_template_page(template_path)
-            overlay = PdfReader(io.BytesIO(build_asfa_judge_overlay(trial, forms[start:start + 2], layout_settings))).pages[0]
-            page.merge_page(overlay)
-            writer.add_page(page)
+    append_judge_sheets_by_field(writer, trial, courses, template_path, association, layout)
 
     output = io.BytesIO()
     writer.write(output)
@@ -2314,6 +2358,17 @@ def fit_akc_registered_name(value: object) -> tuple[str, str, float]:
         wrapped_size = max(5.5, minimum_single_line_size * available_width / widest)
     return (first_line + chr(10) + second_line, "/Helv", round(wrapped_size, 2))
 
+def fit_akc_call_name(value: object) -> tuple[str, str, float]:
+    """Shrink a call name, including its breed suffix, to the JERSC3 column."""
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ("", "/Helv", 11.0)
+    available_width = 49.0
+    maximum_size = 11.0
+    width = pdfmetrics.stringWidth(text, "Helvetica", maximum_size)
+    size = maximum_size if width <= available_width else max(5.5, maximum_size * available_width / width)
+    return (text, "/Helv", round(size, 2))
+
 AKC_SCORESHEET_BREED_CIRCLES = {
     "A": (101.4, 102.8, 7.0),
     "AZ": (122.0, 102.8, 10.0),
@@ -2367,9 +2422,10 @@ def akc_scoresheet_breed_key(value: object) -> str:
     return AKC_SCORESHEET_BREED_ALIASES.get(raw, "OTHER" if raw and raw != "BIF" else "")
 
 
-def build_akc_scoresheet_breed_overlay(group: dict) -> bytes:
+def build_akc_scoresheet_breed_overlay(group: dict, trial: dict | None = None) -> bytes:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
+    draw_field_label(pdf, field_name_for_breed(trial or {}, group.get("breed")), 780, 600, right=True, font_size=8)
     breed_key = akc_scoresheet_breed_key(group.get("breed"))
     circle = AKC_SCORESHEET_BREED_CIRCLES.get(breed_key)
     if circle:
@@ -2394,6 +2450,31 @@ def akc_scoresheet_award_and_placement(value: object) -> tuple[str, str]:
     ]
     placement = placement_parts[0] if placement_parts else ""
     return award, placement
+
+
+def blank_akc_scoresheet_fields() -> dict[str, object]:
+    """Return explicit empty values for every reusable field on JERSC3."""
+    fields: dict[str, object] = {
+        "Host Club Name": "",
+        "Date": "",
+        "Event": "",
+        "of Entries": "",
+        "of Starters": "",
+        "Breed Other": "",
+        "Judge 1 Print Name": "",
+        "Judge 2 Print Name": "",
+        "List Box7": "",
+        "OPEN": "/Off",
+        "open veteran": "/Off",
+        "Special": "/Off",
+        "BIF": "/Off",
+    }
+    for flight in "ABCDE":
+        fields[f"Stake {flight}"] = "/Off"
+    for row in range(1, 13):
+        for column in range(1, 17):
+            fields[_akc_scoresheet_field(row, column)] = ""
+    return fields
 
 
 def generate_akc_record_sheet_pdf(
@@ -2436,7 +2517,10 @@ def generate_akc_record_sheet_pdf(
             # Clone a fresh copy of the template (preserves AcroForm structure)
             writer = PdfWriter(clone_from=template_path)
 
-            fields: dict[str, object] = {}
+            # JERSC3 reuses field names on every packet page. Clear every
+            # reusable field before filling this page so a PDF viewer cannot
+            # carry earlier group values into unused rows or checkboxes.
+            fields = blank_akc_scoresheet_fields()
 
             # ── Header ──────────────────────────────────────────────────────
             fields["Host Club Name"] = safe_text(trial.get("clubName") or "", 50)
@@ -2470,7 +2554,7 @@ def generate_akc_record_sheet_pdf(
                 fields[_akc_scoresheet_field(r, 2)] = safe_text(placement, 5)
                 fields[_akc_scoresheet_field(r, 3)] = safe_text(row.get("registrationNumber") or "", 14)
                 fields[_akc_scoresheet_field(r, 4)] = fit_akc_registered_name(row.get("registeredName") or "")
-                fields[_akc_scoresheet_field(r, 5)] = safe_text(row.get("callName") or "", 18)
+                fields[_akc_scoresheet_field(r, 5)] = fit_akc_call_name(safe_text(row.get("callName") or "", 18))
                 # Preliminary scoring
                 fields[_akc_scoresheet_field(r, 6)] = safe_text(row.get("prelimCode") or "", 8)
                 fields[_akc_scoresheet_field(r, 7)] = safe_text(str(row.get("prelimJudge1") or ""), 6)
@@ -2497,12 +2581,16 @@ def generate_akc_record_sheet_pdf(
                 auto_regenerate=False,
                 flatten=True,
             )
+            # Blank signature widgets and any other template controls do not
+            # belong in the static packet. Removing the remaining annotations
+            # also prevents same-named widgets from sharing values across pages.
+            writer.pages[0].pop("/Annots", None)
 
             buf = io.BytesIO()
             writer.write(buf)
             filled_reader = PdfReader(io.BytesIO(buf.getvalue()))
             filled_page = filled_reader.pages[0]
-            breed_overlay = PdfReader(io.BytesIO(build_akc_scoresheet_breed_overlay(group))).pages[0]
+            breed_overlay = PdfReader(io.BytesIO(build_akc_scoresheet_breed_overlay(group, trial))).pages[0]
             filled_page.merge_page(breed_overlay)
             final_writer.add_page(filled_page)
 
@@ -4252,6 +4340,7 @@ def build_asfa_record_overlay(trial: dict, group: dict, rows: list[dict], entry_
 def draw_asfa_record_header(pdf: canvas.Canvas, trial: dict, group: dict, entry_count: int, refund_count: int, per_capita_count: int, page_start: int, layout: dict) -> None:
     pdf.setFillColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica-Bold", layout["headerFontSize"])
+    draw_field_label(pdf, field_name_for_breed(trial, group.get("breed")), 780, 600, right=True, font_size=8)
     pdf.drawString(layout["breedX"], y_from_top(asfa_record_y(layout, "breedY")), safe_text(group.get("breed"), 24))
     pdf.drawString(layout["stakeX"], y_from_top(asfa_record_y(layout, "stakeY")), safe_text(asfa_record_stake_label(group), 22))
     pdf.drawString(layout["flightX"], y_from_top(asfa_record_y(layout, "flightY")), safe_text(group.get("flight") or "A", 2))
@@ -4738,6 +4827,7 @@ def flatten_judge_courses(trial: dict, group_ids: list[str] | None = None) -> li
             }, key=lambda value: clean_text(value))
             courses.append({
                 "breed": group.get("judgeBreed") or group.get("breed") or "",
+                "fieldName": field_name_for_breed(trial, group.get("breed")),
                 "stake": group.get("judgeStake") or abbreviate_stake(group.get("stake") or ""),
                 "flight": group.get("flight") or "A",
                 "lciType": infer_lci_type_from_group_and_hounds(group, hounds),
@@ -4778,6 +4868,7 @@ def flatten_runoff_judge_courses(trial: dict, group_id: str, runoff_key: str) ->
             ]
             courses.append({
                 "breed": group.get("breed") or "",
+                "fieldName": field_name_for_breed(trial, group.get("breed")),
                 "stake": abbreviate_stake(group.get("stake") or ""),
                 "flight": group.get("flight") or "A",
                 "lciType": infer_lci_type_from_group_and_hounds(group, normalized_hounds),
@@ -4815,6 +4906,7 @@ def flatten_finals_judge_courses(trial: dict, group_id: str) -> list[dict]:
             ]
             courses.append({
                 "breed": group.get("breed") or "",
+                "fieldName": field_name_for_breed(trial, group.get("breed")),
                 "stake": abbreviate_stake(group.get("stake") or ""),
                 "flight": group.get("flight") or "A",
                 "lciType": infer_lci_type_from_group_and_hounds(group, normalized_hounds),
@@ -4961,6 +5053,7 @@ def build_akc_judge_overlay(trial: dict, course: dict) -> bytes:
     pdf.setFont("Helvetica", 8)
     pdf.drawString(234, 733, safe_text(trial.get("clubName"), 34))
     pdf.drawString(275, 716, safe_text(trial.get("startsOn"), 16))
+    draw_field_label(pdf, course.get("fieldName"), 420, 748, right=True, font_size=7)
     draw_akc_judge_breed_mark(pdf, course.get("breed"))
     draw_akc_phase_check(pdf, course.get("phase"))
     if not draw_akc_stake_check(pdf, course.get("stake")):
@@ -5062,6 +5155,13 @@ def draw_asfa_judge_form(pdf: canvas.Canvas, trial: dict, form: dict, x: float, 
     pdf.setFont("Helvetica", layout["fontSize"])
     pdf.drawString(x + layout["clubX"], y_from_top(layout["clubY"] + y_adjust), safe_text(trial.get("clubName"), 30))
     pdf.drawString(x + layout["dateX"], y_from_top(layout["dateY"] + y_adjust), safe_text(trial.get("startsOn"), 14))
+    field_name = str(form.get("fieldName") or "").strip()
+    if field_name:
+        pdf.saveState()
+        pdf.setFillColorRGB(0.75, 0, 0)
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawCentredString(x + 202, y_from_top(76 + y_adjust), safe_text(f"FIELD: {field_name}", 34))
+        pdf.restoreState()
     draw_asfa_breed_mark(pdf, x, form.get("breed"), y_adjust, layout)
     lci_type = infer_asfa_lci_type(form)
     if lci_type:

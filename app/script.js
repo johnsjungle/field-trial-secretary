@@ -18,6 +18,7 @@ const buttonHelpText = {
     printDrawSheetButton: 'Creates the official posted draw order sheet for the current preliminary draw.',
     printJudgeSheetsButton: 'Creates preliminary judge sheets for the courses and judges assigned in the run plan.',
     printJudgesMapButton: 'Prints a breed and stake map showing course breakdowns and judge assignments in running order.',
+    printRollCallButton: 'Prints the current roll-call preview. Choose all dogs, separate lanes, separate fields, or field-and-lane sheets before printing.',
     createAdminTestTrialButton: 'Creates a realistic test trial with hounds, judges, workers, and a starter run plan.',
     populateAdminScoresButton: 'Fills preliminary Judge 1 and Judge 2 scores for testing, following the judges assigned in the run plan.',
     populateAdminFinalsScoresButton: 'Fills finals Judge 1 and Judge 2 scores for testing, then recomputes combined scores and placements.',
@@ -2653,6 +2654,8 @@ function readForm() {
     data.splitStakeOverrideHistory = existing?.splitStakeOverrideHistory || [];
     data.premiumJudgeAssignments = existing && existing.premiumJudgeAssignments ? existing.premiumJudgeAssignments : null;
     data.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
+    data.rollCallGrouping = document.getElementById('rollCallGrouping')?.value || 'selectedField';
+    data.rollCallFormat = document.getElementById('rollCallFormat')?.value || 'checkIn';
     data.archivedAt = existing && existing.archivedAt ? existing.archivedAt : '';
     data.archivePackageName = existing && existing.archivePackageName ? existing.archivePackageName : '';
     data.archivePackagePath = existing && existing.archivePackagePath ? existing.archivePackagePath : '';
@@ -2700,7 +2703,12 @@ function writeForm(trial) {
     if (document.getElementById('rollCallSort')) {
         document.getElementById('rollCallSort').value = trial && trial.rollCallSort ? trial.rollCallSort : 'breedClass';
     }
-    writeCheckedValues('documentOptions', trial ? trial.documentsReady : []);
+    if (document.getElementById('rollCallGrouping')) {
+        document.getElementById('rollCallGrouping').value = trial && trial.rollCallGrouping ? trial.rollCallGrouping : 'selectedField';
+    }
+    if (document.getElementById('rollCallFormat')) {
+        document.getElementById('rollCallFormat').value = trial && trial.rollCallFormat ? trial.rollCallFormat : 'checkIn';
+    }    writeCheckedValues('documentOptions', trial ? trial.documentsReady : []);
     renderClassOptions(trial);
     renderRosterTables(trial || {});
     renderRollCall(trial || {});
@@ -7537,7 +7545,7 @@ function renderSplitStakeEligibility(container, trial, entries) {
     details.appendChild(summary);
     const note = document.createElement('p');
     note.className = 'field-note';
-    note.textContent = 'Automatic rules are the default. An override applies to this breed�s regular stakes in this trial only. Splitting starts at twice the minimum below. Record the reason or association direction for any exception. Changes require rebuilding an existing draw before scoring; they do not rearrange it automatically.';
+    note.textContent = 'Automatic rules are the default. An override applies to this breed�s regular stakes in this trial only. Splitting starts at twice the minimum below. Record the reason or association direction for any exception. Changes require rebuilding an existing draw before scoring; they do not rearrange it automatically.';
     if (rulesForTrial(trial).association === 'ASFA') {
         note.textContent += ' ASFA automatic rules: split regular stakes at 20 hounds, with at least 10 per flight, regardless of breed or region. If a split stake drops below 20 before its first course, redraw it.';
     }
@@ -12177,6 +12185,7 @@ function runoffPrintTrial(trial) {
             ? 'runoff'
             : (item.type === 'combinedTieBob' || item.type === 'bobTie' || item.type === 'bob' ? 'bob' : 'runoff');
         const judges = judgesForRunoffItem(trial, item);
+        const sourceRunPlanRow = (trial.runPlan || []).find((row) => clean(row.breed) === clean(judgeBreed));
         groups.push({
             id: item.id,
             breed,
@@ -12206,6 +12215,7 @@ function runoffPrintTrial(trial) {
             runOrder: index + 1,
             judge1: judges[0] || '',
             judge2: judges[1] || '',
+            fieldId: sourceRunPlanRow?.fieldId || '',
         });
     });
     return {
@@ -17686,6 +17696,17 @@ function selectedPrintField(trial) {
     return fields.find((field) => field.id === selectedId) || fields[0];
 }
 
+function assignedFieldNameForBreed(trial, breed) {
+    const fields = eventFieldsForTrial(trial);
+    if (fields.length <= 1) return '';
+    const row = (trial.runPlan || []).find((item) => clean(item.breed) === clean(breed));
+    return row ? operationalGroupName(fields, row.fieldId, '') : '';
+}
+
+function groupTitleWithField(trial, group) {
+    const fieldName = assignedFieldNameForBreed(trial, group?.breed);
+    return fieldName ? `${groupTitle(group)} — Field: ${fieldName}` : groupTitle(group);
+}
 function printFieldTitle(trial) {
     const fields = eventFieldsForTrial(trial);
     return fields.length > 1 ? ` | ${selectedPrintField(trial).name}` : '';
@@ -17956,67 +17977,199 @@ function formatJudgeMapCourseBreakdown(count, fillCourses = false) {
         .join(' ');
 }
 
-function renderRollCallSheet(trial) {
-    document.getElementById('rollCallTitle').textContent = trialTitle(trial) + printFieldTitle(trial);
-    const body = document.getElementById('rollCallTable');
-    body.innerHTML = '';
+function rollCallAssignmentForEntry(trial, entry) {
+    const fields = eventFieldsForTrial(trial);
     const lanes = rollCallLanesForTrial(trial);
-    const showLane = lanes.length > 1;
-    const laneSort = (document.getElementById('rollCallSort')?.value || '') === 'lane';
-    const laneHeading = document.getElementById('rollCallLanePrintHeading');
-    if (laneHeading) laneHeading.hidden = !showLane;
-    const rows = sortRollCallEntries(entriesForPrintField(trial), trial);
-    document.getElementById('rollCallTotal').textContent = 'Total hounds: ' + rows.length;
+    const row = (trial.runPlan || []).find((item) => clean(item.breed) === clean(runGroupBreedForEntry(entry)));
+    const fieldId = row?.fieldId || fields[0].id;
+    const laneId = row?.rollCallLaneId || lanes[0].id;
+    return {
+        row,
+        field: { id: fieldId, name: operationalGroupName(fields, fieldId, fields[0].name) },
+        lane: { id: laneId, name: operationalGroupName(lanes, laneId, lanes[0].name) },
+    };
+}
 
-    if (rows.length === 0) {
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = showLane ? 6 : 5;
-        td.textContent = 'No entries yet.';
-        tr.appendChild(td);
-        body.appendChild(tr);
-        return;
+function rollCallPrintGroups(trial) {
+    const fields = eventFieldsForTrial(trial);
+    const lanes = rollCallLanesForTrial(trial);
+    const grouping = document.getElementById('rollCallGrouping')?.value || 'selectedField';
+    const entries = [...(trial.entries || [])];
+    const makeGroup = (key, title, rows, showField, showLane) => ({ key, title, entries: rows, showField, showLane });
+    if (grouping === 'all') {
+        return [makeGroup('all', 'All Fields & Lanes', entries, fields.length > 1, lanes.length > 1)];
     }
+    if (grouping === 'lane') {
+        return lanes.map((lane) => makeGroup(
+            `lane-${lane.id}`,
+            `${lane.name} — All Fields`,
+            entries.filter((entry) => rollCallAssignmentForEntry(trial, entry).lane.id === lane.id),
+            fields.length > 1,
+            false
+        )).filter((group) => group.entries.length);
+    }
+    if (grouping === 'field') {
+        return fields.map((field) => makeGroup(
+            `field-${field.id}`,
+            field.name,
+            entries.filter((entry) => rollCallAssignmentForEntry(trial, entry).field.id === field.id),
+            false,
+            lanes.length > 1
+        )).filter((group) => group.entries.length);
+    }
+    if (grouping === 'fieldLane') {
+        return fields.flatMap((field) => lanes.map((lane) => makeGroup(
+            `field-${field.id}-lane-${lane.id}`,
+            `${field.name} — ${lane.name}`,
+            entries.filter((entry) => {
+                const assignment = rollCallAssignmentForEntry(trial, entry);
+                return assignment.field.id === field.id && assignment.lane.id === lane.id;
+            }),
+            false,
+            false
+        ))).filter((group) => group.entries.length);
+    }
+    const selectedField = selectedPrintField(trial);
+    return [makeGroup(
+        `selected-${selectedField.id}`,
+        selectedField.name,
+        entriesForPrintField(trial),
+        false,
+        lanes.length > 1
+    )];
+}
 
+function rollCallColumns(trial, group, format) {
+    const columns = [
+        { label: 'Present', className: 'check-column', check: true },
+        { label: 'Call Name', value: (entry, duplicateName) => duplicateName ? `${entry.callName || 'Unnamed'} (${entry.owner || 'Owner not listed'})` : (entry.callName || '') },
+    ];
+    if (format === 'detailed') {
+        columns.push(
+            { label: 'Registered Name', value: (entry) => entry.registeredName || '' },
+            { label: 'Registration No.', value: (entry) => entry.registrationNumber || '' },
+            { label: 'Entry #', value: (entry) => entry.entryNumber || '' }
+        );
+    }
+    columns.push({ label: 'Breed', value: (entry) => displayBreedCode(entry.breed) });
+    if (format !== 'quick') columns.push({ label: 'Class', value: (entry) => entry.className || '' });
+    if (format === 'detailed') columns.push({ label: 'Owner / Handler', value: (entry) => entry.owner || entry.handler || '' });
+    if (group.showField) columns.push({ label: 'Field', value: (entry) => rollCallAssignmentForEntry(trial, entry).field.name });
+    if (group.showLane) columns.push({ label: 'Lane', value: (entry) => rollCallAssignmentForEntry(trial, entry).lane.name });
+    columns.push({ label: 'Notes', value: (entry) => entryNeedsDocuments(entry) ? 'Documentation needed' : '' });
+    return columns;
+}
+
+function renderRollCallGroup(trial, group, format) {
+    const section = document.createElement('section');
+    section.className = 'roll-call-sheet-group';
+    section.dataset.rollCallGroup = group.key;
+    const heading = document.createElement('h3');
+    heading.textContent = `Roll Call — ${group.title}`;
+    const trialHeading = document.createElement('p');
+    trialHeading.className = 'roll-call-group-trial-title';
+    trialHeading.textContent = trialTitle(trial);
+    const count = document.createElement('p');
+    count.className = 'roll-call-group-count';
+    count.textContent = `${group.entries.length} hound${group.entries.length === 1 ? '' : 's'}`;
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap roll-call-print-wrap';
+    const table = document.createElement('table');
+    table.className = `roll-call-print-table roll-call-format-${format}`;
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    const columns = rollCallColumns(trial, group, format);
+    columns.forEach((column) => {
+        const th = document.createElement('th');
+        th.textContent = column.label;
+        if (column.className) th.className = column.className;
+        headRow.appendChild(th);
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement('tbody');
+    const rows = sortRollCallEntries(group.entries, trial);
     const callNameCounts = rows.reduce((counts, entry) => {
         const key = clean(entry.callName);
         if (key) counts.set(key, (counts.get(key) || 0) + 1);
         return counts;
     }, new Map());
+    const showLaneSeparators = group.showLane && document.getElementById('rollCallSort')?.value === 'lane';
     let previousLaneId = '';
-
+    if (!rows.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = columns.length;
+        cell.textContent = 'No entries assigned.';
+        row.appendChild(cell);
+        body.appendChild(row);
+    }
     rows.forEach((entry) => {
-        const lane = rollCallLaneForEntry(trial, entry);
-        if (showLane && laneSort && lane.id !== previousLaneId) {
-            const laneRow = document.createElement('tr');
-            laneRow.className = 'roll-call-lane-heading';
-            const laneCell = document.createElement('th');
-            laneCell.colSpan = 6;
-            laneCell.textContent = lane.name;
-            laneRow.appendChild(laneCell);
-            body.appendChild(laneRow);
+        const lane = rollCallAssignmentForEntry(trial, entry).lane;
+        if (showLaneSeparators && lane.id !== previousLaneId) {
+            const divider = document.createElement('tr');
+            divider.className = 'roll-call-lane-heading';
+            const dividerCell = document.createElement('th');
+            dividerCell.colSpan = columns.length;
+            dividerCell.textContent = lane.name;
+            divider.appendChild(dividerCell);
+            body.appendChild(divider);
             previousLaneId = lane.id;
         }
-
-        const tr = document.createElement('tr');
-        if (entryNeedsDocuments(entry)) tr.classList.add('roll-call-print-needs-documents');
-        const check = document.createElement('td');
-        check.className = 'roll-call-check-cell';
-        const box = document.createElement('span');
-        box.className = 'print-checkbox';
-        check.appendChild(box);
-        tr.appendChild(check);
-        const callNameKey = clean(entry.callName);
-        const duplicateCallName = callNameKey && callNameCounts.get(callNameKey) > 1;
-        const callName = duplicateCallName ? (entry.callName || 'Unnamed') + ' (' + (entry.owner || 'Owner not listed') + ')' : entry.callName;
-        const note = entryNeedsDocuments(entry) ? 'Documentation needed' : '';
-        tr.appendChild(textCell(callName));
-        tr.appendChild(textCell(displayBreedCode(entry.breed)));
-        tr.appendChild(textCell(entry.className));
-        if (showLane) tr.appendChild(textCell(lane.name));
-        tr.appendChild(textCell(note));
-        body.appendChild(tr);
+        const row = document.createElement('tr');
+        if (entryNeedsDocuments(entry)) row.classList.add('roll-call-print-needs-documents');
+        const duplicateName = Boolean(clean(entry.callName) && callNameCounts.get(clean(entry.callName)) > 1);
+        columns.forEach((column) => {
+            const cell = document.createElement('td');
+            if (column.check) {
+                cell.className = 'roll-call-check-cell';
+                const box = document.createElement('span');
+                box.className = 'print-checkbox';
+                cell.appendChild(box);
+            } else {
+                cell.textContent = column.value(entry, duplicateName);
+            }
+            row.appendChild(cell);
+        });
+        body.appendChild(row);
     });
+    table.appendChild(body);
+    wrap.appendChild(table);
+    section.append(heading, trialHeading, count, wrap);
+    return section;
+}
+
+function renderRollCallSheet(trial) {
+    const fields = eventFieldsForTrial(trial);
+    const lanes = rollCallLanesForTrial(trial);
+    const groupingSelect = document.getElementById('rollCallGrouping');
+    if (groupingSelect) {
+        const option = (value) => groupingSelect.querySelector(`option[value="${value}"]`);
+        if (option('lane')) option('lane').disabled = lanes.length <= 1;
+        if (option('field')) option('field').disabled = fields.length <= 1;
+        if (option('fieldLane')) option('fieldLane').disabled = fields.length <= 1 && lanes.length <= 1;
+        if (groupingSelect.selectedOptions[0]?.disabled) groupingSelect.value = fields.length > 1 ? 'selectedField' : 'all';
+    }
+    const groups = rollCallPrintGroups(trial);
+    const format = document.getElementById('rollCallFormat')?.value || 'checkIn';
+    document.getElementById('rollCallTitle').textContent = trialTitle(trial);
+    const total = groups.reduce((sum, group) => sum + group.entries.length, 0);
+    document.getElementById('rollCallTotal').textContent = `${total} hound${total === 1 ? '' : 's'} on ${groups.length} sheet${groups.length === 1 ? '' : 's'}`;
+    const container = document.getElementById('rollCallSheets');
+    container.innerHTML = '';
+    if (!groups.length) {
+        container.appendChild(renderRollCallGroup(trial, { key: 'empty', title: 'No Assigned Hounds', entries: [], showField: false, showLane: false }, format));
+    } else {
+        groups.forEach((group) => container.appendChild(renderRollCallGroup(trial, group, format)));
+    }
+    container.classList.toggle('roll-call-multi-sheet', groups.length > 1);
+    const summary = document.getElementById('rollCallPrintChoiceSummary');
+    if (summary) {
+        const groupingLabel = groupingSelect?.selectedOptions[0]?.textContent || 'Selected field only';
+        const sortLabel = document.getElementById('rollCallSort')?.selectedOptions[0]?.textContent || '';
+        const formatLabel = document.getElementById('rollCallFormat')?.selectedOptions[0]?.textContent || '';
+        summary.textContent = `Preview: ${groupingLabel}. ${sortLabel}. ${formatLabel}.`;
+    }
 }
 function renderDrawSheet(trial) {
     const heading = document.getElementById('drawSheetHeading');
@@ -18048,7 +18201,7 @@ function renderDrawSheet(trial) {
         block.className = 'draw-sheet-group';
 
         const heading = document.createElement('h3');
-        heading.textContent = groupTitle(group);
+        heading.textContent = groupTitleWithField(trial, group);
         block.appendChild(heading);
 
         if (group.manualNote) {
@@ -18147,7 +18300,19 @@ function sortDrawGroupsForPrint(groups, trial) {
     });
 }
 function sortRollCallEntries(entries, trial = getSelectedTrial() || {}) {
-    const sort = document.getElementById('rollCallSort')?.value || 'breedClass';
+    const sort = document.getElementById('rollCallSort')?.value || 'runningOrder';
+    if (sort === 'runningOrder') {
+        const fields = eventFieldsForTrial(trial);
+        const fieldOrder = new Map(fields.map((field, index) => [field.id, index]));
+        return [...entries].sort((a, b) => {
+            const assignmentA = rollCallAssignmentForEntry(trial, a);
+            const assignmentB = rollCallAssignmentForEntry(trial, b);
+            const fieldDifference = (fieldOrder.get(assignmentA.field.id) ?? 999) - (fieldOrder.get(assignmentB.field.id) ?? 999);
+            if (fieldDifference) return fieldDifference;
+            const runDifference = Number(assignmentA.row?.runOrder || 999) - Number(assignmentB.row?.runOrder || 999);
+            return runDifference || compareByKeys(a, b, ['breed', 'className', 'callName']);
+        });
+    }
     if (sort === 'lane') {
         const lanes = rollCallLanesForTrial(trial);
         const laneOrder = new Map(lanes.map((lane, index) => [lane.id, index]));
@@ -18167,8 +18332,7 @@ function sortRollCallEntries(entries, trial = getSelectedTrial() || {}) {
     };
     const keys = keysBySort[sort] || keysBySort.breedClass;
     return [...entries].sort((a, b) => compareByKeys(a, b, keys));
-}
-function compareByKeys(a, b, keys) {
+}function compareByKeys(a, b, keys) {
     for (const key of keys) {
         const result = String(a[key] || '').localeCompare(String(b[key] || ''), undefined, { numeric: true, sensitivity: 'base' });
         if (result !== 0) {
@@ -24336,12 +24500,20 @@ document.getElementById('printFieldSelect')?.addEventListener('change', () => {
     const trial = getSelectedTrial();
     if (trial) renderPrintableSheets(trial);
 });
-document.getElementById('rollCallSort').addEventListener('change', () => {
-    const trial = readForm();
-    upsertTrial(trial);
-    render();
-});
-document.getElementById('rollCallAllPresent').addEventListener('change', (event) => setAllRollCallPresent(event.target.checked));
+['rollCallGrouping', 'rollCallSort', 'rollCallFormat'].forEach((controlId) => {
+    document.getElementById(controlId)?.addEventListener('change', () => {
+        const trial = getSelectedTrial() || readForm();
+        if (!trial.archivedAt) {
+            trial.rollCallGrouping = document.getElementById('rollCallGrouping')?.value || 'selectedField';
+            trial.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
+            trial.rollCallFormat = document.getElementById('rollCallFormat')?.value || 'checkIn';
+            trial.updatedAt = new Date().toISOString();
+            upsertTrial(trial);
+            saveTrials();
+        }
+        renderRollCallSheet(trial);
+    });
+});document.getElementById('rollCallAllPresent').addEventListener('change', (event) => setAllRollCallPresent(event.target.checked));
 document.getElementById('autoOwnerSeparationButton').addEventListener('click', autoMarkOwnerSeparationGroups);
 document.getElementById('buildPreliminaryDrawButton').addEventListener('click', buildPreliminaryDraw);
 document.getElementById('returnTopButton')?.addEventListener('click', scrollToPageTop);

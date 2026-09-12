@@ -3784,3 +3784,96 @@ button.danger-button {
 .split-stake-controls > p { flex-basis: 100%; margin: 0; }
 .split-stake-controls > label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; }
 .split-stake-controls input { width: 100%; box-sizing: border-box; }
+
+/* Contextual section help and Trial Guide problem finder */
+.section-info-toggle {
+    background: transparent;
+    border: 1px solid #b7cbc4;
+    color: var(--accent-dark);
+    font-size: 12px;
+    font-weight: 800;
+    margin-top: 8px;
+    min-height: 30px;
+    padding: 4px 9px;
+}
+.section-info-toggle:hover,
+.section-info-toggle:focus,
+.section-info-toggle[aria-expanded="true"] {
+    background: #edf4f1;
+    border-color: var(--accent);
+}
+.section-info-panel {
+    background: #f8fbfa;
+    border: 1px solid #cbdcd6;
+    box-shadow: inset 4px 0 0 var(--accent);
+    margin: -6px 0 16px;
+    padding: 14px 16px;
+}
+.section-info-panel[hidden] { display: none; }
+.section-info-summary { color: var(--ink); font-weight: 700; margin: 0 0 10px; }
+.section-info-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.section-info-grid h3 { color: var(--accent-dark); font-size: 14px; margin: 0 0 6px; }
+.section-info-grid ol,
+.section-info-grid ul { margin: 0; padding-left: 21px; }
+.section-info-grid li { margin: 4px 0; }
+.help-target-highlight { animation: helpTargetPulse 900ms ease-in-out 3; }
+@keyframes helpTargetPulse {
+    0%, 100% { border-color: var(--line); box-shadow: var(--shadow); }
+    50% { border-color: #d2a02c; box-shadow: 0 0 0 4px rgba(210, 160, 44, 0.24); }
+}
+.help-finder { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
+.trial-guide-card .help-finder > summary {
+    background: #f7faf9;
+    border: 1px solid #b7cbc4;
+    color: var(--accent-dark);
+    display: block;
+    font-size: 13px;
+    font-weight: 800;
+    min-height: 36px;
+    padding: 8px 10px;
+}
+.trial-guide-card .help-finder[open] > summary { background: #edf4f1; }
+.help-finder-body { padding-top: 10px; }
+.help-finder-body label { font-size: 13px; }
+.help-finder-body input { margin-top: 6px; }
+.help-search-hint,
+.help-search-empty { color: var(--muted); font-size: 12px; margin: 6px 0 10px; }
+.help-results { display: grid; gap: 8px; }
+.help-result { background: #fff; border: 1px solid var(--line); padding: 9px; }
+.help-result strong { color: var(--accent-dark); display: block; font-size: 13px; }
+.help-result p { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 5px 0 8px; }
+.help-result button { width: 100%; }
+@media (max-width: 760px) {
+    .section-info-grid { grid-template-columns: 1fr; }
+}
+@media print {
+    .section-info-toggle,
+    .section-info-panel,
+    .help-finder { display: none !important; }
+}
+
+.roll-call-print-controls { align-items: end; }
+.roll-call-sheet-group { margin-top: 16px; }
+.roll-call-sheet-group h3 { color: var(--accent-dark); font-size: 17px; margin: 0; }
+.roll-call-group-trial-title { color: var(--muted); margin: 3px 0 0; }
+.roll-call-group-count { font-weight: 800; margin: 3px 0 7px; }
+.roll-call-format-detailed { font-size: 10px; table-layout: auto; }
+.roll-call-format-detailed th,
+.roll-call-format-detailed td { overflow-wrap: anywhere; }
+.roll-call-format-quick .check-column,
+.roll-call-format-quick .roll-call-check-cell { width: 72px; }
+@media print {
+    #rollCallPrint > h2,
+    #rollCallPrint > .roll-call-print-meta { display: none !important; }
+    #rollCallPrint .roll-call-sheet-group { margin: 0; }
+    #rollCallPrint .roll-call-multi-sheet .roll-call-sheet-group + .roll-call-sheet-group {
+        break-before: page;
+        page-break-before: always;
+    }
+    #rollCallPrint .roll-call-sheet-group h3 { font-size: 15px; margin-bottom: 1px; }
+    #rollCallPrint .roll-call-group-trial-title,
+    #rollCallPrint .roll-call-group-count { margin: 1px 0 4px; }
+    #rollCallPrint .roll-call-format-detailed { font-size: 7px; table-layout: auto; }
+    #rollCallPrint .roll-call-format-detailed th,
+    #rollCallPrint .roll-call-format-detailed td { padding: 2px; }
+}
