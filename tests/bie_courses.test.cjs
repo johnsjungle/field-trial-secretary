@@ -1,7 +1,13 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const ctx=vm.createContext({crypto:require('node:crypto').webcrypto,secureShuffle:x=>[...x].reverse(),normalizeBreedCode:x=>x==='SD'?'DH':x,courseSizesForEntryCount:n=>n===4?[2,2]:[n]});
+const ctx=vm.createContext({crypto:require('node:crypto').webcrypto,secureShuffle:x=>[...x].reverse(),normalizeBreedCode:x=>x==='SD'?'DH':x,courseSizesForEntryCount:n=>{const sizes=[];while(n>0){if(n<=3){sizes.push(n);break}if(n===4){sizes.push(2,2);break}sizes.push(3);n-=3}return sizes}});
 vm.runInContext(fs.readFileSync('app/bie.js','utf8'),ctx);
 const dogs=Array.from({length:7},(_,i)=>({entryId:String(i),breed:i<3?(i===0?'SD':'DH'):'WH'}));
+for(const [count,expected] of [[4,[2,2]],[7,[3,2,2]],[10,[3,3,2,2]],[13,[3,3,3,2,2]]]){
+ const sample=Array.from({length:count},(_,i)=>({entryId:'balanced-'+count+'-'+i,breed:'WH'}));
+ const sizes=Array.from(ctx.buildBieCourses(sample,{dogsPerCourse:3,sameBreedFirst:false}),course=>course.hounds.length);
+ assert.deepEqual(sizes,expected);
+ assert(!sizes.includes(1));
+}
 for(const limit of [1,2,3]) for(const sameBreedFirst of [true,false]){
  const before=JSON.stringify(dogs);const courses=ctx.buildBieCourses(dogs,{dogsPerCourse:limit,sameBreedFirst});
  assert(courses.every(c=>c.hounds.length<=limit && c.hounds.length>0));
@@ -19,4 +25,4 @@ const target=trial.scorebook.bif.draw.courses[1].id;const before=JSON.stringify(
 confirm=true;await ctx.moveManualBifDrawHound('a',target);assert.equal(trial.scorebook.bif.draw.courses[1].hounds.length,1);assert.equal(Object.keys(trial.scorebook.bif.outcomes).length,0);
 trial.scorebook.bif.draw.courses[1].hounds.push({entryId:'c'});const full=JSON.stringify(trial);await ctx.moveManualBifDrawHound('b',target);assert.equal(JSON.stringify(trial),full);
 trial.archivedAt='today';const saved=writes;await ctx.addEmptyBieCourse();assert.equal(writes,saved);
-console.log('BIE course tests passed: limits, breed aliases, odd counts, uniqueness, no input mutation, empty-course preservation, cancel, confirmed move, full-course rejection, archived guard.');})().catch(e=>{console.error(e);process.exitCode=1});
+console.log('BIE course tests passed: balanced three-dog draws, limits, breed aliases, odd counts, uniqueness, no input mutation, empty-course preservation, cancel, confirmed move, full-course rejection, archived guard.');})().catch(e=>{console.error(e);process.exitCode=1});

@@ -242,9 +242,10 @@ function buildBieCourses(hounds, bif) {
     const courses = [];
     for (const pool of secureShuffle([...pools.values()])) {
         const shuffled = secureShuffle([...pool]);
-        const sizes = bif.dogsPerCourse
-            ? Array.from({ length: Math.ceil(shuffled.length / bieCourseLimit(bif)) }, (_, i) => Math.min(bieCourseLimit(bif), shuffled.length - i * bieCourseLimit(bif)))
-            : courseSizesForEntryCount(shuffled.length);
+        const limit = bieCourseLimit(bif);
+        const sizes = !bif.dogsPerCourse || limit === 3
+            ? courseSizesForEntryCount(shuffled.length)
+            : Array.from({ length: Math.ceil(shuffled.length / limit) }, (_, i) => Math.min(limit, shuffled.length - i * limit));
         for (const size of sizes) courses.push({ id: crypto.randomUUID(), number: courses.length + 1, hounds: shuffled.splice(0, size) });
     }
     return courses;
@@ -256,7 +257,7 @@ function renderBieCourseOptions(trial) {
     const legend = document.createElement('legend'); legend.textContent = 'BIE course setup'; box.appendChild(legend);
     const label = document.createElement('label'); label.textContent = 'Dogs per course ';
     const select = document.createElement('select'); select.id = 'bieDogsPerCourse';
-    [['', 'Automatic (up to 3)'], ['2', '2 — elimination pairs'], ['3', '3 maximum'], ['1', '1 — individual runs']].forEach(([value, text]) => select.add(new Option(text, value)));
+    [['', 'Automatic (up to 3)'], ['2', '2 — elimination pairs'], ['3', '3 maximum — balance pairs to avoid solos'], ['1', '1 — individual runs']].forEach(([value, text]) => select.add(new Option(text, value)));
     select.value = String(bif.dogsPerCourse || ''); select.disabled = Boolean(trial.archivedAt);
     select.addEventListener('change', () => saveBieConfiguration({dogsPerCourse: Number(select.value) || null})); label.appendChild(select); box.appendChild(label);
     const breedLabel = document.createElement('label');
@@ -264,7 +265,7 @@ function renderBieCourseOptions(trial) {
     check.addEventListener('change', () => saveBieConfiguration({sameBreedFirst: check.checked}));
     breedLabel.append(check, document.createTextNode(' Keep like breeds together in this draw')); box.appendChild(breedLabel);
     const note = document.createElement('p'); note.className = 'field-note';
-    note.textContent = 'Pair mode never puts more than two dogs in a course. An odd dog receives a solo course for your review; in elimination mode, select its course winner to confirm a bye. Like-breed mode keeps breeds separate, including odd dogs. Use manual editing for exceptions. These options apply to this draw; disable like-breed grouping for a mixed-breed round.'; box.appendChild(note);
+    note.textContent = 'Three-dog mode uses the regular balanced draw: when possible, pairs replace a leftover solo (for example, 10 dogs draw as 3, 3, 2, 2). Pair mode never puts more than two dogs in a course, so an odd dog receives a solo course for your review; in elimination mode, select its course winner to confirm a bye. Like-breed mode balances each breed separately. Use manual editing for exceptions.'; box.appendChild(note);
     if (bif.draw) {
         const add = document.createElement('button'); add.type = 'button'; add.className = 'secondary small'; add.textContent = 'Add Empty BIE Course'; add.disabled = Boolean(trial.archivedAt);
         add.addEventListener('click', addEmptyBieCourse); box.appendChild(add);
