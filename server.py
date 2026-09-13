@@ -3373,14 +3373,22 @@ def bif_record_groups(trial: dict) -> list[dict]:
     event_label = "BIE" if clean_text(bif.get("eventType")) == "BIE" else "BIF"
     rounds = []
     if event_label == "BIE" and bif.get("elimination"):
-        rounds.extend(bif.get("roundHistory") or [])
-    rounds.append({"draw": bif.get("draw") or {}, "outcomes": bif.get("outcomes") or {}})
+        rounds.extend({
+            **round_data,
+            "recordStake": f"BIE Pre-Qual {round_data.get('number') or index}",
+        } for index, round_data in enumerate(bif.get("preQualifierHistory") or [], start=1))
+        rounds.extend({
+            **round_data,
+            "recordStake": f"BIE Round {round_data.get('number') or index}",
+        } for index, round_data in enumerate(bif.get("roundHistory") or [], start=1))
+    current_stake = "BIE Pre-Qualifier" if bif.get("biePhase") == "prequalifier" else (f"BIE Round {len(bif.get('roundHistory') or []) + 1}" if event_label == "BIE" and ((bif.get("roundHistory") or []) or (bif.get("preQualifierHistory") or [])) else event_label)
+    rounds.append({"draw": bif.get("draw") or {}, "outcomes": bif.get("outcomes") or {}, "recordStake": current_stake})
     groups = []
     for index, round_data in enumerate(rounds, start=1):
         courses = (round_data.get("draw") or {}).get("courses") or []
         if not any((course.get("hounds") or []) for course in courses):
             continue
-        stake = event_label if len(rounds) == 1 else f"{event_label} Round {round_data.get('number') or index}"
+        stake = str(round_data.get("recordStake") or (event_label if len(rounds) == 1 else f"{event_label} Round {round_data.get('number') or index}"))
         group = {
             "id": f"asfa-record-{event_label.lower()}-{index}",
             "breed": event_label,
@@ -4974,9 +4982,10 @@ def flatten_bif_judge_courses(trial: dict) -> list[dict]:
         ]
         courses.append({
             "breed": "BIE" if bif.get("eventType") == "BIE" else "BIF",
-            "stake": "",
+            "stake": "BIE Pre-Qualifier" if bif.get("eventType") == "BIE" and bif.get("biePhase") == "prequalifier" else "",
             "course": course.get("number") or "",
             "phase": "bie" if bif.get("eventType") == "BIE" else "bif",
+            "runoffText": "PRE-QUAL" if bif.get("eventType") == "BIE" and bif.get("biePhase") == "prequalifier" else "",
             "mixedStake": False,
             "judges": judges,
             "hounds": normalized_hounds,

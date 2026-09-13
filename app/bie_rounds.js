@@ -52,6 +52,54 @@ function bieWinningIds(bif) {
     return (bif.draw?.courses || []).filter(c=>c.hounds.length).map(c=>bieCourseWinner(bif,c));
 }
 
+function buildBiePreQualifierPlan(hounds) {
+    const byBreed=new Map();
+    hounds.forEach(hound=>{const breed=normalizeBreedCode(hound.breed);if(!byBreed.has(breed))byBreed.set(breed,[]);byBreed.get(breed).push(hound);});
+    const carryEntryIds=[], contested=[];
+    byBreed.forEach(group=>group.length>1 ? contested.push(...group) : carryEntryIds.push(String(group[0].entryId)));
+    return {carryEntryIds,courses:buildBiePreQualifierCourses(contested)};
+}
+
+function buildBiePreQualifierCourses(hounds) {
+    const byBreed=new Map();
+    hounds.forEach(hound=>{const breed=normalizeBreedCode(hound.breed);if(!byBreed.has(breed))byBreed.set(breed,[]);byBreed.get(breed).push(hound);});
+    const courses=[];
+    byBreed.forEach((group,breed)=>{
+        const shuffled=secureShuffle([...group]);
+        const sizes=courseSizesForEntryCount(shuffled.length);
+        sizes.forEach(size=>courses.push({id:crypto.randomUUID(),number:courses.length+1,qualifierBreed:breed,hounds:shuffled.splice(0,size)}));
+    });
+    return courses;
+}
+
+function bieCandidateHoundMap(trial) {
+    return new Map(bifCandidateHoundsForTrial(trial).map(candidate=>[String(candidate.entryId),{...candidate.hound,entryId:String(candidate.entryId),callName:candidate.name,bobStake:candidate.stake}]));
+}
+
+function advanceBiePreQualifier(trial,bif) {
+    const ids=bieWinningIds(bif);
+    if(!ids.length || ids.some(id=>!id)) { showMessage(bifMessage,'Choose a winner for each pre-qualifier course before advancing.', 'warning'); return; }
+    const saved=structuredClone({phase:'prequalifier',number:(bif.preQualifierHistory || []).length+1,draw:bif.draw,outcomes:bif.outcomes || {},courseWinners:bif.courseWinners || {},judge1:bif.judge1,judge2:bif.judge2,advancedEntryIds:ids,completedAt:new Date().toISOString()});
+    const houndsById=bieCandidateHoundMap(trial), winnersByBreed=new Map();
+    ids.forEach(id=>{const hound=houndsById.get(String(id));if(!hound)return;const breed=normalizeBreedCode(hound.breed);if(!winnersByBreed.has(breed))winnersByBreed.set(breed,[]);winnersByBreed.get(breed).push(hound);});
+    const carry=[...(bif.preQualifierCarryEntryIds || []).map(String)], pending=[];
+    winnersByBreed.forEach(group=>group.length>1 ? pending.push(...group) : carry.push(String(group[0].entryId)));
+    const history=[...(bif.preQualifierHistory || []),saved];
+    if(pending.length) {
+        const courses=buildBiePreQualifierCourses(pending);
+        bieRoundCommit(trial,{...bif,preQualifierHistory:history,preQualifierCarryEntryIds:[...new Set(carry)],biePhase:'prequalifier',
+            outcomes:{},tieRunoff:null,tieRunoffs:[],courseWinners:{},finalWinner:'',
+            draw:normalizeBifDrawColors({id:crypto.randomUUID(),createdAt:new Date().toISOString(),courses})});
+        return;
+    }
+    const mainIds=[...new Set(carry)], mainHounds=mainIds.map(id=>houndsById.get(id)).filter(Boolean);
+    const courses=buildBieCourses(mainHounds,{...bif,dogsPerCourse:3,sameBreedFirst:false});
+    const statuses=Object.fromEntries((bif.bieCandidates || []).map(candidate=>[String(candidate.entryId),mainIds.includes(String(candidate.entryId))?'running':'not_running']));
+    bieRoundCommit(trial,{...bif,preQualifierHistory:history,preQualifierCarryEntryIds:mainIds,biePhase:'main',dogsPerCourse:3,sameBreedFirst:false,
+        selectedEntryIds:mainIds,statusByEntryId:statuses,outcomes:{},tieRunoff:null,tieRunoffs:[],courseWinners:{},finalWinner:'',
+        draw:normalizeBifDrawColors({id:crypto.randomUUID(),createdAt:new Date().toISOString(),courses})});
+}
+
 function setBieCourseWinner(courseId, entryId) {
     const trial=readForm(), bif=bifState(trial);
     if(trial.archivedAt || bif.draw?.manualDraft || bif.finalWinner) return;
@@ -63,6 +111,7 @@ function setBieCourseWinner(courseId, entryId) {
 function advanceBieRound(manual=false) {
     const trial=readForm(), bif=bifState(trial);
     if(trial.archivedAt || !bif.elimination || !bif.draw || bif.draw.manualDraft || bif.finalWinner) return;
+    if(bif.biePhase==='prequalifier') { advanceBiePreQualifier(trial,bif); return; }
     const ids=bieWinningIds(bif);
     if(!ids.length || ids.some(id=>!id)) { showMessage(bifMessage,'Choose a winner for each course, including any bye.', 'warning'); return; }
     if(ids.length===1) {
@@ -84,9 +133,12 @@ function renderBieRoundControls(trial, placement = "setup") {
     const bif=bifState(trial), box=document.createElement('div'); box.className='bie-round-controls';
     const button=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='secondary small';b.textContent=label;b.disabled=Boolean(trial.archivedAt);b.addEventListener('click',fn);box.appendChild(b);};
     if (placement === 'setup') {
-    const label=document.createElement('label'),mode=document.createElement('input');mode.type='checkbox';mode.checked=Boolean(bif.elimination);mode.disabled=Boolean(trial.archivedAt || bif.roundHistory?.length);
-    mode.addEventListener('change',()=>saveBieConfiguration({elimination:mode.checked,courseWinners:{},finalWinner:''}));label.append(mode,document.createTextNode(' Use elimination rounds (optional)'));box.appendChild(label);
-    if(!bif.draw) button('Set Up BIE Manually',startManualBie);
+    const label=document.createElement('label'),mode=document.createElement('input');mode.type='checkbox';mode.checked=Boolean(bif.elimination);mode.disabled=Boolean(trial.archivedAt || bif.roundHistory?.length || bif.preQualifierHistory?.length);
+    mode.addEventListener('change',()=>saveBieConfiguration({elimination:mode.checked,preQualifierEnabled:mode.checked ? Boolean(bif.preQualifierEnabled) : false,courseWinners:{},finalWinner:''}));label.append(mode,document.createTextNode(' Use elimination rounds (optional)'));box.appendChild(label);
+    const qualifierLabel=document.createElement('label'),qualifier=document.createElement('input');qualifier.type='checkbox';qualifier.checked=Boolean(bif.preQualifierEnabled);qualifier.disabled=Boolean(trial.archivedAt || !bif.elimination || bif.draw || bif.roundHistory?.length || bif.preQualifierHistory?.length);
+    qualifier.addEventListener('change',()=>saveBieConfiguration({preQualifierEnabled:qualifier.checked}));qualifierLabel.append(qualifier,document.createTextNode(' Run breed pre-qualifiers before the main BIE elimination'));box.appendChild(qualifierLabel);
+    const qualifierNote=document.createElement('p');qualifierNote.className='field-note';qualifierNote.textContent='When enabled, breeds with two or more selected hounds run first. One representative per breed advances; uncontested breeds wait and automatically join those winners in the main three-dog elimination draw.';box.appendChild(qualifierNote);
+    if(!bif.draw && !bif.preQualifierEnabled) button('Set Up BIE Manually',startManualBie);
     if(bif.draw?.manualDraft) {
         const note=document.createElement('p');note.textContent='Manual setup: assign each running hound to a course. Colors follow assignment order; you can adjust them after setup. Scores and printing become available when you finish.';box.appendChild(note);
         for(const candidate of bifCandidateHoundsForTrial(trial).filter(c=>selectedBifEntryIds(bif).has(String(c.entryId)))) {
@@ -101,8 +153,9 @@ function renderBieRoundControls(trial, placement = "setup") {
     }
     if (placement === 'setup') return box;
     if(bif.elimination && bif.draw && !bif.draw.manualDraft) {
-        const guidance=document.createElement('p');guidance.textContent='Clear highest scores select course winners automatically. Review them below; tied scores, incomplete courses and byes require your decision. Advance saves this round permanently. Next-round grouping starts mixed-breed; three remaining winners form one three-dog final. Choose manual setup to arrange the next round yourself.';box.appendChild(guidance);
-        const title=document.createElement('h3');title.textContent=`Elimination round ${(bif.roundHistory || []).length+1}`;box.appendChild(title);
+        const isQualifier=bif.biePhase==='prequalifier';
+        const guidance=document.createElement('p');guidance.textContent=isQualifier ? 'Each course is a same-breed pre-qualifier. Clear highest scores select winners automatically; review ties and choose every course winner. Winners remain within their breed until one representative is left. Uncontested breeds are waiting for the main event.' : 'Clear highest scores select course winners automatically. Review them below; tied scores, incomplete courses and byes require your decision. Advance saves this round permanently. Next-round grouping starts mixed-breed; three remaining winners form one three-dog final. Choose manual setup to arrange the next round yourself.';box.appendChild(guidance);
+        const title=document.createElement('h3');title.textContent=isQualifier ? `BIE pre-qualifier round ${(bif.preQualifierHistory || []).length+1}` : `Elimination round ${(bif.roundHistory || []).length+1}`;box.appendChild(title);
         for(const course of bif.draw.courses.filter(c=>c.hounds.length)) {
             const row=document.createElement('label');row.textContent=`Course ${course.number} winner / advance `;
             const select=document.createElement('select');select.add(new Option('Select winner (resolve ties first)',''));
@@ -110,8 +163,12 @@ function renderBieRoundControls(trial, placement = "setup") {
             select.value=bieCourseWinner(bif,course);select.disabled=Boolean(trial.archivedAt || bif.finalWinner);select.addEventListener('change',()=>setBieCourseWinner(course.id,select.value));row.appendChild(select);box.appendChild(row);
         }
         const pending=bieWinningIds(bif).filter(id=>!id).length;const readiness=document.createElement('p');readiness.textContent=pending ? `${pending} course(s) need a winner before advancing.` : 'All course winners are ready. Continue below.';box.appendChild(readiness);
-        if(!bif.finalWinner) {button(bieWinningIds(bif).length===1?'Confirm BIE Winner':'Advance Winners — Draw Next Round',()=>advanceBieRound(false));if(bieWinningIds(bif).length>1)button('Advance Winners — Set Up Next Round Manually',()=>advanceBieRound(true));}
+        if(!bif.finalWinner) {button(isQualifier?'Advance Pre-Qualifier Winners':(bieWinningIds(bif).length===1?'Confirm BIE Winner':'Advance Winners — Draw Next Round'),()=>advanceBieRound(false));if(!isQualifier && bieWinningIds(bif).length>1)button('Advance Winners — Set Up Next Round Manually',()=>advanceBieRound(true));}
         else {const done=document.createElement('p');done.textContent='Event complete. The selected final-course winner is the BIE winner.';box.appendChild(done);button('Review Final Winner',()=>{const current=readForm();if(!current.archivedAt)bieRoundCommit(current,{...bifState(current),finalWinner:''});});}
+    }
+    for(const round of bif.preQualifierHistory || []) {
+        const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`Pre-qualifier round ${round.number} — ${round.draw.courses.filter(c=>c.hounds.length).length} courses (saved)`;details.appendChild(summary);
+        round.draw.courses.forEach(c=>c.hounds.forEach(h=>{const p=document.createElement('p'),o=(round.outcomes || {})[String(h.entryId)] || {};p.textContent=`Course ${c.number} · ${h.bifBlanketColor || h.blanketColor || ''} · ${h.callName || h.registeredName} · Total ${o.score ?? ''} ${o.value || ''}${round.advancedEntryIds.includes(String(h.entryId))?' — Advanced':''}`;details.appendChild(p);}));box.appendChild(details);
     }
     for(const round of bif.roundHistory || []) {
         const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`Previous round ${round.number} — ${round.draw.courses.filter(c=>c.hounds.length).length} courses (saved)`;details.appendChild(summary);

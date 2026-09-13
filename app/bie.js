@@ -42,6 +42,7 @@ async function saveBieConfiguration(change) {
     const allowed = new Set((change.bieCandidates || bif.bieCandidates || []).map(c => String(c.entryId)));
     trial.scorebook = { ...(trial.scorebook || {}), bif: {
         ...bif, ...change, draw: null, outcomes: {}, tieRunoff: null, tieRunoffs: [], courseWinners: {}, finalWinner: '',
+        roundHistory: [], preQualifierHistory: [], preQualifierCarryEntryIds: [], biePhase: '',
         selectedEntryIds: sameType ? (bif.selectedEntryIds || []).filter(id => allowed.has(String(id))) : [],
         statusByEntryId: sameType ? Object.fromEntries(Object.entries(bif.statusByEntryId || {}).filter(([id]) => allowed.has(id))) : {},
     }};

@@ -10281,8 +10281,14 @@ function updateBifDrawButton(bif, winners) {
     const runningCount = winners.filter((winner) => visibleRunning.has(bifEntryKey(winner.entryId))).length;
     const hasJudge = Boolean((bif.judge1 || '').trim() || (bif.judge2 || '').trim());
     button.className = `secondary small ${hasCurrentBifDraw ? 'draw-complete-button' : 'draw-needed-button'}`;
-    button.textContent = `${hasCurrentBifDraw ? 'Redraw' : 'Draw'} ${bif.eventType === 'BIE' ? 'BIE' : 'BIF'}`;
-    ['printBifDrawSheetButton', 'printBifJudgeSheetsButton'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = `Print ${bif.eventType === 'BIE' ? 'BIE' : 'BIF'} ${id.includes('Judge') ? 'Judge Sheets' : 'Draw Sheet'}`; });
+    const phaseLabel = bif.eventType === 'BIE' && bif.biePhase === 'prequalifier' ? 'BIE Pre-Qualifier' : (bif.eventType === 'BIE' ? 'BIE' : 'BIF');
+    const needsQualifier = bif.eventType === 'BIE' && bif.preQualifierEnabled && !hasCurrentBifDraw && (() => {
+        const byBreed = new Map();
+        winners.filter(winner => visibleRunning.has(bifEntryKey(winner.entryId))).forEach(winner => { const breed=normalizeBreedCode(winner.breed); byBreed.set(breed,(byBreed.get(breed)||0)+1); });
+        return [...byBreed.values()].some(count => count > 1);
+    })();
+    button.textContent = `${hasCurrentBifDraw ? 'Redraw' : 'Draw'} ${needsQualifier ? 'BIE Pre-Qualifier' : phaseLabel}`;
+    ['printBifDrawSheetButton', 'printBifJudgeSheetsButton'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = `Print ${phaseLabel} ${id.includes('Judge') ? 'Judge Sheets' : 'Draw Sheet'}`; });
     const recordButton = document.getElementById('printBieRecordSheetButton');
     if (recordButton) {
         recordButton.hidden = bif.eventType !== 'BIE';
@@ -10485,7 +10491,9 @@ async function buildBifDraw() {
     }
     if (!await approveBifChange(trial)) return;
     const sizes = courseSizesForEntryCount(hounds.length);
-    const courses = bif.eventType === 'BIE' ? buildBieCourses(hounds, bif) : sizes.map((size, index) => ({
+    const qualifierPlan = bif.eventType === 'BIE' && bif.elimination && bif.preQualifierEnabled && bif.biePhase !== 'main' ? buildBiePreQualifierPlan(hounds) : {carryEntryIds:[],courses:[]};
+    const usingPreQualifier = qualifierPlan.courses.length > 0;
+    const courses = usingPreQualifier ? qualifierPlan.courses : bif.eventType === 'BIE' ? buildBieCourses(hounds, bif) : sizes.map((size, index) => ({
         id: crypto.randomUUID(),
         number: index + 1,
         capacity: size,
@@ -10510,7 +10518,10 @@ async function buildBifDraw() {
         ...(trial.scorebook || {}),
         bif: {
             ...bif,
-            outcomes: {}, tieRunoff: null, tieRunoffs: [], courseWinners: {}, finalWinner: "",
+            outcomes: {}, tieRunoff: null, tieRunoffs: [], courseWinners: {}, finalWinner: "", roundHistory: [],
+            biePhase: bif.eventType === 'BIE' ? (usingPreQualifier ? 'prequalifier' : 'main') : '',
+            preQualifierHistory: usingPreQualifier ? [] : (bif.preQualifierHistory || []),
+            preQualifierCarryEntryIds: usingPreQualifier ? qualifierPlan.carryEntryIds : (bif.preQualifierCarryEntryIds || []),
             selectedEntryIds: hounds.map((hound) => bifEntryKey(hound.entryId)),
             statusByEntryId: hounds.reduce((next, hound) => {
                 next[bifEntryKey(hound.entryId)] = 'running';
@@ -10528,7 +10539,8 @@ async function buildBifDraw() {
     };
     upsertTrial(trial);
     saveTrials();
-    showMessage(bifMessage, `Built ${bif.eventType === "BIE" ? "BIE" : "BIF"} draw for ${hounds.length} hound${hounds.length === 1 ? '' : 's'}.`, 'success');
+    const drawLabel = usingPreQualifier ? 'BIE pre-qualifier' : (bif.eventType === 'BIE' ? 'BIE' : 'BIF');
+    showMessage(bifMessage, `Built ${drawLabel} draw for ${usingPreQualifier ? courses.flatMap(course => course.hounds || []).length : hounds.length} hound${hounds.length === 1 ? '' : 's'}.`, 'success');
     render();
 }
 
@@ -10581,9 +10593,9 @@ function bifDrawTable(trial, winners) {
     const heading = document.createElement('div');
     heading.className = 'course-group-heading';
     const title = document.createElement('h3');
-    title.textContent = bif.draw ? 'BIF Draw' : 'Checked BIF Hounds';
+    title.textContent = bif.draw ? (bif.eventType === 'BIE' && bif.biePhase === 'prequalifier' ? 'BIE Pre-Qualifier Draw' : 'BIF Draw') : 'Checked BIF Hounds';
     const meta = document.createElement('span');
-    meta.textContent = bif.draw?.manualDraft ? "Manual setup in progress" : bif.draw ? 'Randomized course order' : 'Build draw when ready';
+    meta.textContent = bif.draw?.manualDraft ? "Manual setup in progress" : bif.draw ? (bif.biePhase === 'prequalifier' ? 'Same-breed qualifying courses' : 'Randomized course order') : 'Build draw when ready';
     heading.append(title, meta);
     if (bif.draw) {
         heading.appendChild(manualDrawToggleButton('bif:draw'));
@@ -18731,6 +18743,7 @@ function bifDrawPrintTrial(trial) {
     if (courses.length === 0) {
         return null;
     }
+    const phaseLabel = bif.eventType === 'BIE' && bif.biePhase === 'prequalifier' ? 'BIE Pre-Qualifier' : (bif.eventType === 'BIE' ? 'BIE' : 'BIF');
     return {
         ...trial,
         preliminaryDraw: {
@@ -18739,7 +18752,7 @@ function bifDrawPrintTrial(trial) {
             groups: [{
                 id: 'bif-draw-sheet',
                 breed: (bif.eventType === 'BIE' ? 'BIE' : 'BIF'),
-                stake: (bif.eventType === 'BIE' ? 'BIE' : 'BIF'),
+                stake: phaseLabel,
                 phase: bif.eventType === 'BIE' ? 'bie' : 'bif',
                 runOrder: 1,
                 courses,

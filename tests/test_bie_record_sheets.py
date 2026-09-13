@@ -36,6 +36,7 @@ class BieRecordSheetTests(unittest.TestCase):
             "scorebook": {"bif": {
                 "eventType": "BIE",
                 "elimination": True,
+                "preQualifierHistory": [first],
                 "roundHistory": [first],
                 "draw": {"courses": [{"number": 1, "hounds": [hound("a", "Alpha", "YELLOW")]}]},
                 "outcomes": {"a": {"judge1": "48", "judge2": "49", "score": "97"}},
@@ -48,9 +49,9 @@ class BieRecordSheetTests(unittest.TestCase):
     def test_bie_filter_returns_every_scored_round(self):
         trial = self.trial()
         groups = server.record_groups_for_print(trial, breed="BIE")
-        self.assertEqual([group["stake"] for group in groups], ["BIE Round 1", "BIE Round 2"])
+        self.assertEqual([group["stake"] for group in groups], ["BIE Pre-Qual 1", "BIE Round 1", "BIE Round 2"])
         first_rows = server.asfa_record_rows(trial, groups[0])
-        final_rows = server.asfa_record_rows(trial, groups[1])
+        final_rows = server.asfa_record_rows(trial, groups[-1])
         self.assertEqual([row["prelimScore"] for row in first_rows], ["92", "89"])
         self.assertTrue(all(not row["placement"] for row in first_rows))
         self.assertEqual(final_rows[0]["prelimScore"], "97")
@@ -59,12 +60,22 @@ class BieRecordSheetTests(unittest.TestCase):
     def test_bie_record_pdf_has_one_page_per_round(self):
         pdf = server.generate_asfa_record_sheet_pdf(self.trial(), breed="BIE")
         reader = PdfReader(io.BytesIO(pdf))
-        self.assertEqual(len(reader.pages), 2)
+        self.assertEqual(len(reader.pages), 3)
         text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        self.assertIn("BIE Pre-Qual 1", text)
         self.assertIn("BIE Round 1", text)
         self.assertIn("BIE Round 2", text)
 
 
+    def test_qualifier_judge_metadata_is_visible(self):
+        trial = self.trial()
+        trial["scorebook"]["bif"]["biePhase"] = "prequalifier"
+        courses = server.flatten_bif_judge_courses(trial)
+        self.assertTrue(courses)
+        self.assertEqual(courses[0]["stake"], "BIE Pre-Qualifier")
+        self.assertEqual(courses[0]["runoffText"], "PRE-QUAL")
+        self.assertEqual(courses[0]["phase"], "bie")
+
+
 if __name__ == "__main__":
     unittest.main()
-
