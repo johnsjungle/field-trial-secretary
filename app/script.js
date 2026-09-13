@@ -217,6 +217,16 @@ function applyAssociationControlState(trial = getSelectedTrial()) {
             lciCheckbox.disabled = Boolean(started);
         }
     }
+    const fieldClerk = document.getElementById('fieldClerk');
+    const fieldClerkRequirement = document.getElementById('fieldClerkRequirement');
+    const fieldClerkRequired = profile.association === 'ASFA';
+    if (fieldClerk) {
+        fieldClerk.required = fieldClerkRequired;
+        fieldClerk.setAttribute('aria-required', String(fieldClerkRequired));
+    }
+    if (fieldClerkRequirement) {
+        fieldClerkRequirement.hidden = !fieldClerkRequired;
+    }
     populateEntryBreedSelect(trial);
     renderClassOptions(trial);
 }
@@ -3205,8 +3215,11 @@ function saveCurrentTrial(options = {}) {
     const trial = readForm();
     const problem = validateTrialBasics(trial);
 
-    if (problem && !options.silent) {
+    if (problem) {
         showMessage(formMessage, problem, 'warning');
+        if (trial.association === 'ASFA' && !String(trial.fieldClerk || '').trim()) {
+            document.getElementById('fieldClerk')?.focus();
+        }
         return null;
     }
 
@@ -3235,6 +3248,10 @@ function validateTrialBasics(trial) {
 
     if (trial.trialType === 'specialty' && !trial.specialtyBreed) {
         return 'Specialty trials need a specialty breed.';
+    }
+
+    if (String(trial.association || '').trim().toUpperCase() === 'ASFA' && !String(trial.fieldClerk || '').trim()) {
+        return 'Field clerk is required for ASFA trials.';
     }
 
     return '';
@@ -3642,7 +3659,7 @@ function printStatus(trial, key) {
 }
 
 function trialBasicsComplete(trial) {
-    return Boolean(trial && trial.trialName && trial.clubName && trial.association && trial.startsOn && trial.endsOn);
+    return Boolean(trial && trial.trialName && trial.clubName && trial.association && trial.startsOn && trial.endsOn && (rulesForTrial(trial).association !== 'ASFA' || String(trial.fieldClerk || '').trim()));
 }
 
 function rollCallComplete(trial) {
@@ -3784,9 +3801,9 @@ function trialGuideSteps(trial) {
     const bifDone = bifScoringComplete(trial);
 
     const steps = [
-        { id: 'trial-set', label: 'Trial Info', tab: 'setup', sectionTitle: 'Event', status: stepStatus(trialBasicsComplete(trial), hasTrial), detail: 'Enter the trial name, club, association, and dates.', action: 'Go To Setup' },
+        { id: 'trial-set', label: 'Trial Info', tab: 'setup', sectionTitle: 'Event', status: stepStatus(trialBasicsComplete(trial), hasTrial), detail: rulesForTrial(trial || {}).association === 'ASFA' ? 'Enter the trial name, club, association, dates, and required field clerk.' : 'Enter the trial name, club, association, and dates.', action: 'Go To Setup' },
         { id: 'entries-set', label: 'Hound Entry', tab: 'entries', sectionTitle: 'Trial Entries', status: stepStatus(entriesDone, trialBasicsComplete(trial)), detail: entriesDone ? `${(trial.entries || []).length} entries are in this trial.` : 'Add or import the hounds running in this trial.', action: 'Go To Entries' },
-        { id: 'running-order-assignments', label: 'Running Order & Assignments', tab: 'runplan', sectionTitle: 'Running Order & Assignments', status: attentionStatus(runDone, entriesDone, runDone && entriesStaleForRunPlan), detail: runDone && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Build from entries again before printing or drawing.' : (runDone ? 'Running order and assignment rows are set.' : 'Set breed running order, judges, lure operators, and huntmasters. Paddock and Field Clerk are optional.'), action: 'Go To Running Order' },
+        { id: 'running-order-assignments', label: 'Running Order & Assignments', tab: 'runplan', sectionTitle: 'Running Order & Assignments', status: attentionStatus(runDone, entriesDone, runDone && entriesStaleForRunPlan), detail: runDone && entriesStaleForRunPlan ? 'Entries changed after Running Order was built. Build from entries again before printing or drawing.' : (runDone ? 'Running order and assignment rows are set.' : 'Set breed running order, judges, lure operators, and huntmasters. Per-field paddock and clerk assignments are optional.'), action: 'Go To Running Order' },
         { id: 'print-roll-call-sheet', label: 'Print Roll Call Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', targetSelector: '#printRollCallButton', status: attentionStatus(printStatus(trial, 'rollCallSheet'), entriesDone, rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan)), detail: rollCallSheetStale || (printStatus(trial, 'rollCallSheet') && entriesStaleForRunPlan) ? 'Entries changed after the roll call sheet was printed. Reprint the roll call sheet for the current entry list.' : (printStatus(trial, 'rollCallSheet') ? 'Roll call sheet has been printed or marked printed.' : 'Print the roll call sheet before checking in hounds at roll call.'), action: 'Go To Roll Call Sheet' },
         { id: 'worker-sheet', label: 'Worker Sheet', tab: 'runplan', sectionTitle: 'Printable Sheets', status: attentionStatus(printStatus(trial, 'workerSheet'), runDone && !entriesStaleForRunPlan, workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan)), detail: workerSheetStale || (printStatus(trial, 'workerSheet') && entriesStaleForRunPlan) ? 'Entries changed after the worker sheet was printed. Rebuild Running Order if needed, then print the worker sheet again.' : (printStatus(trial, 'workerSheet') ? 'Worker sheet has been printed or marked printed.' : 'Print the worker sheet after running order and assignments are ready.'), action: 'Go To Worker Sheet' },
         { id: 'roll-call', label: 'Roll Call Check In', tab: 'rollcall', sectionTitle: 'Roll Call Check In', status: attentionStatus(rollDone, entriesDone, rollDone && (entriesStaleForRunPlan || rollCallSheetStale)), detail: rollDone && (entriesStaleForRunPlan || rollCallSheetStale) ? 'Entries changed after setup was built. Review roll call for the current entry list.' : (rollDone ? 'Every trial entry has a roll-call status.' : 'Mark all entered hounds present, absent, lame, in season, or another outcome.'), action: 'Go To Roll Call' },
@@ -24570,6 +24587,9 @@ document.getElementById('eventFieldCount')?.addEventListener('change', () => {
 document.getElementById('rollCallLaneCount')?.addEventListener('change', () => {
     resizeOperationalSetup('rollCallLaneCount', 'rollCallLaneNames', 'lane', 'Lane');
     saveOperationalSetupFromControls();
+});
+document.getElementById('association')?.addEventListener('change', (event) => {
+    applyAssociationControlState({ ...(getSelectedTrial() || {}), association: event.target.value });
 });
 document.addEventListener('change', (event) => {
     if (event.target.matches('#eventFieldNames input[data-operational-name], #rollCallLaneNames input[data-operational-name]')) {

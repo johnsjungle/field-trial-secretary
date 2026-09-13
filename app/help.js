@@ -14,7 +14,7 @@ const topicRows=[
 ['Trial Entries','Adds hounds with trial-specific class and details.','One hound can enter several selected trials|Correct entries before running order or draws'],
 ['Specialty Stakes','Pairs Kennel and Breeder entries and records Bench entries.','Pairs save automatically|Pair members must be the same breed'],
 ['Import Dogs','Imports many hounds and entries from a file.','Test new formats in a test trial|Review class names and breed codes'],
-['Running Order & Assignments','Sets breed order and assigns judges and workers.','Paddock and field clerk are optional|Conflict indicators catch overlapping duties'],
+['Running Order & Assignments','Sets breed order and assigns judges and workers.','Per-field paddock and clerk assignments are optional|ASFA trial setup still requires the primary field clerk|Conflict indicators catch overlapping duties'],
 ['Printable Sheets','Creates working sheets for trial day.','Roll call can print one sheet per lane across all fields|Draw, judge, and record sheets show assigned fields on multi-field trials|Detailed roll call adds registration and owner information|The Trial Guide warns when sheets become stale'],
 ['Roll Call Check In','Records every hound’s day-of-event status.','Only present hounds enter the draw|Do not leave Not Checked entries'],
 ['Owner Separation','Keeps same-owner hounds apart when rules require it.','Letters can be adjusted manually|Review again after entry changes'],
