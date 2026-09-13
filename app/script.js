@@ -10189,9 +10189,23 @@ function renderBifBieCheck(trial) {
     controls.appendChild(summaryItem('Not running', String(winners.filter((winner) => statuses[bifEntryKey(winner.entryId)] === 'not_running').length), 'todo'));
 
     const judgeOptions = uniqueNames([...(trial.judges || []).map((judge) => judge.name), ...masterJudges.map((judge) => judge.name)]);
-    controls.appendChild(bifJudgeControl('judge1', 'BIF Judge 1', bif.judge1 || '', judgeOptions));
-    controls.appendChild(bifJudgeControl('judge2', 'BIF Judge 2', bif.judge2 || '', judgeOptions));
+    bifJudgeSlots(bif, true).forEach((slot) => controls.appendChild(bifJudgeControl(slot.key, `${bif.eventType === 'BIE' ? 'BIE' : 'BIF'} Judge ${slot.number}`, slot.name, judgeOptions)));
     panel.appendChild(controls);
+
+    if (bif.eventType === 'BIE') {
+        const bulk = document.createElement('div');
+        bulk.className = 'bie-bulk-controls';
+        [['Mark All Running', 'running'], ['Mark All Not Running', 'not_running'], ['Clear All Decisions', '']].forEach(([label, status]) => {
+            const action = document.createElement('button');
+            action.type = 'button';
+            action.className = 'secondary small';
+            action.textContent = label;
+            action.disabled = Boolean(trial.archivedAt);
+            action.addEventListener('click', () => updateAllBifStatuses(status));
+            bulk.appendChild(action);
+        });
+        panel.appendChild(bulk);
+    }
 
     if (!bif.draw && bif.drawInvalidatedReason) {
         const staleNote = document.createElement('p');
@@ -10271,6 +10285,12 @@ function normalizeOutcomeKeyMap(outcomes = {}) {
     }, {});
 }
 
+function computedBifJudgeTotal(outcome, bif) {
+    const slots = bifJudgeSlots(bif);
+    if (!slots.length || slots.some(slot => !hasScoreValue(outcome[slot.key]) || !Number.isFinite(Number(outcome[slot.key])))) return '';
+    return String(slots.reduce((total, slot) => total + Number(outcome[slot.key]), 0));
+}
+
 function updateBifDrawButton(bif, winners) {
     const button = document.getElementById('buildBifDrawButton');
     if (!button) {
@@ -10279,7 +10299,7 @@ function updateBifDrawButton(bif, winners) {
     const hasCurrentBifDraw = bif && bif.draw;
     const visibleRunning = currentBifRunningEntryIds(bif || {});
     const runningCount = winners.filter((winner) => visibleRunning.has(bifEntryKey(winner.entryId))).length;
-    const hasJudge = Boolean((bif.judge1 || '').trim() || (bif.judge2 || '').trim());
+    const hasJudge = bifJudgeSlots(bif).length > 0;
     button.className = `secondary small ${hasCurrentBifDraw ? 'draw-complete-button' : 'draw-needed-button'}`;
     const phaseLabel = bif.eventType === 'BIE' && bif.biePhase === 'prequalifier' ? 'BIE Pre-Qualifier' : (bif.eventType === 'BIE' ? 'BIE' : 'BIF');
     const needsQualifier = bif.eventType === 'BIE' && bif.preQualifierEnabled && !hasCurrentBifDraw && (() => {
@@ -10294,6 +10314,11 @@ function updateBifDrawButton(bif, winners) {
         recordButton.hidden = bif.eventType !== 'BIE';
         recordButton.disabled = !bieRecordSheetsReady(readForm());
         recordButton.dataset.help = recordButton.disabled ? 'Complete BIE scoring and confirm the final winner before printing the record sheets.' : 'Prints a scored record sheet for every completed BIE round.';
+    }
+    const runningSheetButton = document.getElementById('printBieRunningSheetButton');
+    if (runningSheetButton) {
+        runningSheetButton.hidden = bif.eventType !== 'BIE';
+        runningSheetButton.disabled = winners.length === 0;
     }
     button.disabled = winners.length === 0 || runningCount === 0 || !hasJudge;
     button.dataset.help = !hasJudge
@@ -10442,6 +10467,61 @@ async function updateBifStatus(entryId, status) {
     render();
 }
 
+async function updateAllBifStatuses(status) {
+    const trial = readForm();
+    const bif = bifState(trial);
+    if (trial.archivedAt || bif.eventType !== 'BIE') return;
+    if (!await approveBifChange(trial)) { render(); return; }
+    const ids = bifCandidateHoundsForTrial(trial).map(candidate => bifEntryKey(candidate.entryId));
+    trial.scorebook = { ...(trial.scorebook || {}), bif: {
+        ...bif,
+        selectedEntryIds: status === 'running' ? ids : [],
+        statusByEntryId: Object.fromEntries(ids.map(id => [id, status])),
+        draw: null, outcomes: {}, tieRunoff: null, tieRunoffs: [], courseWinners: {}, finalWinner: '',
+        roundHistory: [], preQualifierHistory: [], preQualifierCarryEntryIds: [], biePhase: '',
+    }};
+    upsertTrial(trial);
+    saveTrials();
+    showMessage(bifMessage, status === 'running'
+        ? 'Marked all ' + ids.length + ' eligible hounds as running.'
+        : status === 'not_running'
+            ? 'Marked all ' + ids.length + ' eligible hounds as not running.'
+            : 'Cleared all BIE running decisions.', 'success');
+    render();
+}
+
+function printBieRunningIntentSheet() {
+    const trial = readForm();
+    const bif = bifState(trial);
+    const candidates = bifCandidateHoundsForTrial(trial);
+    if (bif.eventType !== 'BIE' || !candidates.length) {
+        showMessage(bifMessage, 'Add eligible BIE hounds before printing the running confirmation sheet.', 'warning');
+        return;
+    }
+    const area = document.getElementById('bieRunningIntentPrint');
+    area.innerHTML = '';
+    const title = document.createElement('h2'); title.textContent = 'BIE Running Confirmation Sheet'; area.appendChild(title);
+    const meta = document.createElement('p'); meta.textContent = trialTitle(trial); area.appendChild(meta);
+    const note = document.createElement('p');
+    note.textContent = 'Ask each handler to mark whether the eligible hound will run in BIE. Enter the confirmed decisions in the BIF / BIE screen before drawing.';
+    area.appendChild(note);
+    const wrap = document.createElement('div'); wrap.className = 'table-wrap';
+    const table = document.createElement('table'); table.className = 'bie-running-sheet-table';
+    table.innerHTML = '<thead><tr><th>#</th><th>Breed</th><th>Hound</th><th>Registration</th><th>Eligible From</th><th class="response-column">Running</th><th class="response-column">Not Running</th><th>Handler Initials / Notes</th></tr></thead>';
+    const body = document.createElement('tbody');
+    [...candidates].sort((a,b) => String(a.breed || '').localeCompare(String(b.breed || '')) || String(a.name || '').localeCompare(String(b.name || ''))).forEach((candidate, index) => {
+        const row = document.createElement('tr');
+        [index + 1, displayBreedCode(candidate.breed), candidate.name, candidate.registrationNumber, candidate.sourceLabel || trialTitle(trial), '[ ]', '[ ]', ''].forEach((value, column) => {
+            const cell = document.createElement('td'); cell.textContent = value;
+            if (column === 5 || column === 6) cell.className = 'response-column';
+            row.appendChild(cell);
+        });
+        body.appendChild(row);
+    });
+    table.appendChild(body); wrap.appendChild(table); area.appendChild(wrap);
+    printSection('bieRunningIntentPrint');
+}
+
 function updateBifJudge(key, value) {
     const trial = readForm();
     const bif = bifState(trial);
@@ -10463,8 +10543,8 @@ async function buildBifDraw() {
     const trial = readForm();
     recalculateTrialResults(trial);
     const bif = bifState(trial);
-    if (!String(bif.judge1 || '').trim() && !String(bif.judge2 || '').trim()) {
-        showMessage(bifMessage, 'Assign at least one BIF judge before drawing BIF.', 'warning');
+    if (!bifJudgeSlots(bif).length) {
+        showMessage(bifMessage, `Assign at least one ${bif.eventType === 'BIE' ? 'BIE' : 'BIF'} judge before drawing.`, 'warning');
         return;
     }
     const winnersByEntry = new Map(bifCandidateHoundsForTrial(trial).map((winner) => [bifEntryKey(winner.entryId), winner]));
@@ -10587,7 +10667,7 @@ function bifDrawTable(trial, winners) {
     const bif = bifState(trial);
     const selected = selectedBifEntryIds(bif);
     const bifOutcomes = bif.outcomes || {};
-    const judgeCount = bif.judge2 ? 2 : 1;
+    const judgeSlots = bifJudgeSlots(bif);
     const section = document.createElement('div');
     section.className = 'score-group';
     const heading = document.createElement('div');
@@ -10618,11 +10698,7 @@ function bifDrawTable(trial, winners) {
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
     const table = document.createElement('table');
-    const header = ['Run #/Clr', 'Hound', 'Breed', 'Stake', 'BIF J1'];
-    if (judgeCount > 1) {
-        header.push('BIF J2');
-    }
-    header.push('Total', 'Status', 'Result');
+    const header = ['Run #/Clr', 'Hound', 'Breed', 'Stake', ...judgeSlots.map(slot => `${bif.eventType === 'BIE' ? 'BIE' : 'BIF'} J${slot.number}`), 'Total', 'Status', 'Result'];
     table.innerHTML = `<thead><tr>${header.map((label) => `<th>${label}</th>`).join('')}</tr></thead>`;
     const body = document.createElement('tbody');
     let lastBifCourse = '';
@@ -10651,14 +10727,11 @@ function bifDrawTable(trial, winners) {
         tr.appendChild(textCell(row.hound.callName || row.hound.registeredName || row.winner?.name || 'Unnamed hound'));
         tr.appendChild(textCell(displayBreedCode(row.hound.breed || row.winner?.breed || '')));
         tr.appendChild(textCell(row.hound.bobStake || row.hound.stake || row.winner?.stake || ''));
-        const judge1 = document.createElement('td');
-        judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value) || (!bif.draw || bif.draw.manualDraft), (value) => updateBifScore(entryKey, { judge1: value })));
-        tr.appendChild(judge1);
-        if (judgeCount > 1) {
-            const judge2 = document.createElement('td');
-            judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value) || (!bif.draw || bif.draw.manualDraft), (value) => updateBifScore(entryKey, { judge2: value })));
-            tr.appendChild(judge2);
-        }
+        judgeSlots.forEach((slot) => {
+            const cell = document.createElement('td');
+            cell.appendChild(scoreNumberInput(outcome[slot.key] || '', `J${slot.number}`, Boolean(outcome.value) || (!bif.draw || bif.draw.manualDraft), (value) => updateBifScore(entryKey, { [slot.key]: value })));
+            tr.appendChild(cell);
+        });
         tr.appendChild(textCell(computedScoreDisplay(outcome.score, outcome.value)));
         const statusCell = document.createElement('td');
         const status = document.createElement('select');
@@ -10776,16 +10849,12 @@ function renderBifTieRunoffTable(bif, tieRunoff, readOnly, label, roundIndex = -
     section.appendChild(title);
     const draw = normalizeBifDrawColors(tieRunoff.draw);
     const outcomes = tieRunoff.outcomes || {};
-    const judgeCount = bif.judge2 ? 2 : 1;
+    const judgeSlots = bifJudgeSlots(bif);
     const rows = (draw.courses || []).flatMap((course) => sortedHoundsByBlanket(course.hounds || []).map((hound) => ({ course, hound })));
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
     const table = document.createElement('table');
-    const headers = ['Run #/Clr', 'Hound', 'Breed', 'Stake', 'Tie J1'];
-    if (judgeCount > 1) {
-        headers.push('Tie J2');
-    }
-    headers.push('Total', 'Status', 'Result');
+    const headers = ['Run #/Clr', 'Hound', 'Breed', 'Stake', ...judgeSlots.map(slot => `Tie J${slot.number}`), 'Total', 'Status', 'Result'];
     table.innerHTML = `<thead><tr>${headers.map((label) => `<th>${label}</th>`).join('')}</tr></thead>`;
     const body = document.createElement('tbody');
     rows.forEach((row) => {
@@ -10808,24 +10877,16 @@ function renderBifTieRunoffTable(bif, tieRunoff, readOnly, label, roundIndex = -
         tr.appendChild(textCell(row.hound.callName || row.hound.registeredName || 'Unnamed hound'));
         tr.appendChild(textCell(displayBreedCode(row.hound.breed)));
         tr.appendChild(textCell(row.hound.bobStake || row.hound.stake || ''));
-        const judge1 = document.createElement('td');
-        if (readOnly) {
-            judge1.textContent = outcome.judge1 || '';
-            judge1.className = 'muted-cell';
-        } else {
-            judge1.appendChild(scoreNumberInput(outcome.judge1 || '', 'J1', Boolean(outcome.value), (value) => updateBifTieScore(entryKey, { judge1: value }, roundIndex)));
-        }
-        tr.appendChild(judge1);
-        if (judgeCount > 1) {
-            const judge2 = document.createElement('td');
+        judgeSlots.forEach((slot) => {
+            const cell = document.createElement('td');
             if (readOnly) {
-                judge2.textContent = outcome.judge2 || '';
-                judge2.className = 'muted-cell';
+                cell.textContent = outcome[slot.key] || '';
+                cell.className = 'muted-cell';
             } else {
-                judge2.appendChild(scoreNumberInput(outcome.judge2 || '', 'J2', Boolean(outcome.value), (value) => updateBifTieScore(entryKey, { judge2: value }, roundIndex)));
+                cell.appendChild(scoreNumberInput(outcome[slot.key] || '', `J${slot.number}`, Boolean(outcome.value), (value) => updateBifTieScore(entryKey, { [slot.key]: value }, roundIndex)));
             }
-            tr.appendChild(judge2);
-        }
+            tr.appendChild(cell);
+        });
         tr.appendChild(textCell(computedScoreDisplay(outcome.score, outcome.value)));
         const statusCell = document.createElement('td');
         if (readOnly) {
@@ -10925,25 +10986,19 @@ function updateBifScore(entryId, changes) {
     const outcomes = { ...(bif.outcomes || {}) };
     const current = normalizedBobOutcome(outcomes[entryKey]);
     const next = { ...current };
-    const judgeCount = bif.judge2 ? 2 : 1;
-    if ('judge1' in changes) {
-        next.judge1 = String(changes.judge1 || '').trim();
-    }
-    if ('judge2' in changes) {
-        next.judge2 = String(changes.judge2 || '').trim();
-    }
+    const judgeSlots = bifJudgeSlots(bif, true);
+    judgeSlots.forEach((slot) => {
+        if (slot.key in changes) next[slot.key] = String(changes[slot.key] || '').trim();
+    });
     if ('outcome' in changes) {
         next.value = changes.outcome || '';
         if (next.value) {
-            next.judge1 = '';
-            next.judge2 = '';
+            judgeSlots.forEach((slot) => { next[slot.key] = ''; });
             next.score = '';
         }
     } else {
-        next.score = computedJudgeTotal(next.judge1, next.judge2, judgeCount);
-        if (next.score) {
-            next.value = '';
-        }
+        next.score = computedBifJudgeTotal(next, bif);
+        if (next.score) next.value = '';
     }
     outcomes[entryKey] = next;
     trial.scorebook = {
@@ -11056,25 +11111,19 @@ function updateBifTieScore(entryId, changes, roundIndex = -1) {
     const outcomes = { ...(tieRunoff.outcomes || {}) };
     const current = normalizedBobOutcome(outcomes[entryKey]);
     const next = { ...current };
-    const judgeCount = bif.judge2 ? 2 : 1;
-    if ('judge1' in changes) {
-        next.judge1 = String(changes.judge1 || '').trim();
-    }
-    if ('judge2' in changes) {
-        next.judge2 = String(changes.judge2 || '').trim();
-    }
+    const judgeSlots = bifJudgeSlots(bif, true);
+    judgeSlots.forEach((slot) => {
+        if (slot.key in changes) next[slot.key] = String(changes[slot.key] || '').trim();
+    });
     if ('outcome' in changes) {
         next.value = changes.outcome || '';
         if (next.value) {
-            next.judge1 = '';
-            next.judge2 = '';
+            judgeSlots.forEach((slot) => { next[slot.key] = ''; });
             next.score = '';
         }
     } else {
-        next.score = computedJudgeTotal(next.judge1, next.judge2, judgeCount);
-        if (next.score) {
-            next.value = '';
-        }
+        next.score = computedBifJudgeTotal(next, bif);
+        if (next.score) next.value = '';
     }
     outcomes[entryKey] = next;
     trial.scorebook = {
@@ -12638,19 +12687,12 @@ function updateBobRunoffOutcome(itemId, entryId, outcome) {
 }
 
 function normalizedBobOutcome(value) {
-    if (!value) {
-        return { value: '', forfeitOrder: '', judge1: '', judge2: '', score: '' };
-    }
+    const defaults = { value: '', forfeitOrder: '', judge1: '', judge2: '', judge3: '', judge4: '', judge5: '', judge6: '', score: '' };
+    if (!value) return defaults;
     if (typeof value === 'object') {
-        return {
-            value: value.value || '',
-            forfeitOrder: value.forfeitOrder || '',
-            judge1: value.judge1 || '',
-            judge2: value.judge2 || '',
-            score: value.score || '',
-        };
+        return Object.fromEntries(Object.entries({ ...defaults, ...value }).map(([key, item]) => [key, item == null ? '' : String(item)]));
     }
-    return { value, forfeitOrder: '', judge1: '', judge2: '', score: '' };
+    return { ...defaults, value: String(value) };
 }
 
 function resolveBobRunoffResults(runoff) {
@@ -24661,6 +24703,7 @@ document.getElementById('printRunoffDrawSheetButton').addEventListener('click', 
 document.getElementById('printAllRunoffJudgeSheetsButton').addEventListener('click', printAllRunoffJudgeSheets);
 document.getElementById('printBifDrawSheetButton')?.addEventListener('click', printBifDrawSheet);
 document.getElementById('printBifJudgeSheetsButton')?.addEventListener('click', printBifJudgeSheets);
+document.getElementById('printBieRunningSheetButton')?.addEventListener('click', printBieRunningIntentSheet);
 document.getElementById('printBieRecordSheetButton')?.addEventListener('click', printBieRecordSheets);
 document.getElementById('moveSelectedRunoffUpButton')?.addEventListener('click', () => moveSelectedRunoffItem(-1));
 document.getElementById('moveSelectedRunoffDownButton')?.addEventListener('click', () => moveSelectedRunoffItem(1));

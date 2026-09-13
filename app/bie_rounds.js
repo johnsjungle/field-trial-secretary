@@ -31,7 +31,7 @@ function finishManualBie() {
     if(trial.archivedAt || !bif.draw?.manualDraft) return;
     const assigned=bif.draw.courses.flatMap(c=>c.hounds.map(h=>String(h.entryId)));
     if([...selectedBifEntryIds(bif)].some(id=>!assigned.includes(id)) || !assigned.length) { showMessage(bifMessage,'Assign every running hound to a course before finishing.', 'warning'); return; }
-    if(!bif.judge1 && !bif.judge2) { showMessage(bifMessage,'Assign at least one judge before finishing.', 'warning'); return; }
+    if(!bifJudgeSlots(bif).length) { showMessage(bifMessage,'Assign at least one judge before finishing.', 'warning'); return; }
     bieRoundCommit(trial,{...bif,draw:{...bif.draw,manualDraft:false,courses:bif.draw.courses.filter(c=>c.hounds.length)}});
 }
 
@@ -79,7 +79,7 @@ function bieCandidateHoundMap(trial) {
 function advanceBiePreQualifier(trial,bif) {
     const ids=bieWinningIds(bif);
     if(!ids.length || ids.some(id=>!id)) { showMessage(bifMessage,'Choose a winner for each pre-qualifier course before advancing.', 'warning'); return; }
-    const saved=structuredClone({phase:'prequalifier',number:(bif.preQualifierHistory || []).length+1,draw:bif.draw,outcomes:bif.outcomes || {},courseWinners:bif.courseWinners || {},judge1:bif.judge1,judge2:bif.judge2,advancedEntryIds:ids,completedAt:new Date().toISOString()});
+    const saved=structuredClone({phase:'prequalifier',number:(bif.preQualifierHistory || []).length+1,draw:bif.draw,outcomes:bif.outcomes || {},courseWinners:bif.courseWinners || {},judges:bifJudgeSlots(bif).map(slot=>({key:slot.key,name:slot.name})),judge1:bif.judge1,judge2:bif.judge2,advancedEntryIds:ids,completedAt:new Date().toISOString()});
     const houndsById=bieCandidateHoundMap(trial), winnersByBreed=new Map();
     ids.forEach(id=>{const hound=houndsById.get(String(id));if(!hound)return;const breed=normalizeBreedCode(hound.breed);if(!winnersByBreed.has(breed))winnersByBreed.set(breed,[]);winnersByBreed.get(breed).push(hound);});
     const carry=[...(bif.preQualifierCarryEntryIds || []).map(String)], pending=[];
@@ -117,7 +117,7 @@ function advanceBieRound(manual=false) {
     if(ids.length===1) {
         bieRoundCommit(trial,{...bif,finalWinner:ids[0]}); return;
     }
-    const previous=structuredClone({number:(bif.roundHistory || []).length+1,draw:bif.draw,outcomes:bif.outcomes || {},courseWinners:bif.courseWinners || {},judge1:bif.judge1,judge2:bif.judge2,advancedEntryIds:ids,completedAt:new Date().toISOString()});
+    const previous=structuredClone({number:(bif.roundHistory || []).length+1,draw:bif.draw,outcomes:bif.outcomes || {},courseWinners:bif.courseWinners || {},judges:bifJudgeSlots(bif).map(slot=>({key:slot.key,name:slot.name})),judge1:bif.judge1,judge2:bif.judge2,advancedEntryIds:ids,completedAt:new Date().toISOString()});
     const byId=new Map(bif.draw.courses.flatMap(c=>c.hounds).map(h=>[String(h.entryId),h]));
     // Three remaining winners can run the final together, matching 12 -> 6 -> 3.
     const limit=ids.length===3 ? 3 : bieCourseLimit(bif);
@@ -168,12 +168,14 @@ function renderBieRoundControls(trial, placement = "setup") {
     }
     for(const round of bif.preQualifierHistory || []) {
         const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`Pre-qualifier round ${round.number} — ${round.draw.courses.filter(c=>c.hounds.length).length} courses (saved)`;details.appendChild(summary);
-        round.draw.courses.forEach(c=>c.hounds.forEach(h=>{const p=document.createElement('p'),o=(round.outcomes || {})[String(h.entryId)] || {};p.textContent=`Course ${c.number} · ${h.bifBlanketColor || h.blanketColor || ''} · ${h.callName || h.registeredName} · Total ${o.score ?? ''} ${o.value || ''}${round.advancedEntryIds.includes(String(h.entryId))?' — Advanced':''}`;details.appendChild(p);}));box.appendChild(details);
+        const roundJudges=(round.judges || [round.judge1,round.judge2].filter(Boolean).map((name,index)=>({key:`judge${index+1}`,name})));
+        round.draw.courses.forEach(c=>c.hounds.forEach(h=>{const p=document.createElement('p'),o=(round.outcomes || {})[String(h.entryId)] || {};const scores=roundJudges.map((item,index)=>`J${index+1} ${o[item.key] ?? ''}`).join(' / ');p.textContent=`Course ${c.number} · ${h.bifBlanketColor || h.blanketColor || ''} · ${h.callName || h.registeredName} · ${scores} · Total ${o.score ?? ''} ${o.value || ''}${round.advancedEntryIds.includes(String(h.entryId))?' — Advanced':''}`;details.appendChild(p);}));box.appendChild(details);
     }
     for(const round of bif.roundHistory || []) {
         const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`Previous round ${round.number} — ${round.draw.courses.filter(c=>c.hounds.length).length} courses (saved)`;details.appendChild(summary);
-        const judges=document.createElement('p');judges.textContent=`Judges: ${[round.judge1,round.judge2].filter(Boolean).join(', ')}`;details.appendChild(judges);
-        round.draw.courses.forEach(c=>c.hounds.forEach(h=>{const p=document.createElement('p'),o=(round.outcomes || {})[String(h.entryId)] || {};p.textContent=`Course ${c.number} · ${h.bifBlanketColor || h.blanketColor || ''} · ${h.callName || h.registeredName} · J1 ${o.judge1 ?? ''} / J2 ${o.judge2 ?? ''} · Total ${o.score ?? ''} ${o.value || ''}${round.advancedEntryIds.includes(String(h.entryId))?' — Advanced':''}`;details.appendChild(p);}));box.appendChild(details);
+        const roundJudges=(round.judges || [round.judge1,round.judge2].filter(Boolean).map((name,index)=>({key:`judge${index+1}`,name})));
+        const judges=document.createElement('p');judges.textContent=`Judges: ${roundJudges.map(item=>item.name).filter(Boolean).join(', ')}`;details.appendChild(judges);
+        round.draw.courses.forEach(c=>c.hounds.forEach(h=>{const p=document.createElement('p'),o=(round.outcomes || {})[String(h.entryId)] || {};const scores=roundJudges.map((item,index)=>`J${index+1} ${o[item.key] ?? ''}`).join(' / ');p.textContent=`Course ${c.number} · ${h.bifBlanketColor || h.blanketColor || ''} · ${h.callName || h.registeredName} · ${scores} · Total ${o.score ?? ''} ${o.value || ''}${round.advancedEntryIds.includes(String(h.entryId))?' — Advanced':''}`;details.appendChild(p);}));box.appendChild(details);
     }
     return box;
 }

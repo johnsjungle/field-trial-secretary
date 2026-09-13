@@ -2295,6 +2295,10 @@ def generate_asfa_record_sheet_pdf(
             overlay = PdfReader(io.BytesIO(overlay_bytes)).pages[0]
             page.merge_page(overlay)
             writer.add_page(page)
+        if clean_text(group.get("breed")) == "BIE" and len(bie_judges_for_group(trial, group)) > 2:
+            detail_reader = PdfReader(io.BytesIO(build_bie_score_detail_pdf(trial, group, rows)))
+            for detail_page in detail_reader.pages:
+                writer.add_page(detail_page)
         if include_signed_judge_sheets:
             append_signed_judge_sheets_for_group(writer, group)
         if include_first_time_documents and clean_text(group.get("breed")) not in {"BIF", "BIE"}:
@@ -3382,7 +3386,12 @@ def bif_record_groups(trial: dict) -> list[dict]:
             "recordStake": f"BIE Round {round_data.get('number') or index}",
         } for index, round_data in enumerate(bif.get("roundHistory") or [], start=1))
     current_stake = "BIE Pre-Qualifier" if bif.get("biePhase") == "prequalifier" else (f"BIE Round {len(bif.get('roundHistory') or []) + 1}" if event_label == "BIE" and ((bif.get("roundHistory") or []) or (bif.get("preQualifierHistory") or [])) else event_label)
-    rounds.append({"draw": bif.get("draw") or {}, "outcomes": bif.get("outcomes") or {}, "recordStake": current_stake})
+    rounds.append({
+        "draw": bif.get("draw") or {},
+        "outcomes": bif.get("outcomes") or {},
+        "recordStake": current_stake,
+        "judges": [{"key": f"judge{index}", "name": bif.get(f"judge{index}") or ""} for index in range(1, 7) if bif.get(f"judge{index}")],
+    })
     groups = []
     for index, round_data in enumerate(rounds, start=1):
         courses = (round_data.get("draw") or {}).get("courses") or []
@@ -3396,6 +3405,7 @@ def bif_record_groups(trial: dict) -> list[dict]:
             "phase": event_label.lower(),
             "courses": courses,
             "recordOutcomes": round_data.get("outcomes") or {},
+            "recordJudges": round_data.get("judges") or [{"key": f"judge{judge_index}", "name": bif.get(f"judge{judge_index}") or ""} for judge_index in range(1, 7) if bif.get(f"judge{judge_index}")],
         }
         if event_label == "BIE" and bif.get("elimination"):
             group["recordFinalWinner"] = str(bif.get("finalWinner") or "") if index == len(rounds) else ""
@@ -3610,6 +3620,8 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
                 "finalJudge2": "",
                 "finalScore": "",
                 "combinedScore": outcome.get("score") or "",
+                "judgeScores": [outcome.get(f"judge{index}") or "" for index in range(1, 7)],
+                "judgeScoresByKey": {f"judge{index}": outcome.get(f"judge{index}") or "" for index in range(1, 7)},
                 "stakesRunoffLabel": bif_tie_boxes.get(entry_id, {}).get("label", ""),
                 "stakesRunoffCode": bif_tie_boxes.get(entry_id, {}).get("code", ""),
                 "secondRunoffLabel": bif_tie_boxes.get(entry_id, {}).get("secondLabel", ""),
@@ -3619,6 +3631,72 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
                 "placement": placement,
             })
     return rows
+
+
+def bie_judges_for_group(trial: dict, group: dict) -> list[dict]:
+    saved = [
+        {"key": str(item.get("key") or f"judge{index}"), "name": str(item.get("name") or "")}
+        for index, item in enumerate(group.get("recordJudges") or [], start=1)
+        if isinstance(item, dict) and item.get("name")
+    ]
+    if saved:
+        return saved
+    bif = (trial.get("scorebook") or {}).get("bif") or {}
+    return [
+        {"key": f"judge{index}", "name": str(bif.get(f"judge{index}") or "")}
+        for index in range(1, 7)
+        if bif.get(f"judge{index}")
+    ]
+
+
+def build_bie_score_detail_pdf(trial: dict, group: dict, rows: list[dict]) -> bytes:
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
+    width, height = landscape(letter)
+    judges = bie_judges_for_group(trial, group)
+    rows_per_page = 18
+    pages = [rows[index:index + rows_per_page] for index in range(0, len(rows), rows_per_page)] or [[]]
+    for page_index, page_rows in enumerate(pages):
+        pdf.setFont("Helvetica-Bold", 15)
+        pdf.drawCentredString(width / 2, height - 30, f"BIE Judge Score Detail — {group.get('stake') or 'BIE'}")
+        pdf.setFont("Helvetica", 9)
+        event = " | ".join(filter(None, [str(trial.get("trialName") or ""), str(trial.get("startsOn") or ""), str(trial.get("clubName") or "")]))
+        pdf.drawCentredString(width / 2, height - 45, safe_text(event, 120))
+        pdf.setFont("Helvetica", 8)
+        legend = "   ".join(f"J{index}: {item['name']}" for index, item in enumerate(judges, start=1))
+        pdf.drawString(28, height - 61, safe_text(legend, 150))
+        columns = [("#", 24), ("Course", 42), ("Hound", 150), ("Reg #", 88)] + [(f"J{index}", 42) for index in range(1, len(judges) + 1)] + [("Total", 48), ("Result", 58)]
+        x = 24
+        top = height - 78
+        pdf.setFillColorRGB(.9, .93, .96)
+        pdf.rect(x, top - 18, sum(size for _, size in columns), 18, fill=1, stroke=1)
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.setFont("Helvetica-Bold", 7)
+        for label, size in columns:
+            pdf.drawCentredString(x + size / 2, top - 12, label)
+            x += size
+        for row_index, row in enumerate(page_rows):
+            y = top - 18 - ((row_index + 1) * 24)
+            x = 24
+            values = [
+                str(page_index * rows_per_page + row_index + 1),
+                str(row.get("prelimCode") or ""),
+                safe_text(row.get("callName"), 31),
+                safe_text(row.get("registrationNumber"), 18),
+                *[(row.get("judgeScoresByKey") or {}).get(item["key"], "") for item in judges],
+                str(row.get("combinedScore") or ""),
+                str(row.get("placement") or row.get("prelimOutcome") or ""),
+            ]
+            pdf.setFont("Helvetica", 7)
+            for value, (_, size) in zip(values, columns):
+                pdf.rect(x, y, size, 24, fill=0, stroke=1)
+                pdf.drawCentredString(x + size / 2, y + 9, safe_text(value, max(4, int(size / 4.2))))
+                x += size
+        pdf.setFont("Helvetica-Oblique", 7)
+        pdf.drawRightString(width - 24, 16, f"BIE score detail {page_index + 1} of {len(pages)}")
+        pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
 
 
 def bif_tie_runoff_boxes_by_entry(bif: dict) -> dict[str, dict[str, str]]:
@@ -3982,13 +4060,13 @@ def normalized_record_outcome(value: object) -> dict[str, str]:
         return {
             "value": str(value.get("value") or ""),
             "forfeitOrder": str(value.get("forfeitOrder") or ""),
-            "judge1": str(value.get("judge1") or ""),
-            "judge2": str(value.get("judge2") or ""),
+            **{f"judge{index}": str(value.get(f"judge{index}") or "") for index in range(1, 7)},
             "score": str(value.get("score") or ""),
         }
+    defaults = {"forfeitOrder": "", **{f"judge{index}": "" for index in range(1, 7)}, "score": ""}
     if value:
-        return {"value": str(value), "forfeitOrder": "", "judge1": "", "judge2": "", "score": ""}
-    return {"value": "", "forfeitOrder": "", "judge1": "", "judge2": "", "score": ""}
+        return {"value": str(value), **defaults}
+    return {"value": "", **defaults}
 
 
 def record_score_outcome_label(value: object) -> str:
@@ -4404,9 +4482,12 @@ def asfa_record_stake_label(group: dict) -> str:
 
 
 def judges_for_group(trial: dict, group: dict) -> tuple[str, str]:
-    if clean_text(group.get("breed")) == "BIF" or clean_text(group.get("phase")) == "BIF":
-        bif = (trial.get("scorebook") or {}).get("bif") or {}
-        return str(bif.get("judge1") or ""), str(bif.get("judge2") or "")
+    if clean_text(group.get("breed")) in {"BIF", "BIE"} or clean_text(group.get("phase")) in {"BIF", "BIE"}:
+        names = [str(item.get("name") or "") for item in group.get("recordJudges") or [] if isinstance(item, dict) and item.get("name")]
+        if not names:
+            bif = (trial.get("scorebook") or {}).get("bif") or {}
+            names = [str(bif.get(f"judge{index}") or "") for index in range(1, 7) if bif.get(f"judge{index}")]
+        return (names + ["", ""])[:2]
     target = clean_text(group.get("breed"))
     for row in trial.get("runPlan") or []:
         if clean_text(row.get("breed")) == target:
@@ -4968,7 +5049,8 @@ def infer_lci_type_from_group_and_hounds(group: dict, hounds: list[dict]) -> str
 def flatten_bif_judge_courses(trial: dict) -> list[dict]:
     bif = (trial.get("scorebook") or {}).get("bif") or {}
     draw = bif.get("draw") or {}
-    judges = [value for value in [bif.get("judge1"), bif.get("judge2")] if value]
+    maximum_judges = 6 if clean_text(bif.get("eventType")) == "BIE" else 2
+    judges = [bif.get(f"judge{index}") for index in range(1, maximum_judges + 1) if bif.get(f"judge{index}")]
     courses = []
     for course in draw.get("courses") or []:
         hounds = sorted(course.get("hounds") or [], key=lambda hound: int(hound.get("drawPosition") or 0))

@@ -6,7 +6,7 @@
     <title>Field Trial Secretary</title>
     <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260913-bie-score-comparison">
+    <link rel="stylesheet" href="styles.css?v=20260913-bie-six-judges">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -892,11 +892,13 @@
                             <button type="button" class="secondary small draw-needed-button" id="buildBifDrawButton">Draw BIF Draw</button>
                             <button type="button" class="secondary small report-button" id="printBifDrawSheetButton">Print BIF Draw Sheet</button>
                             <button type="button" class="secondary small report-button" id="printBifJudgeSheetsButton">Print BIF Judge Sheets</button>
+                            <button type="button" class="secondary small report-button" id="printBieRunningSheetButton" hidden>Print BIE Running Confirmation</button>
                             <button type="button" class="secondary small report-button" id="printBieRecordSheetButton" hidden>Print BIE Record Sheets</button>
                         </div>
                     </div>
                     <div class="form-message compact" id="bifMessage"></div>
                     <div id="bifBiePanel" class="scorebook"></div>
+                    <div class="print-area sheet-preview" id="bieRunningIntentPrint"></div>
                 </section>
 
                 <section class="form-section" data-tab="scoring">
@@ -1922,12 +1924,12 @@
     <script src="default_form_alignment.js?v=20260802"></script>
     <script src="association_rules.js?v=20260808-akc-foundation"></script>
     <script src="specialty_stakes.js"></script>
-    <script src="bie.js?v=20260913-bie-prequalifier"></script>
-    <script src="bie_rounds.js?v=20260913-bie-prequalifier"></script>
+    <script src="bie.js?v=20260913-bie-six-judges"></script>
+    <script src="bie_rounds.js?v=20260913-bie-six-judges"></script>
     <script src="test_trial_tools.js"></script>
     <script src="updates.js"></script>
-    <script src="script.js?v=20260913-bie-prequalifier"></script>
+    <script src="script.js?v=20260913-bie-six-judges"></script>
     <script src="hound_database_import.js?v=20260810-mac-file-picker"></script>
-    <script src="help.js?v=20260913-bie-prequalifier"></script>
+    <script src="help.js?v=20260913-bie-six-judges"></script>
 </body>
 </html>

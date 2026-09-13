@@ -28,7 +28,8 @@ function populateAdminBifScores() {
     if(!trial?.testTrial || trial.archivedAt) {showMessage(adminTestMessage,'Score population requires an editable Test Trial.', 'warning');return;}
     const bif=bifState(trial);
     if(!bif.draw || bif.draw.manualDraft) {showMessage(adminTestMessage,'Draw BIF/BIE or finish manual setup before populating scores.', 'warning');return;}
-    if(!bif.judge1 && !bif.judge2) {showMessage(adminTestMessage,'Assign a BIF/BIE judge first.', 'warning');return;}
+    const judgeSlots=Array.from({length:bif.eventType==='BIE'?6:2},(_,index)=>({key:'judge'+(index+1),name:bif['judge'+(index+1)]})).filter(slot=>slot.name);
+    if(!judgeSlots.length) {showMessage(adminTestMessage,'Assign a BIF/BIE judge first.', 'warning');return;}
     const tie=currentBifTieRunoff(bif);
     const isTie=!bif.elimination && Boolean(tie.draw);
     const draw=isTie ? tie.draw : bif.draw;
@@ -36,7 +37,7 @@ function populateAdminBifScores() {
     for(const course of draw.courses || []) {
         (course.hounds || []).forEach((hound,index)=>{
             const score=Math.max(1,Math.min(95,Number(rulesForTrial(trial).judgeScoreMaximum || 100)-5)-(bif.elimination ? index : count));
-            const changes={judge1:String(score),judge2:bif.judge2?String(score-1):''};
+            const changes=Object.fromEntries(judgeSlots.map((slot,judgeIndex)=>[slot.key,String(Math.max(1,score-judgeIndex))]));
             if(isTie) updateBifTieScore(String(hound.entryId),changes);
             else updateBifScore(String(hound.entryId),changes);
             count++;

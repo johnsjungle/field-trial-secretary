@@ -1,3 +1,12 @@
+function bifJudgeSlots(bif, includeEmpty = false) {
+    const maximum = bif?.eventType === 'BIE' ? 6 : 2;
+    const slots = Array.from({ length: maximum }, (_, index) => {
+        const number = index + 1, key = `judge${number}`;
+        return { number, key, name: String(bif?.[key] || '').trim() };
+    });
+    return includeEmpty ? slots : slots.filter(slot => slot.name);
+}
+
 function bieIdentity(candidate) {
     const h = candidate.hound || {};
     const reg = clean(candidate.registrationNumber || h.registrationNumber).replace(/[^A-Z0-9]/g, '');

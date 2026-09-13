@@ -2785,6 +2785,7 @@ tbody tr.row-flash td {
     body[data-print-section="workerSheetPrint"] .form-section:has(#workerSheetPrint),
     body[data-print-section="judgesMapPrint"] .form-section:has(#judgesMapPrint),
     body[data-print-section="rollCallPrint"] .form-section:has(#rollCallPrint),
+    body[data-print-section="bieRunningIntentPrint"] .form-section:has(#bieRunningIntentPrint),
     body[data-print-section="drawSheetPrint"] .form-section:has(#drawSheetPrint),
     body[data-print-section="scoreReportPrint"] .form-section:has(#scoreReportPrint) {
         display: block !important;
@@ -2808,6 +2809,7 @@ tbody tr.row-flash td {
     body[data-print-section="workerSheetPrint"] #workerSheetPrint,
     body[data-print-section="judgesMapPrint"] #judgesMapPrint,
     body[data-print-section="rollCallPrint"] #rollCallPrint,
+    body[data-print-section="bieRunningIntentPrint"] #bieRunningIntentPrint,
     body[data-print-section="drawSheetPrint"] #drawSheetPrint,
     body[data-print-section="scoreReportPrint"] #scoreReportPrint {
         display: block !important;
@@ -2821,7 +2823,8 @@ tbody tr.row-flash td {
 
     body[data-print-section="workerSheetPrint"] .form-section:has(#workerSheetPrint) > :not(#workerSheetPrint),
     body[data-print-section="judgesMapPrint"] .form-section:has(#judgesMapPrint) > :not(#judgesMapPrint),
-    body[data-print-section="rollCallPrint"] .form-section:has(#rollCallPrint) > :not(#rollCallPrint) {
+    body[data-print-section="rollCallPrint"] .form-section:has(#rollCallPrint) > :not(#rollCallPrint),
+    body[data-print-section="bieRunningIntentPrint"] .form-section:has(#bieRunningIntentPrint) > :not(#bieRunningIntentPrint) {
         display: none !important;
     }
 
@@ -3778,6 +3781,19 @@ button.danger-button {
 .bie-comparison-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .bie-comparison-table th, .bie-comparison-table td { padding: 7px; border: 1px solid var(--border, #ccc); text-align: left; }
 .bie-comparison-table .bie-third-highest { background: #fff3bf; font-weight: 700; }
+.bie-bulk-controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.bie-running-sheet-table .response-column { width: 86px; text-align: center; }
+@page bie-running-confirmation {
+    size: letter landscape;
+    margin: 0.35in;
+}
+@media print {
+    #bieRunningIntentPrint { font-size: 9px; page: bie-running-confirmation; }
+    #bieRunningIntentPrint table { width: 100%; }
+    #bieRunningIntentPrint thead { display: table-header-group; }
+    #bieRunningIntentPrint tr { break-inside: avoid; page-break-inside: avoid; }
+    #bieRunningIntentPrint th, #bieRunningIntentPrint td { padding: 4px; }
+}
 
 .bie-round-controls { margin-block: 12px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; }
 .bie-round-controls > label { display: block; margin: 8px 0; }
