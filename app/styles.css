@@ -3772,6 +3772,12 @@ button.danger-button {
 .bie-configuration { padding: 12px; border: 1px solid var(--border, #ccc); border-radius: 8px; margin-bottom: 12px; }
 .bie-configuration select { max-width: 100%; margin: 6px; }
 .bie-configuration button { margin: 4px; }
+.bie-trial-comparison { margin-block: 14px; padding: 10px; }
+.bie-trial-choices { display: grid; gap: 6px; margin-block: 8px; }
+.bie-comparison-results { overflow-x: auto; }
+.bie-comparison-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.bie-comparison-table th, .bie-comparison-table td { padding: 7px; border: 1px solid var(--border, #ccc); text-align: left; }
+.bie-comparison-table .bie-third-highest { background: #fff3bf; font-weight: 700; }
 
 .bie-round-controls { margin-block: 12px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; }
 .bie-round-controls > label { display: block; margin: 8px 0; }

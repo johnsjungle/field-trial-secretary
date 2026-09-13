@@ -3717,6 +3717,14 @@ function bifScoringComplete(trial) {
     });
 }
 
+function bieRecordSheetsReady(trial) {
+    const bif = bifState(trial || {});
+    if (bif.eventType !== 'BIE' || !bifScoringComplete(trial)) return false;
+    if (bif.elimination) return Boolean(bif.finalWinner);
+    return ((bif.draw || {}).courses || []).flatMap(course => course.hounds || [])
+        .some(hound => bifResultForEntry(bif, hound.entryId) === 'BIF');
+}
+
 function ownerSeparationStatus(trial) {
     const entries = ((trial || {}).entries || []).filter((entry) => entry.rollCallStatus === 'present' || !entry.rollCallStatus || entry.rollCallStatus === 'not_checked');
     if (entries.length === 0) {
@@ -10275,6 +10283,12 @@ function updateBifDrawButton(bif, winners) {
     button.className = `secondary small ${hasCurrentBifDraw ? 'draw-complete-button' : 'draw-needed-button'}`;
     button.textContent = `${hasCurrentBifDraw ? 'Redraw' : 'Draw'} ${bif.eventType === 'BIE' ? 'BIE' : 'BIF'}`;
     ['printBifDrawSheetButton', 'printBifJudgeSheetsButton'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = `Print ${bif.eventType === 'BIE' ? 'BIE' : 'BIF'} ${id.includes('Judge') ? 'Judge Sheets' : 'Draw Sheet'}`; });
+    const recordButton = document.getElementById('printBieRecordSheetButton');
+    if (recordButton) {
+        recordButton.hidden = bif.eventType !== 'BIE';
+        recordButton.disabled = !bieRecordSheetsReady(readForm());
+        recordButton.dataset.help = recordButton.disabled ? 'Complete BIE scoring and confirm the final winner before printing the record sheets.' : 'Prints a scored record sheet for every completed BIE round.';
+    }
     button.disabled = winners.length === 0 || runningCount === 0 || !hasJudge;
     button.dataset.help = !hasJudge
         ? 'Assign at least one BIF judge before building the BIF draw.'
@@ -13382,6 +13396,42 @@ async function printAsfaRecordSheet({ groupId = '', breed = '', combineMixedPost
             pdfWindow.close();
         }
         showMessage(message, error.message || 'ASFA record sheet could not be created.', 'warning');
+    }
+}
+
+async function printBieRecordSheets() {
+    const trial = readForm();
+    if (!bieRecordSheetsReady(trial)) {
+        showMessage(bifMessage, 'Complete BIE scoring and confirm the final winner before printing record sheets.', 'warning');
+        return;
+    }
+    if (!isLocalServerMode()) {
+        showMessage(bifMessage, 'Official BIE record sheets require SQLite/server mode.', 'warning');
+        return;
+    }
+    const pdfWindow = window.open('', '_blank');
+    try {
+        await saveToSQLite();
+        const response = await fetch('/api/asfa-record-sheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial, breed: 'BIE', layout: getAsfaRecordLayout(), entryLayout: getAsfaEntryLayout(), lciEntryLayout: getAsfaLciEntryLayout() }),
+        });
+        if (!response.ok) {
+            let message = 'BIE record sheets could not be created.';
+            try { message = (await response.json()).error || message; } catch { /* Keep generic message. */ }
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        if (pdfWindow) pdfWindow.location = url;
+        else {
+            const link = document.createElement('a'); link.href = url; link.target = '_blank'; link.rel = 'noopener'; link.click();
+        }
+        showMessage(bifMessage, 'BIE record sheets created for all completed rounds.', 'success');
+    } catch (error) {
+        if (pdfWindow) pdfWindow.close();
+        showMessage(bifMessage, error.message || 'BIE record sheets could not be created.', 'warning');
     }
 }
 
@@ -24598,6 +24648,7 @@ document.getElementById('printRunoffDrawSheetButton').addEventListener('click', 
 document.getElementById('printAllRunoffJudgeSheetsButton').addEventListener('click', printAllRunoffJudgeSheets);
 document.getElementById('printBifDrawSheetButton')?.addEventListener('click', printBifDrawSheet);
 document.getElementById('printBifJudgeSheetsButton')?.addEventListener('click', printBifJudgeSheets);
+document.getElementById('printBieRecordSheetButton')?.addEventListener('click', printBieRecordSheets);
 document.getElementById('moveSelectedRunoffUpButton')?.addEventListener('click', () => moveSelectedRunoffItem(-1));
 document.getElementById('moveSelectedRunoffDownButton')?.addEventListener('click', () => moveSelectedRunoffItem(1));
 document.getElementById('adminPlanBreed')?.addEventListener('change', populateAdminPlanClassSelect);

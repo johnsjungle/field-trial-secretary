@@ -2297,7 +2297,7 @@ def generate_asfa_record_sheet_pdf(
             writer.add_page(page)
         if include_signed_judge_sheets:
             append_signed_judge_sheets_for_group(writer, group)
-        if include_first_time_documents and clean_text(group.get("breed")) != "BIF":
+        if include_first_time_documents and clean_text(group.get("breed")) not in {"BIF", "BIE"}:
             append_first_time_documents_for_group(writer, trial, group, entry_layout, lci_entry_layout)
 
     if not writer.pages:
@@ -3362,29 +3362,42 @@ def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", so
         groups = sorted(groups, key=record_packet_sort_key)
     if not combine_mixed_posting:
         groups = split_mixed_record_groups(groups)
-    if not group_id and (not breed or clean_text(breed) == "BIF"):
-        bif_group = bif_record_group(trial)
-        if bif_group:
-            groups.append(bif_group)
+    event_label = clean_text(((trial.get("scorebook") or {}).get("bif") or {}).get("eventType") or "BIF")
+    if not group_id and (not breed or clean_text(breed) == event_label):
+        groups.extend(bif_record_groups(trial))
+    return groups
+
+
+def bif_record_groups(trial: dict) -> list[dict]:
+    bif = (trial.get("scorebook") or {}).get("bif") or {}
+    event_label = "BIE" if clean_text(bif.get("eventType")) == "BIE" else "BIF"
+    rounds = []
+    if event_label == "BIE" and bif.get("elimination"):
+        rounds.extend(bif.get("roundHistory") or [])
+    rounds.append({"draw": bif.get("draw") or {}, "outcomes": bif.get("outcomes") or {}})
+    groups = []
+    for index, round_data in enumerate(rounds, start=1):
+        courses = (round_data.get("draw") or {}).get("courses") or []
+        if not any((course.get("hounds") or []) for course in courses):
+            continue
+        stake = event_label if len(rounds) == 1 else f"{event_label} Round {round_data.get('number') or index}"
+        group = {
+            "id": f"asfa-record-{event_label.lower()}-{index}",
+            "breed": event_label,
+            "stake": stake,
+            "phase": event_label.lower(),
+            "courses": courses,
+            "recordOutcomes": round_data.get("outcomes") or {},
+        }
+        if event_label == "BIE" and bif.get("elimination"):
+            group["recordFinalWinner"] = str(bif.get("finalWinner") or "") if index == len(rounds) else ""
+        groups.append(group)
     return groups
 
 
 def bif_record_group(trial: dict) -> dict | None:
-    bif = (trial.get("scorebook") or {}).get("bif") or {}
-    draw = bif.get("draw") or {}
-    courses = draw.get("courses") or []
-    if not courses:
-        return None
-    has_rows = any((course.get("hounds") or []) for course in courses)
-    if not has_rows:
-        return None
-    return {
-        "id": "asfa-record-bif",
-        "breed": "BIF",
-        "stake": "BIF",
-        "phase": "bif",
-        "courses": courses,
-    }
+    groups = bif_record_groups(trial)
+    return groups[-1] if groups else None
 
 
 def split_mixed_record_groups(groups: list[dict]) -> list[dict]:
@@ -3455,7 +3468,7 @@ def record_packet_sort_key(group: dict) -> tuple:
 
 
 def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
-    if clean_text(group.get("phase")) == "BIF" or clean_text(group.get("breed")) == "BIF":
+    if clean_text(group.get("phase")) in {"BIF", "BIE"} or clean_text(group.get("breed")) in {"BIF", "BIE"}:
         return asfa_bif_record_rows(trial, group)
     entries_by_id = {
         str(entry.get("id") or ""): entry
@@ -3547,7 +3560,7 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
         for entry in trial.get("entries") or []
     }
     bif = (trial.get("scorebook") or {}).get("bif") or {}
-    outcomes = bif.get("outcomes") or {}
+    outcomes = group.get("recordOutcomes") if "recordOutcomes" in group else (bif.get("outcomes") or {})
     bif_results = bif_results_by_entry(trial)
     bif_tie_boxes = bif_tie_runoff_boxes_by_entry(bif)
     rows = []
@@ -3563,7 +3576,10 @@ def asfa_bif_record_rows(trial: dict, group: dict) -> list[dict]:
             entry = entries_by_id.get(entry_id) or {}
             outcome = normalized_record_outcome(outcomes.get(entry_id))
             placement = bif_results.get(entry_id) or ""
-            if clean_text(placement) != "BIF":
+            event_label = "BIE" if clean_text(group.get("breed")) == "BIE" else "BIF"
+            if "recordFinalWinner" in group:
+                placement = event_label if group.get("recordFinalWinner") and entry_id == str(group.get("recordFinalWinner")) else ""
+            if clean_text(placement) != event_label:
                 placement = ""
             call_name = hound.get("callName") or hound.get("registeredName") or entry.get("callName") or entry.get("registeredName") or "Unnamed hound"
             breed_display = breed_display_for_record(entry.get("breed") or hound.get("breed") or hound.get("entryBreed") or "")
@@ -3993,6 +4009,8 @@ def bif_results_by_entry(trial: dict) -> dict[str, str]:
     results = bif_main_results_by_entry(bif)
     tie_results = bif_tie_results_by_entry(bif)
     results.update({entry_id: result for entry_id, result in tie_results.items() if result})
+    if clean_text(bif.get("eventType")) == "BIE":
+        results = {entry_id: result.replace("BIF", "BIE") for entry_id, result in results.items()}
     return results
 
 
@@ -5790,10 +5808,11 @@ def catalog_final_records(trials: list[dict]) -> tuple[dict[tuple[str, str], lis
         seen_entries: set[str] = set()
         for group in record_groups_for_print(trial, sort_mode="alpha"):
             rows = asfa_record_rows(trial, group)
-            if clean_text(group.get("breed")) == "BIF":
+            if clean_text(group.get("breed")) in {"BIF", "BIE"}:
+                award = clean_text(group.get("breed"))
                 for row in rows:
-                    if clean_text(row.get("placement")) == "BIF":
-                        event_awards.append({"trial": trial_label, "award": "BIF", "hound": catalog_clean_text(row.get("callName"))})
+                    if clean_text(row.get("placement")) == award:
+                        event_awards.append({"trial": trial_label, "award": award, "hound": catalog_clean_text(row.get("callName"))})
                 continue
             group_key = catalog_breed_label(group.get("breed")), catalog_stake_label(group.get("stake"))
             for row in rows:

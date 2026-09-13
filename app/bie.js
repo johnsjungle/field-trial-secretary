@@ -51,7 +51,7 @@ async function saveBieConfiguration(change) {
 }
 
 function bieTrialLabel(trial) {
-    return [trial.name || trial.clubName || trial.club || 'Trial', trial.startsOn || trial.startDate || trial.date || trial.trialDate || '', trial.id === readForm().id ? '(active)' : ''].filter(Boolean).join(' — ');
+    return [trial.trialName || trial.name || trial.clubName || trial.club || 'Trial', trial.startsOn || trial.startDate || trial.date || trial.trialDate || '', trial.id === readForm().id ? '(active)' : ''].filter(Boolean).join(' — ');
 }
 
 function bieSourceCandidates(source, bobOnly) {
@@ -68,6 +68,98 @@ function bieSourceCandidates(source, bobOnly) {
             hound: { ...entry, entryId, sourceTrialId: source.id, sourceEntryId: entry.id, breed: normalizeBreedCode(entry.breed), stake: entry.className || '' },
         };
     });
+}
+
+function bieAggregateTrialScores(selectedTrials) {
+    const byHound = new Map();
+    selectedTrials.forEach((source) => {
+        const bestForTrial = new Map();
+        bieSourceCandidates(source, false).forEach((candidate) => {
+            const score = Number(candidate.combinedScore);
+            if (candidate.combinedScore === '' || !Number.isFinite(score)) return;
+            const identity = bieIdentity(candidate);
+            const existing = bestForTrial.get(identity);
+            if (!existing || score > existing.score) bestForTrial.set(identity, { candidate, score });
+        });
+        bestForTrial.forEach(({ candidate, score }, identity) => {
+            const row = byHound.get(identity) || { identity, candidate, totalScore: 0, eventScores: [] };
+            row.totalScore += score;
+            row.eventScores.push({ trialId: source.id, trialLabel: bieTrialLabel(source), score });
+            byHound.set(identity, row);
+        });
+    });
+    return [...byHound.values()]
+        .sort((a, b) => b.totalScore - a.totalScore || b.eventScores.length - a.eventScores.length || a.candidate.name.localeCompare(b.candidate.name))
+        .map((row, index) => ({ ...row, position: index + 1 }));
+}
+
+function bieAggregateCandidate(row) {
+    return {
+        ...row.candidate,
+        aggregateTotalScore: row.totalScore,
+        aggregateTrialCount: row.eventScores.length,
+        aggregateScores: row.eventScores,
+        selectionReason: row.position === 3 ? 'third-highest multi-trial total' : 'multi-trial score comparison',
+    };
+}
+
+function renderBieTrialComparison(trial, sources, addCandidates) {
+    const fieldset = document.createElement('fieldset');
+    fieldset.className = 'bie-trial-comparison';
+    const legend = document.createElement('legend'); legend.textContent = 'Compare scores from 2 or 3 trials'; fieldset.appendChild(legend);
+    const guidance = document.createElement('p');
+    guidance.className = 'field-note';
+    guidance.textContent = 'Select two or three trials. Each hound’s combined final score is totaled across the selected events. A dash means that hound has no completed combined score for that trial. The third row is highlighted; review eligibility before adding that hound to this BIE.';
+    fieldset.appendChild(guidance);
+    const choices = document.createElement('div'); choices.className = 'bie-trial-choices'; fieldset.appendChild(choices);
+    const selected = new Set();
+    sources.forEach((source) => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(source.id);
+        checkbox.disabled = Boolean(trial.archivedAt);
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked && selected.size >= 3) {
+                checkbox.checked = false;
+                showMessage(bifMessage, 'Select no more than three trials for the BIE comparison.', 'warning');
+                return;
+            }
+            checkbox.checked ? selected.add(String(source.id)) : selected.delete(String(source.id));
+            renderResults();
+        });
+        label.append(checkbox, document.createTextNode(` ${bieTrialLabel(source)}`)); choices.appendChild(label);
+    });
+    const results = document.createElement('div'); results.className = 'bie-comparison-results'; fieldset.appendChild(results);
+    const renderResults = () => {
+        results.innerHTML = '';
+        if (selected.size < 2) {
+            const note = document.createElement('p'); note.className = 'field-note'; note.textContent = 'Select at least two trials to calculate the rankings.'; results.appendChild(note); return;
+        }
+        const selectedSources = sources.filter(source => selected.has(String(source.id)));
+        const rows = bieAggregateTrialScores(selectedSources);
+        if (!rows.length) {
+            const note = document.createElement('p'); note.className = 'field-note'; note.textContent = 'No completed combined final scores were found in those trials.'; results.appendChild(note); return;
+        }
+        const table = document.createElement('table'); table.className = 'bie-comparison-table';
+        const head = document.createElement('thead'); const headRow = document.createElement('tr');
+        ['Rank', 'Hound', 'Breed', ...selectedSources.map(source => source.startsOn || source.startDate || source.date || source.trialDate || bieTrialLabel(source)), 'Total', ''].forEach(value => {
+            const th = document.createElement('th'); th.textContent = value; headRow.appendChild(th);
+        });
+        head.appendChild(headRow); table.appendChild(head);
+        const body = document.createElement('tbody');
+        rows.forEach((row) => {
+            const tr = document.createElement('tr'); if (row.position === 3) tr.className = 'bie-third-highest';
+            const scoresByTrial = new Map(row.eventScores.map(item => [String(item.trialId), item.score]));
+            [String(row.position), row.candidate.name, displayBreedCode(row.candidate.breed), ...selectedSources.map(source => scoresByTrial.has(String(source.id)) ? String(scoresByTrial.get(String(source.id))) : '—'), String(row.totalScore)].forEach(value => {
+                const td = document.createElement('td'); td.textContent = value; tr.appendChild(td);
+            });
+            const action = document.createElement('td'); const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary small';
+            button.textContent = row.position === 3 ? 'Add Third-Highest Hound' : 'Add This Hound'; button.disabled = Boolean(trial.archivedAt);
+            button.addEventListener('click', () => addCandidates([bieAggregateCandidate(row)])); action.appendChild(button); tr.appendChild(action); body.appendChild(tr);
+        });
+        table.appendChild(body); results.appendChild(table);
+    };
+    renderResults();
+    return fieldset;
 }
 
 function renderBieConfiguration(trial) {
@@ -110,12 +202,14 @@ function renderBieConfiguration(trial) {
         if (merged.length === (bif.bieCandidates || []).length) { showMessage(bifMessage, 'No new hounds to add. They may already be listed, or BOB winners are not finalized.', 'warning'); return; }
         saveBieConfiguration({ bieCandidates: merged });
     };
+    box.appendChild(renderBieTrialComparison(trial, sources, add));
     addButton('Add This Day’s BOB Winners', () => add(bieSourceCandidates(sources[Number(sourceSelect.value)], true)));
     box.appendChild(houndSelect);
     addButton('Add Selected Hound', () => add(candidates[Number(houndSelect.value)] ? [candidates[Number(houndSelect.value)]] : []));
     const list = document.createElement('ul');
     (bif.bieCandidates || []).forEach(c => {
-        const li = document.createElement('li'); li.textContent = `${c.name} (${displayBreedCode(c.breed)}) — ${c.sourceLabel} `;
+        const detail = c.aggregateTotalScore !== undefined ? `Total ${c.aggregateTotalScore} across ${c.aggregateTrialCount} trials` : c.sourceLabel;
+        const li = document.createElement('li'); li.textContent = `${c.name} (${displayBreedCode(c.breed)}) — ${detail} `;
         const remove = document.createElement('button'); remove.type='button'; remove.className='secondary small'; remove.textContent='Remove'; remove.disabled=Boolean(trial.archivedAt);
         remove.addEventListener('click', () => saveBieConfiguration({ bieCandidates: bif.bieCandidates.filter(x => x.entryId !== c.entryId) }));
         li.appendChild(remove); list.appendChild(li);
