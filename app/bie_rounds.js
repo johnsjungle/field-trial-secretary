@@ -79,7 +79,7 @@ function bieCandidateHoundMap(trial) {
 function advanceBiePreQualifier(trial,bif) {
     const ids=bieWinningIds(bif);
     if(!ids.length || ids.some(id=>!id)) { showMessage(bifMessage,'Choose a winner for each pre-qualifier course before advancing.', 'warning'); return; }
-    const saved=structuredClone({phase:'prequalifier',number:(bif.preQualifierHistory || []).length+1,draw:bif.draw,outcomes:bif.outcomes || {},courseWinners:bif.courseWinners || {},judges:bifJudgeSlots(bif).map(slot=>({key:slot.key,name:slot.name})),judge1:bif.judge1,judge2:bif.judge2,advancedEntryIds:ids,completedAt:new Date().toISOString()});
+    const saved=structuredClone({phase:'prequalifier',number:(bif.preQualifierHistory || []).length+1,draw:bif.draw,outcomes:bif.outcomes || {},courseWinners:bif.courseWinners || {},judges:bifJudgeSlots(bif).map(slot=>({key:slot.key,name:slot.name})),judge1:bif.judge1,judge2:bif.judge2,preQualifierCarryEntryIds:[...(bif.preQualifierCarryEntryIds || [])],advancedEntryIds:ids,completedAt:new Date().toISOString()});
     const houndsById=bieCandidateHoundMap(trial), winnersByBreed=new Map();
     ids.forEach(id=>{const hound=houndsById.get(String(id));if(!hound)return;const breed=normalizeBreedCode(hound.breed);if(!winnersByBreed.has(breed))winnersByBreed.set(breed,[]);winnersByBreed.get(breed).push(hound);});
     const carry=[...(bif.preQualifierCarryEntryIds || []).map(String)], pending=[];
@@ -129,6 +129,66 @@ function advanceBieRound(manual=false) {
         draw:normalizeBifDrawColors({id:crypto.randomUUID(),createdAt:new Date().toISOString(),manualDraft:manual,courses})});
 }
 
+function savedBieRoundJudges(round) {
+    const saved = (round.judges || []).filter(item => item && item.name);
+    if (saved.length) return saved;
+    return [round.judge1, round.judge2].map((name,index)=>({key:`judge${index+1}`,name})).filter(item=>item.name);
+}
+
+async function reopenBieRoundForCorrection(kind, index) {
+    const trial=readForm(), bif=bifState(trial);
+    if(trial.archivedAt || bif.eventType!=='BIE') return;
+    const history=kind==='prequalifier' ? (bif.preQualifierHistory || []) : (bif.roundHistory || []);
+    const round=history[index];
+    if(!round?.draw) return;
+    const label=kind==='prequalifier' ? `pre-qualifier round ${round.number || index+1}` : `elimination round ${round.number || index+1}`;
+    const confirmed=await showTrialConfirm({
+        title:'Reopen BIE Round',
+        eyebrow:'Correct Previous Scores',
+        message:`Reopen ${label} for correction? Later BIE rounds and the current downstream draw will be removed because their runners depend on this result. The reopened draw, scores, judges, and course-winner selections will be restored.`,
+        primaryText:'Reopen Round',
+        secondaryText:'Cancel',
+        focusSecondary:true,
+    });
+    if(!confirmed) return;
+    const draw=structuredClone(round.draw);
+    const drawIds=draw.courses.flatMap(course=>(course.hounds || []).map(hound=>String(hound.entryId)));
+    const candidateMap=bieCandidateHoundMap(trial);
+    let carry=[];
+    if(kind==='prequalifier') {
+        carry=[...(round.preQualifierCarryEntryIds || [])].map(String);
+        if(!round.preQualifierCarryEntryIds) {
+            const drawBreeds=new Set(drawIds.map(id=>normalizeBreedCode(candidateMap.get(id)?.breed)).filter(Boolean));
+            carry=[...(bif.preQualifierCarryEntryIds || [])].map(String).filter(id=>!drawBreeds.has(normalizeBreedCode(candidateMap.get(id)?.breed)));
+        }
+    }
+    const selected=[...new Set([...drawIds,...carry])];
+    const statuses=Object.fromEntries((bif.bieCandidates || []).map(candidate=>[String(candidate.entryId),selected.includes(String(candidate.entryId))?'running':'not_running']));
+    const judgeValues=Object.fromEntries(Array.from({length:6},(_,judgeIndex)=>[`judge${judgeIndex+1}`,'']));
+    savedBieRoundJudges(round).forEach(item=>{judgeValues[item.key]=item.name;});
+    const restored={
+        ...bif,
+        ...judgeValues,
+        draw,
+        outcomes:structuredClone(round.outcomes || {}),
+        courseWinners:structuredClone(round.courseWinners || {}),
+        tieRunoff:null,
+        tieRunoffs:[],
+        finalWinner:'',
+        selectedEntryIds:selected,
+        statusByEntryId:statuses,
+        biePhase:kind==='prequalifier'?'prequalifier':'main',
+        preQualifierHistory:kind==='prequalifier' ? (bif.preQualifierHistory || []).slice(0,index) : (bif.preQualifierHistory || []),
+        preQualifierCarryEntryIds:kind==='prequalifier' ? carry : (bif.preQualifierCarryEntryIds || []),
+        roundHistory:kind==='prequalifier' ? [] : (bif.roundHistory || []).slice(0,index),
+        drawInvalidatedAt:'',
+        drawInvalidatedReason:'',
+        drawNeedsRefresh:false,
+    };
+    bieRoundCommit(trial,restored);
+    showMessage(bifMessage,`Reopened ${label}. Correct the scores or winner, then advance again.`,'success');
+}
+
 function renderBieRoundControls(trial, placement = "setup") {
     const bif=bifState(trial), box=document.createElement('div'); box.className='bie-round-controls';
     const button=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='secondary small';b.textContent=label;b.disabled=Boolean(trial.archivedAt);b.addEventListener('click',fn);box.appendChild(b);};
@@ -168,11 +228,13 @@ function renderBieRoundControls(trial, placement = "setup") {
     }
     for(const round of bif.preQualifierHistory || []) {
         const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`Pre-qualifier round ${round.number} — ${round.draw.courses.filter(c=>c.hounds.length).length} courses (saved)`;details.appendChild(summary);
+        const reopen=document.createElement('button');reopen.type='button';reopen.className='secondary small';reopen.textContent='Reopen This Round for Correction';reopen.disabled=Boolean(trial.archivedAt);reopen.addEventListener('click',()=>reopenBieRoundForCorrection('prequalifier',(bif.preQualifierHistory || []).indexOf(round)));details.appendChild(reopen);
         const roundJudges=(round.judges || [round.judge1,round.judge2].filter(Boolean).map((name,index)=>({key:`judge${index+1}`,name})));
         round.draw.courses.forEach(c=>c.hounds.forEach(h=>{const p=document.createElement('p'),o=(round.outcomes || {})[String(h.entryId)] || {};const scores=roundJudges.map((item,index)=>`J${index+1} ${o[item.key] ?? ''}`).join(' / ');p.textContent=`Course ${c.number} · ${h.bifBlanketColor || h.blanketColor || ''} · ${h.callName || h.registeredName} · ${scores} · Total ${o.score ?? ''} ${o.value || ''}${round.advancedEntryIds.includes(String(h.entryId))?' — Advanced':''}`;details.appendChild(p);}));box.appendChild(details);
     }
     for(const round of bif.roundHistory || []) {
         const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`Previous round ${round.number} — ${round.draw.courses.filter(c=>c.hounds.length).length} courses (saved)`;details.appendChild(summary);
+        const reopen=document.createElement('button');reopen.type='button';reopen.className='secondary small';reopen.textContent='Reopen This Round for Correction';reopen.disabled=Boolean(trial.archivedAt);reopen.addEventListener('click',()=>reopenBieRoundForCorrection('main',(bif.roundHistory || []).indexOf(round)));details.appendChild(reopen);
         const roundJudges=(round.judges || [round.judge1,round.judge2].filter(Boolean).map((name,index)=>({key:`judge${index+1}`,name})));
         const judges=document.createElement('p');judges.textContent=`Judges: ${roundJudges.map(item=>item.name).filter(Boolean).join(', ')}`;details.appendChild(judges);
         round.draw.courses.forEach(c=>c.hounds.forEach(h=>{const p=document.createElement('p'),o=(round.outcomes || {})[String(h.entryId)] || {};const scores=roundJudges.map((item,index)=>`J${index+1} ${o[item.key] ?? ''}`).join(' / ');p.textContent=`Course ${c.number} · ${h.bifBlanketColor || h.blanketColor || ''} · ${h.callName || h.registeredName} · ${scores} · Total ${o.score ?? ''} ${o.value || ''}${round.advancedEntryIds.includes(String(h.entryId))?' — Advanced':''}`;details.appendChild(p);}));box.appendChild(details);

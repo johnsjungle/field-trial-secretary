@@ -8,7 +8,7 @@ const ctx=vm.createContext({
     bifState:t=>t.scorebook.bif,readForm:()=>structuredClone(trial),
     selectedBifEntryIds:b=>new Set(b.selectedEntryIds),
     bifCandidateHoundsForTrial:t=>t.scorebook.bif.bieCandidates,
-    upsertTrial:t=>{trial=t},saveTrials:()=>{},render:()=>{},showMessage:()=>{},bifMessage:{},manualDrawEditKey:'',
+    upsertTrial:t=>{trial=t},saveTrials:()=>{},render:()=>{},showMessage:()=>{},showTrialConfirm:async()=>true,bifMessage:{},manualDrawEditKey:'',
     normalizeBifDrawColors:d=>({...d,courses:d.courses.map(c=>({...c,hounds:c.hounds.map((h,i)=>({...h,bifBlanketColor:colors[i],blanketColor:colors[i],drawPosition:i+1}))}))}),
 });
 vm.runInContext(fs.readFileSync('app/bie.js','utf8')+'\n'+fs.readFileSync('app/bie_rounds.js','utf8'),ctx);
@@ -40,4 +40,12 @@ assert.equal(trial.scorebook.bif.draw.courses.length,1);
 assert.equal(trial.scorebook.bif.draw.courses[0].hounds.length,3);
 assert.deepEqual([...new Set(trial.scorebook.bif.draw.courses[0].hounds.map(h=>h.breed))].sort(),['GH','RR','WH']);
 assert.equal(Object.values(trial.scorebook.bif.statusByEntryId).filter(value=>value==='running').length,3);
-console.log('BIE pre-qualifier passed: same-breed playoffs, multi-round breed reduction, carry-forward, and three-dog main elimination.');
+ctx.reopenBieRoundForCorrection('prequalifier',0).then(()=>{
+    assert.equal(trial.scorebook.bif.biePhase,'prequalifier');
+    assert.equal(trial.scorebook.bif.preQualifierHistory.length,0);
+    assert.equal(trial.scorebook.bif.roundHistory.length,0);
+    assert.equal(trial.scorebook.bif.draw.courses.length,3);
+    assert.equal(trial.scorebook.bif.preQualifierCarryEntryIds.join(','),'r1');
+    assert.equal(trial.scorebook.bif.selectedEntryIds.length,7);
+    console.log('BIE pre-qualifier passed: same-breed playoffs, multi-round reduction, carry-forward, main elimination and round reopening.');
+}).catch(error=>{console.error(error);process.exitCode=1;});

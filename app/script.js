@@ -1654,7 +1654,7 @@ async function loadFromSQLiteIfAvailable() {
         }
         sqliteModeAvailable = true;
         if (payload.state) {
-            applyBackupSnapshot(payload.state);
+            applyBackupSnapshot(payload.state, { queueServerSave: false });
             lastSQLiteSaveAt = payload.state.savedToSQLiteAt || payload.state.exportedAt || '';
             saveStatusState = 'saved';
         } else if (trials.length > 0 || masterHounds.length > 0 || masterJudges.length > 0 || masterWorkers.length > 0) {
@@ -1743,7 +1743,7 @@ async function readBrowserSafetyBackup() {
     return backup;
 }
 
-function applyBackupSnapshot(backup) {
+function applyBackupSnapshot(backup, { queueServerSave = true } = {}) {
     if (!backup || backup.app !== 'Field Trial Secretary' || !backup.data) {
         throw new Error('Invalid backup');
     }
@@ -1773,7 +1773,11 @@ function applyBackupSnapshot(backup) {
     } else {
         localStorage.removeItem(activeKey);
     }
-    queueSQLiteSave();
+    if (queueServerSave) {
+        queueSQLiteSave();
+    } else {
+        clearTimeout(sqliteSaveTimer);
+    }
 }
 
 async function restoreBrowserSafetyBackup() {
@@ -2152,7 +2156,7 @@ async function undoLastAction() {
         if (!payload.state) {
             throw new Error('The server did not return the restored application state.');
         }
-        applyBackupSnapshot(payload.state);
+        applyBackupSnapshot(payload.state, { queueServerSave: false });
         lastSQLiteSaveAt = payload.savedToSQLiteAt || payload.state.savedToSQLiteAt || new Date().toISOString();
         setSaveStatus('saved', lastSQLiteSaveAt);
         undoStatusPayload = payload.undo || { available: false, historyCount: 0 };
@@ -2195,7 +2199,7 @@ async function restoreSQLiteBackup() {
             body: JSON.stringify({ fileName: backup.fileName }),
         });
         if (payload.state) {
-            applyBackupSnapshot(payload.state);
+            applyBackupSnapshot(payload.state, { queueServerSave: false });
             lastSQLiteSaveAt = payload.state.savedToSQLiteAt || new Date().toISOString();
         }
         await writeBrowserSafetyBackup();
