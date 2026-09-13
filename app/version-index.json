@@ -5,10 +5,30 @@
       "version": "0.4.3",
       "date": "2026-09-13",
       "channel": "beta",
-      "status": "pending",
+      "status": "available",
       "summary": "Adds expanded BIE event management with multi-trial qualification, breed pre-qualifiers, six-judge scoring, balanced courses, runner confirmation, printable records, previous-round corrections, and safer Undo behavior.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.3",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.3/Field-Trial-Secretary-0.4.3-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.3/Field-Trial-Secretary-0.4.3-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.3/Field-Trial-Secretary-0.4.3-portable-20260913-201446.zip"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.3/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.3/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.3/Field-Trial-Secretary-0.4.3-macOS-arm64.dmg",
+          "sha256": "24e594e1032b815730c9bcb9a7658371d17511181643c3bf7a25e54702676228"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.3/Field-Trial-Secretary-0.4.3-macOS-x86_64.dmg",
+          "sha256": "d30da8e65d1ea287ec33f42d51cba082b18df87facf1c625b747d69232fc811d"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.3/Field-Trial-Secretary-0.4.3-portable-20260913-201446.zip",
+          "sha256": "4a840eecae60cade09f9758ee2347de69cc6a5eb5c6da31a3e574508eb5ccaac"
+        }
+      }
     },
     {
       "version": "0.4.2",
