@@ -17,6 +17,7 @@ on:
       - "v*"
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -68,7 +69,7 @@ jobs:
           name: Field-Trial-Secretary-Windows
           path: portable/Field-Trial-Secretary-*-portable-*.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
 
   macos:
     name: Build macOS ${{ matrix.architecture }}
@@ -180,7 +181,7 @@ jobs:
           name: Recovery-macOS-${{ matrix.architecture }}-before-notarization
           path: dist/Field-Trial-Secretary-*-macOS-*.dmg
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
 
       - name: Notarize and staple macOS installer
         timeout-minutes: 105
@@ -233,7 +234,7 @@ jobs:
           name: Field-Trial-Secretary-macOS-${{ matrix.architecture }}
           path: dist/Field-Trial-Secretary-*-macOS-*.dmg
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
 
       - name: Remove temporary signing keychain
         if: always()
@@ -280,3 +281,16 @@ jobs:
           prerelease: true
           body_path: ${{ env.RELEASE_NOTES }}
           files: release-assets/*
+
+      - name: Delete temporary workflow artifacts
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" --paginate --jq '.artifacts[].id' |
+            while read -r artifact_id; do
+              if [[ -n "$artifact_id" ]]; then
+                gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+              fi
+            done
