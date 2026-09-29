@@ -5,10 +5,30 @@
       "version": "0.4.5",
       "date": "2026-09-29",
       "channel": "beta",
-      "status": "pending",
+      "status": "available",
       "summary": "Fixes final trial archive downloads and closes SQLite connections reliably to prevent Windows database file locks.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.5",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.5/Field-Trial-Secretary-0.4.5-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.5/Field-Trial-Secretary-0.4.5-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.5/Field-Trial-Secretary-0.4.5-portable-20260929-114741.zip"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.5/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.5/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.5/Field-Trial-Secretary-0.4.5-macOS-arm64.dmg",
+          "sha256": "ad89b2b58732284f34ac6f0298f1a6f97e36a123cb77b4bd90026f39571c0888"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.5/Field-Trial-Secretary-0.4.5-macOS-x86_64.dmg",
+          "sha256": "6c29a066a1e382602eba728bdd3679c0e470b4bc3aad997a090eded2a8151629"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.5/Field-Trial-Secretary-0.4.5-portable-20260929-114741.zip",
+          "sha256": "696c69d56a814d9f6dc062de92128d39c33a3b26eeeef800878100e722d13914"
+        }
+      }
     },
     {
       "version": "0.4.4",
