@@ -9,6 +9,12 @@ fi
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+# Bundle a clean template with program assets; live data stays in Application Support.
+BLANK_DB_TEMPLATE="$ROOT/database/blank_field_trial_secretary.sqlite"
+rm -f "$BLANK_DB_TEMPLATE"
+python3 -c 'import pathlib, server; server.build_blank_database(pathlib.Path("database/blank_field_trial_secretary.sqlite"))'
+trap 'rm -f "$BLANK_DB_TEMPLATE"' EXIT
+
 VERSION="$(
   python3 -c 'import json; print(json.load(open("app/version.json", encoding="utf-8"))["version"])'
 )"

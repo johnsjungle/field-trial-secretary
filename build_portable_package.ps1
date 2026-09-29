@@ -119,15 +119,8 @@ if (-not (Test-Path -LiteralPath $alignmentDefaultsPath)) {
     throw "Paperwork alignment defaults were not included in the portable package."
 }
 
-foreach ($folder in @("data")) {
-    $source = Join-Path $root $folder
-    $destination = Join-Path $packageRoot $folder
-    if (-not $PublicRelease -and (Test-Path -LiteralPath $source)) {
-        Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
-    } else {
-        New-Item -ItemType Directory -Path $destination | Out-Null
-    }
-}
+# Program packages never contain live trial data. First launch creates or restores data separately.
+New-Item -ItemType Directory -Path (Join-Path $packageRoot "data") -Force | Out-Null
 
 foreach ($folder in @(
     "backups",
@@ -139,20 +132,13 @@ foreach ($folder in @(
     New-Item -ItemType Directory -Path (Join-Path $packageRoot $folder) -Force | Out-Null
 }
 
-$blankDb = Join-Path $packageRoot "data\blank_field_trial_secretary.sqlite"
-$schemaPath = Join-Path $root "database\schema.sql"
+$blankDb = Join-Path $packageRoot "database\blank_field_trial_secretary.sqlite"
 if (Test-Path -LiteralPath $blankDb) {
     Remove-Item -LiteralPath $blankDb -Force
 }
-if (Test-Path -LiteralPath $schemaPath) {
-    & $python -c "import sqlite3, pathlib; schema = pathlib.Path(r'$schemaPath').read_text(encoding='utf-8'); db = pathlib.Path(r'$blankDb'); db.parent.mkdir(parents=True, exist_ok=True); conn = sqlite3.connect(db); conn.executescript(schema); conn.commit(); conn.close()"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Blank SQLite database creation failed."
-    }
-}
-
-if ($PublicRelease) {
-    Copy-Item -LiteralPath $blankDb -Destination (Join-Path $packageRoot "data\field_trial_secretary.sqlite") -Force
+& $python -c "import pathlib, server; server.build_blank_database(pathlib.Path(r'$blankDb'))"
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $blankDb)) {
+    throw "Blank SQLite database template creation failed."
 }
 
 $startBat = Join-Path $packageRoot "Start Field Trial Secretary.bat"
@@ -224,8 +210,10 @@ To move to another computer:
 Copy this whole "Field Trial Secretary" folder, or use the installer batch file after extracting the zip.
 
 Important files:
-- data\field_trial_secretary.sqlite contains the live SQLite data.
-- data\blank_field_trial_secretary.sqlite is a blank starter database.
+- The package contains no live trial database.
+- database\blank_field_trial_secretary.sqlite is the program's blank starter template.
+- On first launch, choose Create New Empty Database or Restore Existing Database.
+- Later program updates replace program files and preserve data\field_trial_secretary.sqlite.
 - app\templates contains the official PDF templates.
 - backups starts empty in portable packages and will fill as the app creates backups.
 

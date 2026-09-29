@@ -8,7 +8,7 @@ This release expands BIE event management with multi-trial qualification, breed 
 
 ## Update checker
 
-Use **Admin → Updates & Versions** to check for releases, read version-specific documentation, and open installer downloads. Installers are hosted in the public GitHub Releases repository, separately from the private application source. See [maintaining the version index](docs/UPDATES.md).
+Use **Admin → Updates & Versions** to check for releases. In a packaged Windows or Mac installation, **Update Program** downloads the verified release, backs up SQLite, closes the app, replaces program files, verifies the new version, and restarts automatically. Trial data stays in its existing data location. Installers are hosted in the public GitHub Releases repository, separately from the private application source. See [maintaining the version index](docs/UPDATES.md).
 
 ## Run Locally
 
@@ -26,7 +26,7 @@ http://127.0.0.1:8765/
 
 ## Data Safety
 
-The live SQLite database, backups, portable builds, generated PDFs, and logs are intentionally excluded from GitHub. Keep trial-day data in local backups or a portable package, not in the repository.
+The live SQLite database, backups, portable builds, generated PDFs, and logs are intentionally excluded from GitHub. Normal installers contain a blank database template under `database` and no live database under `data`. On first launch, choose **Create New Empty Database** or **Restore Existing Database**. Existing installations continue using their current database without a setup prompt.
 
 ## Portable Build
 

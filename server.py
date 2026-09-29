@@ -10,6 +10,7 @@ if __name__ == "__main__" and "--apply-program-update" in __import__("sys").argv
 
 import base64
 import copy
+from contextlib import closing
 import hashlib
 import io
 import ipaddress
@@ -63,6 +64,7 @@ STORAGE_ROOT = (
 )
 DATA_DIR = STORAGE_ROOT / "data"
 DB_PATH = DATA_DIR / "field_trial_secretary.sqlite"
+BLANK_DB_PATH = ROOT / "database" / "blank_field_trial_secretary.sqlite"
 VERSION_PATH = APP_DIR / "version.json"
 DB_BACKUP_DIR = STORAGE_ROOT / "backups" / "database"
 TRIAL_ARCHIVE_DIR = STORAGE_ROOT / "backups" / "trial_archives"
@@ -77,6 +79,7 @@ MIN_DB_BACKUPS = 5
 MAX_DB_BACKUPS_LIMIT = 250
 MAX_UNDO_HISTORY = 20
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
+MAX_DATABASE_RESTORE_BYTES = 4 * 1024 * 1024 * 1024
 TEMPLATE_IMAGE_CACHE: dict[str, bytes] = {}
 TEMPLATE_IMAGE_LOCK = threading.Lock()
 STATE_WRITE_LOCK = threading.RLock()
@@ -550,61 +553,168 @@ def utc_now() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
+def ensure_app_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            state_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS backup_events (
+            id INTEGER PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            backup_path TEXT NOT NULL,
+            reason TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS entry_documents (
+            id TEXT PRIMARY KEY,
+            file_name TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            content BLOB NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS state_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            previous_state BLOB NOT NULL,
+            previous_hash TEXT NOT NULL,
+            resulting_hash TEXT NOT NULL,
+            summary TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+
+
+def ensure_database_at(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(path)) as conn:
+        ensure_app_tables(conn)
+
+
 def ensure_database() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     DB_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     TRIAL_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS app_state (
-                key TEXT PRIMARY KEY,
-                state_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS backup_events (
-                id INTEGER PRIMARY KEY,
-                created_at TEXT NOT NULL,
-                backup_path TEXT NOT NULL,
-                reason TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS entry_documents (
-                id TEXT PRIMARY KEY,
-                file_name TEXT NOT NULL,
-                mime_type TEXT NOT NULL,
-                content BLOB NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                source TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS state_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                previous_state BLOB NOT NULL,
-                previous_hash TEXT NOT NULL,
-                resulting_hash TEXT NOT NULL,
-                summary TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
+    ensure_database_at(DB_PATH)
 
+
+def database_is_ready() -> bool:
+    return DB_PATH.is_file()
+
+
+def validate_application_database(path: Path) -> None:
+    if not path.is_file() or path.stat().st_size < 512:
+        raise ValueError("The selected file is not a valid Field Trial Secretary database.")
+    try:
+        with closing(sqlite3.connect(path)) as conn:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()
+            if not integrity or str(integrity[0]).lower() != "ok":
+                raise ValueError("The selected SQLite database failed its integrity check.")
+            row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_state'").fetchone()
+            if not row:
+                raise ValueError("The selected database does not contain Field Trial Secretary application data.")
+    except sqlite3.DatabaseError as exc:
+        raise ValueError("The selected file is not a readable SQLite database.") from exc
+
+
+def build_blank_database(path: Path) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        path.unlink()
+    schema_path = ROOT / "database" / "schema.sql"
+    with closing(sqlite3.connect(path)) as conn:
+        if schema_path.exists():
+            conn.executescript(schema_path.read_text(encoding="utf-8"))
+        ensure_app_tables(conn)
+
+
+def empty_application_state() -> dict:
+    return {
+        "app": "Field Trial Secretary",
+        "version": 1,
+        "appVersion": app_version_info().get("version", "0.0.0"),
+        "exportedAt": utc_now(),
+        "data": {
+            "trials": [], "masterHounds": [], "masterJudges": [], "masterWorkers": [],
+            "formTemplateStatus": {}, "formAlignment": {}, "entryImportTemplates": [],
+            "deletedTrials": [], "activeTrialId": "",
+        },
+    }
+
+
+def create_new_database() -> dict:
+    with STATE_WRITE_LOCK:
+        if database_is_ready():
+            raise ValueError("A database already exists. Use Admin Tools to back up or restore it.")
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        temporary = DATA_DIR / f".database-setup-{os.getpid()}-{int(time.time() * 1000)}.sqlite"
+        try:
+            if BLANK_DB_PATH.is_file():
+                shutil.copy2(BLANK_DB_PATH, temporary)
+                ensure_database_at(temporary)
+            else:
+                build_blank_database(temporary)
+            with closing(sqlite3.connect(temporary)) as conn:
+                state = empty_application_state()
+                conn.execute("INSERT OR REPLACE INTO app_state (key, state_json, updated_at) VALUES (?, ?, ?)", (STATE_KEY, json.dumps(state, ensure_ascii=False), utc_now()))
+                conn.commit()
+            validate_application_database(temporary)
+            os.replace(temporary, DB_PATH)
+        finally:
+            temporary.unlink(missing_ok=True)
+        DB_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        TRIAL_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    return {"ready": True, "dbPath": str(DB_PATH), "created": True}
+
+
+def restore_uploaded_database(stream, content_length: int) -> dict:
+    if content_length <= 0 or content_length > MAX_DATABASE_RESTORE_BYTES:
+        raise ValueError("Select a SQLite database file smaller than 4 GB.")
+    with STATE_WRITE_LOCK:
+        if database_is_ready():
+            raise ValueError("A database already exists. Use Admin Tools to restore a backup.")
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        temporary = DATA_DIR / f".database-restore-{os.getpid()}-{int(time.time() * 1000)}.sqlite"
+        remaining = content_length
+        try:
+            with open(temporary, "wb") as output:
+                while remaining:
+                    chunk = stream.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise ValueError("The database upload ended before the complete file was received.")
+                    output.write(chunk)
+                    remaining -= len(chunk)
+            validate_application_database(temporary)
+            ensure_database_at(temporary)
+            os.replace(temporary, DB_PATH)
+        finally:
+            temporary.unlink(missing_ok=True)
+        DB_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        TRIAL_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    return {"ready": True, "dbPath": str(DB_PATH), "restored": True}
 
 def read_state() -> dict | None:
+    if not database_is_ready():
+        return None
     ensure_database()
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         row = conn.execute(
             "SELECT state_json FROM app_state WHERE key = ?",
             (STATE_KEY,),
@@ -1061,7 +1171,7 @@ def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
         "What is included:",
         "- FieldTrialSecretary.exe and its bundled Python runtime files",
         "- current SQLite database: Field Trial Secretary\\data\\field_trial_secretary.sqlite",
-        "- blank starter database: Field Trial Secretary\\data\\blank_field_trial_secretary.sqlite",
+        "- blank starter database template: Field Trial Secretary\\database\\blank_field_trial_secretary.sqlite",
         "- app files and official PDF templates",
         "- empty backup folders that the app will use on the new computer",
         "",
@@ -1100,11 +1210,15 @@ def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
             if not path.is_file():
                 continue
             relative = path.relative_to(package_folder).as_posix()
+            if relative.startswith("data/"):
+                continue
             if relative.startswith("backups/database/") or relative.startswith("backups/trial_archives/"):
                 continue
             if relative.startswith("backups/transfer_packages/") or relative.startswith("backups/app_file_restores/"):
                 continue
             archive.write(path, f"Field Trial Secretary/{relative}")
+        # A transfer package is the explicit exception: it carries the user's current data.
+        archive.write(DB_PATH, "Field Trial Secretary/data/field_trial_secretary.sqlite")
 
     return package_path.read_bytes(), filename, str(package_path)
 
@@ -1148,10 +1262,6 @@ def create_program_update_package() -> tuple[bytes, str, str]:
         'for %%F in ("%SOURCE%\\*") do (\r\n'
         '  xcopy "%%~fF" "%TARGET%\\" /Y >nul\r\n'
         ')\r\n'
-        'if exist "%SOURCE%\\data\\blank_field_trial_secretary.sqlite" (\r\n'
-        '  if not exist "%TARGET%\\data" mkdir "%TARGET%\\data"\r\n'
-        '  copy /Y "%SOURCE%\\data\\blank_field_trial_secretary.sqlite" "%TARGET%\\data\\blank_field_trial_secretary.sqlite" >nul\r\n'
-        ')\r\n'
         'if errorlevel 1 (\r\n'
         '  echo.\r\n'
         '  echo Update did not complete.\r\n'
@@ -1187,7 +1297,7 @@ def create_program_update_package() -> tuple[bytes, str, str]:
             if not path.is_file():
                 continue
             relative = path.relative_to(package_folder).as_posix()
-            if relative == "data/field_trial_secretary.sqlite":
+            if relative.startswith("data/"):
                 continue
             if relative.startswith("backups/"):
                 continue
@@ -6255,6 +6365,9 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         if update_manager.handle_update_request(self, PROGRAM_UPDATER, STATE_WRITE_LOCK, shutdown_server):
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/database-setup-status":
+            self.send_json({"ok": True, "ready": database_is_ready(), "dbPath": str(DB_PATH), "templateAvailable": BLANK_DB_PATH.is_file()})
+            return
         if parsed.path == "/api/undo-status":
             try:
                 with STATE_WRITE_LOCK:
@@ -6263,13 +6376,17 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if parsed.path == "/api/state":
+            if not database_is_ready():
+                self.send_json({"ok": True, "state": None, "databaseRequired": True})
+                return
             state = read_state()
-            self.send_json({"ok": True, "state": state})
+            self.send_json({"ok": True, "state": state, "databaseRequired": False})
             return
         if parsed.path == "/api/status":
             self.send_json({
                 "ok": True,
                 "dbPath": str(DB_PATH),
+                "databaseReady": database_is_ready(),
                 "time": utc_now(),
                 "appVersion": app_version_info(),
                 "runtime": {
@@ -6380,6 +6497,25 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": "An update is installing. Please wait for restart."}, HTTPStatus.SERVICE_UNAVAILABLE)
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/database-create":
+            try:
+                self.send_json({"ok": True, **create_new_database()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/database-restore-upload":
+            try:
+                content_type = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+                if content_type != "application/octet-stream":
+                    raise ValueError("The database restore must be uploaded as a SQLite file.")
+                length = int(self.headers.get("Content-Length", "0"))
+                self.send_json({"ok": True, **restore_uploaded_database(self.rfile, length)})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if not database_is_ready() and parsed.path not in {"/api/client-log", "/api/restart", "/api/shutdown"}:
+            self.send_json({"ok": False, "error": "Choose a new or existing database before using the application."}, HTTPStatus.CONFLICT)
+            return
         if handle_catalog_report_post(self, parsed):
             return
         if parsed.path == "/api/build-portable":
@@ -6659,7 +6795,6 @@ def main() -> None:
     parser.add_argument("--open-browser", action="store_true", help="Open the local app page in the default browser after startup.")
     args = parser.parse_args()
 
-    ensure_database()
     server = ExclusiveTrialHTTPServer((args.host, args.port), FieldTrialSecretaryHandler)
     url = f"http://{args.host}:{args.port}/"
     print(f"Field Trial Secretary running at {url}")
@@ -6836,6 +6971,9 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         if update_manager.handle_update_request(self, PROGRAM_UPDATER, STATE_WRITE_LOCK, shutdown_server):
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/database-setup-status":
+            self.send_json({"ok": True, "ready": database_is_ready(), "dbPath": str(DB_PATH), "templateAvailable": BLANK_DB_PATH.is_file()})
+            return
         if parsed.path == "/api/undo-status":
             try:
                 with STATE_WRITE_LOCK:
@@ -6844,13 +6982,17 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if parsed.path == "/api/state":
+            if not database_is_ready():
+                self.send_json({"ok": True, "state": None, "databaseRequired": True})
+                return
             state = read_state()
-            self.send_json({"ok": True, "state": state})
+            self.send_json({"ok": True, "state": state, "databaseRequired": False})
             return
         if parsed.path == "/api/status":
             self.send_json({
                 "ok": True,
                 "dbPath": str(DB_PATH),
+                "databaseReady": database_is_ready(),
                 "time": utc_now(),
                 "appVersion": app_version_info(),
                 "runtime": {
@@ -6961,6 +7103,25 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": "An update is installing. Please wait for restart."}, HTTPStatus.SERVICE_UNAVAILABLE)
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/database-create":
+            try:
+                self.send_json({"ok": True, **create_new_database()})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/database-restore-upload":
+            try:
+                content_type = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+                if content_type != "application/octet-stream":
+                    raise ValueError("The database restore must be uploaded as a SQLite file.")
+                length = int(self.headers.get("Content-Length", "0"))
+                self.send_json({"ok": True, **restore_uploaded_database(self.rfile, length)})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if not database_is_ready() and parsed.path not in {"/api/client-log", "/api/restart", "/api/shutdown"}:
+            self.send_json({"ok": False, "error": "Choose a new or existing database before using the application."}, HTTPStatus.CONFLICT)
+            return
         if handle_catalog_report_post(self, parsed):
             return
         if parsed.path == "/api/build-portable":

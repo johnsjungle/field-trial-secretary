@@ -22,20 +22,22 @@ This creates a zip file in the `backups` folder.
 
 ## On The New Computer
 
-1. Unzip the program backup.
-2. Run `start_field_trial_secretary.ps1`.
-3. Open `http://127.0.0.1:8765/`.
-4. If the SQLite database was copied in the `data` folder, the app should load it automatically.
-5. If needed, go to Admin Test > Backup & Transfer and import the JSON backup.
+1. Extract the Field Trial Secretary package.
+2. Start Field Trial Secretary.
+3. On first launch, choose **Restore Existing Database** and select the saved `.sqlite` database. Choose **Create New Empty Database** only for a new installation with no data to restore.
+4. If a transfer package already placed `field_trial_secretary.sqlite` in the `data` folder, the app loads it automatically.
+5. If needed, use Admin → Tools to restore another SQLite or JSON backup.
 
 ## What Is Included
 
-The program zip includes:
+A normal program installer includes:
 
 - App files
 - Local ASFA/AKC PDF templates
-- Database schema and documentation
-- SQLite data folder when present
+- Database schema and a blank database template
+- No live trial database
+
+An explicit transfer package also includes the current `data/field_trial_secretary.sqlite`.
 
 The JSON data backup includes:
 

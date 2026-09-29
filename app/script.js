@@ -1633,6 +1633,75 @@ async function saveToSQLite() {
     }
 }
 
+function clearClientDataForNewDatabase() {
+    applyBackupSnapshot({
+        app: 'Field Trial Secretary',
+        version: 1,
+        appVersion: appVersionInfo.version || '0.0.0',
+        exportedAt: new Date().toISOString(),
+        data: {
+            trials: [], masterHounds: [], masterJudges: [], masterWorkers: [],
+            formTemplateStatus: {}, formAlignment: {}, entryImportTemplates: [],
+            deletedTrials: [], activeTrialId: '',
+        },
+    }, { queueServerSave: false });
+}
+
+async function ensureDatabaseReadyForStartup() {
+    if (!isLocalServerMode()) return 'browser-only';
+    const status = await apiRequest('/api/database-setup-status');
+    if (status.ready) return 'existing';
+
+    const overlay = document.getElementById('databaseSetupOverlay');
+    const createButton = document.getElementById('createNewDatabaseButton');
+    const restoreButton = document.getElementById('restoreExistingDatabaseButton');
+    const fileInput = document.getElementById('restoreExistingDatabaseFile');
+    const message = document.getElementById('databaseSetupMessage');
+    overlay.hidden = false;
+
+    return new Promise((resolve) => {
+        const setBusy = (busy, text = '') => {
+            createButton.disabled = busy;
+            restoreButton.disabled = busy;
+            if (text) showMessage(message, text, 'warning');
+        };
+        createButton.addEventListener('click', async () => {
+            setBusy(true, 'Creating a new empty database...');
+            try {
+                await apiRequest('/api/database-create', { method: 'POST', body: '{}' });
+                clearClientDataForNewDatabase();
+                await writeBrowserSafetyBackup();
+                showMessage(message, 'New empty database created.', 'success');
+                overlay.hidden = true;
+                resolve('created');
+            } catch (error) {
+                setBusy(false);
+                showMessage(message, error.message, 'warning');
+            }
+        });
+        restoreButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', async () => {
+            const file = fileInput.files?.[0];
+            if (!file) return;
+            setBusy(true, `Checking and restoring ${file.name}...`);
+            try {
+                await apiRequest('/api/database-restore-upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: file,
+                });
+                showMessage(message, 'Database restored successfully.', 'success');
+                overlay.hidden = true;
+                resolve('restored');
+            } catch (error) {
+                fileInput.value = '';
+                setBusy(false);
+                showMessage(message, error.message, 'warning');
+            }
+        });
+    });
+}
+
 async function loadFromSQLiteIfAvailable() {
     if (!isLocalServerMode()) {
         sqliteLoadComplete = true;
@@ -24821,11 +24890,17 @@ async function startApp() {
     populateBreedSelects();
     populateStateProvinceOptions();
     renderSaveStatus();
+    const databaseSetupResult = await ensureDatabaseReadyForStartup();
     await loadFromSQLiteIfAvailable();
     refreshDatabaseIntegrityStatus();
     render();
     updateReturnTopButton();
-    initializeResilientStorage();
+    if (databaseSetupResult === 'created') {
+        clearClientDataForNewDatabase();
+        await writeBrowserSafetyBackup();
+    } else {
+        initializeResilientStorage();
+    }
     hideStartupSplash();
 }
 

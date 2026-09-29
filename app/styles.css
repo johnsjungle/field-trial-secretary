@@ -112,6 +112,35 @@ body {
     text-transform: uppercase;
 }
 
+.database-setup-overlay {
+    align-items: center;
+    background: rgba(10, 34, 30, 0.82);
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    left: 0;
+    padding: 24px;
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 10001;
+}
+
+.database-setup-card {
+    background: #fff;
+    border: 3px solid var(--accent);
+    border-radius: 14px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+    max-width: 680px;
+    padding: 34px;
+    width: 100%;
+}
+
+.database-setup-card h1 { margin: 8px 0 12px; }
+.database-setup-mark { color: var(--accent-dark); font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.database-setup-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 14px; }
+.database-setup-note { color: var(--muted); font-size: 14px; }
+
 @media (prefers-reduced-motion: reduce) {
     .startup-splash {
         display: none;

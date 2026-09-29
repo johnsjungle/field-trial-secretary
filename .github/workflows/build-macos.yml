@@ -45,6 +45,9 @@ jobs:
         run: |
           $package = Join-Path $PWD "portable\Field Trial Secretary"
           $database = Join-Path $package "data\field_trial_secretary.sqlite"
+          $template = Join-Path $package "database\blank_field_trial_secretary.sqlite"
+          if (Test-Path -LiteralPath $database) { throw "Public package must not contain a live database." }
+          if (-not (Test-Path -LiteralPath $template)) { throw "Public package is missing the blank database template." }
           $executable = Join-Path $package "FieldTrialSecretary.exe"
           $process = Start-Process -FilePath $executable -ArgumentList @('--host','127.0.0.1','--port','8878') -WindowStyle Hidden -PassThru
           try {
@@ -57,8 +60,12 @@ jobs:
               Start-Sleep -Seconds 1
             }
             if (-not $ready) { throw "Packaged Windows application did not start." }
-            $stateCount = python -c "import sqlite3; c=sqlite3.connect(r'$database'); print(c.execute('select count(*) from app_state').fetchone()[0]); c.close()"
-            if ([int]$stateCount -ne 0) { throw "Public package contains application state." }
+            if ($status.databaseReady) { throw "Fresh package created a database before the user chose one." }
+            Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8878/api/database-create' -ContentType 'application/json' -Body '{}' | Out-Null
+            if (-not (Test-Path -LiteralPath $database)) { throw "First-run database creation failed." }
+            $env:FTS_DATABASE_CHECK = $database
+            $trialCount = python -c 'import json,os,sqlite3; c=sqlite3.connect(os.environ["FTS_DATABASE_CHECK"]); r=c.execute("select state_json from app_state where key=?", ("current",)).fetchone(); print(len(json.loads(r[0])["data"]["trials"])); c.close()'
+            if ([int]$trialCount -ne 0) { throw "New database contains trial data." }
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           }

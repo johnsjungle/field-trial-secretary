@@ -1,4 +1,4 @@
-let programUpdateState=null, programUpdateTimer=null;
+let programUpdateState=null, programUpdateTimer=null, programUpdateAutoInstall=false, programUpdateInstallRequested=false;
 let versionBrowserStarted=false, versionBrowserIndex=null, versionBrowserOnline=false;
 function compareReleaseVersions(a,b) {
     const parse=v=>/^\d+\.\d+\.\d+$/.test(String(v)) ? String(v).split('.').map(Number) : null;
@@ -35,9 +35,9 @@ function renderVersionBrowser() {
         for(const [label,url] of [['README',release.readmeUrl],['Release notes',release.notesUrl]]){const link=versionLink(label,url);if(link)links.appendChild(link);}
         if(release.status==='available'){
             if(programUpdateState?.supported && compareReleaseVersions(release.version,appVersionInfo.version)>0 && release.updates?.[programUpdateState.platform]) {
-                const button=document.createElement('button');button.type='button';button.textContent='Prepare Update';
+                const button=document.createElement('button');button.type='button';button.textContent=`Update Program to v${release.version}`;
                 button.disabled=['preparing','ready','installing'].includes(programUpdateState.phase);
-                button.addEventListener('click',()=>programUpdateAction('prepare',{version:release.version}));links.appendChild(button);
+                button.addEventListener('click',()=>startAutomaticProgramUpdate(release.version));links.appendChild(button);
             }
             for(const [key,label] of [['windows','Download Windows'],['appleSilicon','Download Mac — Apple Silicon'],['intel','Download Mac — Intel']]){const link=versionLink(label,release.downloads?.[key]);if(link)links.appendChild(link);}
             const legacy=versionLink('Release downloads',release.releaseUrl);if(legacy)links.appendChild(legacy);
@@ -71,12 +71,29 @@ async function checkAvailableVersions(){
     finally{clearTimeout(timer);button.disabled=false;}
 }
 
+function startAutomaticProgramUpdate(version) {
+    programUpdateAutoInstall=true;
+    programUpdateInstallRequested=false;
+    programUpdateAction('prepare',{version});
+}
+function installPreparedUpdate() {
+    if(!programUpdateAutoInstall || programUpdateInstallRequested || programUpdateState?.phase!=='ready' || !programUpdateState.token)return;
+    programUpdateInstallRequested=true;
+    programUpdateAction('install',{token:programUpdateState.token});
+}
+
 async function programUpdateAction(action,payload={}) {
     try {
         const response=await fetch(`/api/update-${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         const result=await response.json();if(!response.ok || !result.ok)throw new Error(result.error || 'Update request failed.');
-        programUpdateState=result;renderProgramUpdate();renderVersionBrowser();scheduleProgramUpdate();
-    } catch(error) {document.getElementById('programUpdateStatus').textContent=error.message;}
+        programUpdateState=result;renderProgramUpdate();renderVersionBrowser();
+        if(programUpdateState.phase==='ready')installPreparedUpdate();
+        scheduleProgramUpdate();
+    } catch(error) {
+        programUpdateAutoInstall=false;programUpdateInstallRequested=false;
+        if(programUpdateState){programUpdateState={...programUpdateState,message:error.message};renderProgramUpdate();renderVersionBrowser();}
+        else document.getElementById('programUpdateStatus').textContent=error.message;
+    }
 }
 function scheduleProgramUpdate() {
     clearTimeout(programUpdateTimer);
@@ -85,7 +102,9 @@ function scheduleProgramUpdate() {
 async function refreshProgramUpdate() {
     try {
         const response=await fetch('/api/update-status',{cache:'no-store'});if(!response.ok)throw new Error();
-        programUpdateState=await response.json();renderProgramUpdate();if(versionBrowserIndex)renderVersionBrowser();scheduleProgramUpdate();
+        programUpdateState=await response.json();renderProgramUpdate();if(versionBrowserIndex)renderVersionBrowser();
+        if(programUpdateState.phase==='ready')installPreparedUpdate();
+        scheduleProgramUpdate();
     } catch {
         document.getElementById('programUpdateStatus').textContent=programUpdateState?.phase==='installing'?'Application restarting. This page will reconnect automatically.':'Automatic installation is unavailable. Use the download links below.';
         if(programUpdateState?.phase==='installing')programUpdateTimer=setTimeout(refreshProgramUpdate,2000);
@@ -94,8 +113,8 @@ async function refreshProgramUpdate() {
 function renderProgramUpdate() {
     const box=document.getElementById('programUpdateStatus');box.replaceChildren();
     const state=programUpdateState;
-    box.appendChild(document.createTextNode(state.supported?(state.message || state.lastResult?.message || 'Select Prepare Update when a newer verified release is available.'):state.reason));
-    if(state.phase==='ready') {
+    box.appendChild(document.createTextNode(state.supported?(state.message || state.lastResult?.message || 'Select Update Program when a newer verified release is available.'):state.reason));
+    if(state.phase==='ready' && !programUpdateAutoInstall) {
         for(const [label,action] of [['Install and Restart','install'],['Cancel Update','cancel']]) {
             const button=document.createElement('button');button.type='button';button.textContent=label;
             button.addEventListener('click',()=>programUpdateAction(action,{token:state.token}));box.appendChild(button);
