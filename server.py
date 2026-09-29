@@ -779,7 +779,7 @@ def summarize_state_change(previous: dict, current: dict) -> str:
 
 def undo_status() -> dict:
     ensure_database()
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         current_row = conn.execute(
             "SELECT state_json FROM app_state WHERE key = ?", (STATE_KEY,)
         ).fetchone()
@@ -811,7 +811,7 @@ def undo_last_action() -> dict:
         raise ValueError(status.get("message") or "No recent action is available to undo.")
     safety_backup = create_database_backup("before_undo_last_action")
     restored_at = utc_now()
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         current_row = conn.execute(
             "SELECT state_json FROM app_state WHERE key = ?", (STATE_KEY,)
         ).fetchone()
@@ -844,7 +844,7 @@ def undo_last_action() -> dict:
 def database_integrity_status() -> dict:
     ensure_database()
     started = datetime.now()
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         rows = conn.execute("PRAGMA integrity_check").fetchall()
     messages = [str(row[0]) for row in rows if row]
     ok = messages == ["ok"]
@@ -901,7 +901,7 @@ def create_database_backup(reason: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup_path = DB_BACKUP_DIR / f"field_trial_secretary-{timestamp}.sqlite"
     shutil.copy2(DB_PATH, backup_path)
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute(
             "INSERT INTO backup_events (created_at, backup_path, reason) VALUES (?, ?, ?)",
             (utc_now(), str(backup_path), reason),
@@ -1426,7 +1426,7 @@ def write_state_unlocked(state: dict) -> dict:
     updated_at = utc_now()
     state = {**state, "savedToSQLiteAt": updated_at}
     state_json = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         previous_row = conn.execute(
             "SELECT state_json FROM app_state WHERE key = ?", (STATE_KEY,)
         ).fetchone()
@@ -1603,7 +1603,7 @@ def save_entry_document_bytes(
     saved_mime = str(mime_type or "application/octet-stream").strip()
     saved_source = str(source or "Entry document").strip()
     created_at = utc_now()
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute(
             """
             INSERT INTO entry_documents (id, file_name, mime_type, content, size_bytes, source, created_at)
@@ -1684,7 +1684,7 @@ def read_entry_document(document_id: object) -> dict | None:
     if not document_id:
         return None
     ensure_database()
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         row = conn.execute(
             "SELECT id, file_name, mime_type, content, size_bytes, source, created_at FROM entry_documents WHERE id = ?",
             (str(document_id),),
@@ -3408,7 +3408,7 @@ def load_master_hounds_from_state() -> list[dict]:
     if not DB_PATH.exists():
         return []
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
             row = conn.execute("select state_json from app_state where key = ?", (STATE_KEY,)).fetchone()
         if not row:
             return []
@@ -6304,6 +6304,24 @@ def handle_catalog_report_post(handler, parsed) -> bool:
         handler.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
     return True
 
+
+def handle_trial_archive_post(handler, parsed) -> bool:
+    if parsed.path != "/api/trial-archive":
+        return False
+    length = int(handler.headers.get("Content-Length", "0"))
+    raw = handler.rfile.read(length)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        handler.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+        return True
+    try:
+        body, filename, archive_path = create_trial_archive_package(payload)
+        handler.send_zip(body, filename, archive_path)
+    except Exception as exc:
+        handler.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+    return True
+
 class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(APP_DIR), **kwargs)
@@ -6517,6 +6535,8 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": "Choose a new or existing database before using the application."}, HTTPStatus.CONFLICT)
             return
         if handle_catalog_report_post(self, parsed):
+            return
+        if handle_trial_archive_post(self, parsed):
             return
         if parsed.path == "/api/build-portable":
             try:
@@ -7123,6 +7143,8 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": "Choose a new or existing database before using the application."}, HTTPStatus.CONFLICT)
             return
         if handle_catalog_report_post(self, parsed):
+            return
+        if handle_trial_archive_post(self, parsed):
             return
         if parsed.path == "/api/build-portable":
             try:
