@@ -5,10 +5,30 @@
       "version": "0.4.4",
       "date": "2026-09-28",
       "channel": "beta",
-      "status": "pending",
+      "status": "available",
       "summary": "Adds one-click verified program updates, explicit first-run database creation or restore, database-free installers, safer transfer packaging, improved breed imports, corrected runoff huntmaster labels, and required ASFA field clerks.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.4",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.4/Field-Trial-Secretary-0.4.4-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.4/Field-Trial-Secretary-0.4.4-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.4/Field-Trial-Secretary-0.4.4-portable-20260929-110222.zip"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.4/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.4/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.4/Field-Trial-Secretary-0.4.4-macOS-arm64.dmg",
+          "sha256": "77d47917377db376e313c3eefc7f03e51cb5d58c6e1bf858324fba4f5b5b0760"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.4/Field-Trial-Secretary-0.4.4-macOS-x86_64.dmg",
+          "sha256": "aef17e7904bfb4ab4535b52d055282108fecd8f22ffc73a982c2c5078306233a"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.4/Field-Trial-Secretary-0.4.4-portable-20260929-110222.zip",
+          "sha256": "aa4a761fee34443882302cf2a902b360bcb3457186e2f52f85c6ba2d2d15127c"
+        }
+      }
     },
     {
       "version": "0.4.3",
