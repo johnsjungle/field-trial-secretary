@@ -1774,7 +1774,7 @@ def flatten_draw_courses(groups: list[dict], trial: dict | None = None) -> list[
             blocks.append({
                 "breed": group.get("breed") or "",
                 "fieldName": field_name_for_breed(trial or {}, group.get("breed")),
-                "stake": "Mixed" if group.get("mixedStake") else abbreviate_stake(group.get("stake") or ""),
+                "stake": abbreviate_stake(group.get("drawStake") or ("Mixed" if group.get("mixedStake") else group.get("stake") or "")),
                 "mixedStake": bool(group.get("mixedStake")),
                 "judgeBreed": group.get("judgeBreed"),
                 "drawStake": group.get("drawStake"),
@@ -2039,7 +2039,7 @@ def draw_akc_overlay(pdf: canvas.Canvas, trial: dict, course_blocks: list[dict],
             hound = hounds_by_color.get(color)
             if not hound:
                 continue
-            line = safe_text(draw_sheet_hound_name(hound, block), 22)
+            line = draw_sheet_hound_name(hound, block, 22)
             if hound.get("manuallyMoved"):
                 line = safe_text(f"{line} (m)", 26)
             pdf.drawString(
@@ -2115,21 +2115,62 @@ def draw_hound_lines(pdf: canvas.Canvas, x: float, first_top: float, block: dict
         notes = []
         if hound.get("manuallyMoved"):
             notes.append("manual")
-        name = draw_sheet_hound_name(hound, block)
-        line = safe_text(name, 23)
+        line = draw_sheet_hound_name(hound, block, 23)
         if notes:
             line = safe_text(f"{line} ({', '.join(notes)})", 34)
         pdf.drawString(x, y_from_top(first_top + (15 * offset)), line)
 
 
-def draw_sheet_hound_name(hound: dict, block: dict) -> str:
+HUNTMASTER_BREED_INITIALS = {
+    "A": "AH", "AH": "AH", "AFGHANHOUND": "AH", "AFGHANHOUNDS": "AH",
+    "AZ": "AZ", "AZAWAKH": "AZ",
+    "BA": "BA", "BASENJI": "BA", "BASENJIS": "BA",
+    "B": "BZ", "BZ": "BZ", "BORZOI": "BZ", "BORZOIS": "BZ",
+    "CE": "CE", "CIRNECODELLETNA": "CE",
+    "CH": "CH", "CHARTPOLSKI": "CH",
+    "DH": "SD", "SD": "SD", "DEERHOUND": "SD", "SCOTTISHDEERHOUND": "SD", "SCOTTISHDEERHOUNDS": "SD",
+    "GA": "GA", "GALGOESPANOL": "GA",
+    "G": "GH", "GH": "GH", "GREYHOUND": "GH", "GREYHOUNDS": "GH",
+    "HW": "HW", "HORTAYABORZAYA": "HW",
+    "IB": "IB", "IBIZANHOUND": "IB", "IBIZANHOUNDS": "IB",
+    "IG": "IG", "ITALIANGREYHOUND": "IG", "ITALIANGREYHOUNDS": "IG",
+    "IW": "IW", "IRISHWOLFHOUND": "IW", "IRISHWOLFHOUNDS": "IW",
+    "MA": "MA", "MAGYARAGAR": "MA",
+    "N": "NBS", "NBS": "NBS", "NORRBOTTENSPETS": "NBS",
+    "PIO": "PIO", "PERUVIANINCAORCHID": "PIO",
+    "P": "PH", "PH": "PH", "PHARAOHHOUND": "PH", "PHARAOHHOUNDS": "PH",
+    "POD": "POD", "PORTUGUESEPODENGO": "POD", "PORTUGUESEPODENGOMEDIOGRANDE": "POD",
+    "PP": "PPP", "PPP": "PPP", "PORTUGUESEPODENGOPEQUENO": "PPP",
+    "R": "RR", "RR": "RR", "RHODESIANRIDGEBACK": "RR", "RHODESIANRIDGEBACKS": "RR",
+    "S": "SA", "SA": "SA", "SALUKI": "SA", "SALUKIS": "SA",
+    "SL": "SL", "SLOUGHI": "SL", "SLOUGHIS": "SL",
+    "SW": "SW", "SILKENWINDHOUND": "SW", "SILKENWINDHOUNDS": "SW",
+    "TR": "TR", "THAIRIDGEBACK": "TR", "THAIRIDGEBACKS": "TR",
+    "W": "WH", "WH": "WH", "WHIPPET": "WH", "WHIPPETS": "WH",
+}
+
+
+def huntmaster_breed_initials(value: object) -> str:
+    return HUNTMASTER_BREED_INITIALS.get(clean_text(value), "")
+
+
+def draw_sheet_hound_name(hound: dict, block: dict, max_chars: int | None = None) -> str:
     name = printable_hound_name(hound)
-    if clean_text(block.get("breed")) == "SINGLES" or clean_text(block.get("stake")) == "SINGLES":
-        breed = str(hound.get("breed") or hound.get("entryBreed") or hound.get("registeredBreed") or "").strip()
-        display = breed_display_for_record(breed)
-        if display and display not in name:
-            return f"{name} ({display})"
-    return name
+    block_breed = clean_text(block.get("breed"))
+    block_stake = clean_text(block.get("stake"))
+    block_phase = clean_text(block.get("phase"))
+    show_breed = block_breed == "SINGLES" or block_stake == "SINGLES" or block_breed in {"BIF", "BIE"} or block_phase in {"BIF", "BIE"}
+    if show_breed:
+        breed = hound.get("breed") or hound.get("entryBreed") or hound.get("registeredBreed") or ""
+        display = huntmaster_breed_initials(breed)
+        if not display and (block_breed == "SINGLES" or block_stake == "SINGLES"):
+            display = breed_display_for_record(breed)
+        suffix = f" ({display})" if display and not re.search(rf"\(\s*{re.escape(display)}\s*\)\s*$", name, flags=re.IGNORECASE) else ""
+        if suffix:
+            if max_chars:
+                name = safe_text(name, max(1, max_chars - len(suffix)))
+            name = f"{name}{suffix}"
+    return safe_text(name, max_chars) if max_chars else name
 
 
 def y_from_top(top: float) -> float:
