@@ -1664,9 +1664,16 @@ async function loadFromSQLiteIfAvailable() {
         }
         sqliteModeAvailable = true;
         if (payload.state) {
+            const storedTrials = Array.isArray(payload.state.data?.trials) ? payload.state.data.trials : [];
+            const storedHounds = Array.isArray(payload.state.data?.masterHounds) ? payload.state.data.masterHounds : [];
             applyBackupSnapshot(payload.state, { queueServerSave: false });
+            const normalizedStoredData = JSON.stringify(storedTrials) !== JSON.stringify(trials)
+                || JSON.stringify(storedHounds) !== JSON.stringify(masterHounds);
             lastSQLiteSaveAt = payload.state.savedToSQLiteAt || payload.state.exportedAt || '';
             saveStatusState = 'saved';
+            if (normalizedStoredData) {
+                await saveToSQLite();
+            }
         } else if (trials.length > 0 || masterHounds.length > 0 || masterJudges.length > 0 || masterWorkers.length > 0) {
             await saveToSQLite();
         } else {
@@ -22449,7 +22456,20 @@ function normalizeBreedCode(value) {
         PORTUGUESEPODENGOMEDIO: 'POD', PORTUGUESEPODENGOGRANDE: 'POD',
         PORTUGUESEPODENGOMEDIOGRANDE: 'POD',
     };
-    const found = breedOptions.find(([code, label]) => key === clean(code) || key === clean(label));
+    const found = breedOptions.find(([code, label]) => {
+        const codeKey = clean(code);
+        const labelKey = clean(label);
+        const accepted = new Set([
+            codeKey,
+            labelKey,
+            `${labelKey}S`,
+            `${labelKey}${codeKey}`,
+            `${labelKey}S${codeKey}`,
+            `${codeKey}${labelKey}`,
+            `${codeKey}${labelKey}S`,
+        ]);
+        return accepted.has(key);
+    });
     return found ? found[0] : (aliases[key] || String(value || '').trim());
 }
 function normalizeImportedBreed(value) {
@@ -22579,7 +22599,7 @@ function createHoundFromImportedEntry(imported) {
         id: crypto.randomUUID(),
         callName: imported.callName || imported.registeredName || 'Imported Hound',
         registeredName: imported.registeredName || imported.callName || '',
-        breed: imported.breed || '',
+        breed: normalizeImportedBreed(imported.breed),
         registrationNumber: imported.registrationNumber || '',
         registry: imported.registry || '',
         registrationType: imported.registrationType || '',

@@ -590,7 +590,7 @@ function buildImportedMasterHound(imported) {
     const now = new Date().toISOString();
     return normalizeLciHoundShape({
         id: crypto.randomUUID(), callName: imported.callName || imported.registeredName || 'Imported Hound',
-        registeredName: imported.registeredName || imported.callName || '', breed: imported.breed || '',
+        registeredName: imported.registeredName || imported.callName || '', breed: normalizeImportedBreed(imported.breed),
         registrationNumber: imported.registrationNumber || '', registry: imported.registry || '', registrationType: imported.registrationType || '',
         registrationDisplay: formatRegistration(imported.registry, imported.registrationNumber, imported.registrationType),
         alternateRegistry: imported.alternateRegistry || '', alternateRegistrationNumber: imported.alternateRegistrationNumber || '',
@@ -609,7 +609,11 @@ function mergeImportedMasterHound(existing, imported, overwrite) {
     const updated = { ...existing };
     fields.forEach((field) => {
         const incoming = String(imported[field] ?? '').trim();
-        if (incoming && (overwrite || !String(updated[field] ?? '').trim())) updated[field] = field === 'ownerPhone' ? formatNorthAmericanPhone(incoming) : incoming;
+        if (incoming && (overwrite || !String(updated[field] ?? '').trim())) {
+            updated[field] = field === 'ownerPhone'
+                ? formatNorthAmericanPhone(incoming)
+                : (field === 'breed' ? normalizeImportedBreed(incoming) : incoming);
+        }
     });
     updated.registrationDisplay = formatRegistration(updated.registry, updated.registrationNumber, updated.registrationType);
     updated.alternateRegistrationDisplay = formatRegistration(updated.alternateRegistry, updated.alternateRegistrationNumber, '');

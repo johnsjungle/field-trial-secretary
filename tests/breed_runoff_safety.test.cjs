@@ -6,8 +6,13 @@ for(const name of ['breedOptions','asfaJudgeSheetBreedCodes','asfaPremiumBreedAl
 vm.runInContext(block('function normalizeBreedCode(','function normalizeImportedBreed(')+block('function breedDisplayCode(','function displayBreedCode('),context);
 for(const alias of ['DH','SD','sd','Deerhound','Scottish Deerhound','Scottish Deerhounds']){assert.equal(context.normalizeBreedCode(alias),'DH');assert.equal(context.breedDisplayCode(alias),'SD');}
 for(const [alias,code] of [['A','AH'],['B','BZ'],['G','GH'],['P','PH'],['S','SA'],['W','WH'],['PP','PPP'],['N','NBS'],["Cirneco dell’Etna",'CE']])assert.equal(context.normalizeBreedCode(alias),code);
+for(const alias of ['Ibizan Hound','Ibizan Hounds','Ibizan Hound (IB)','IB - Ibizan Hound'])assert.equal(context.normalizeBreedCode(alias),'IB');
 assert.equal(context.normalizeBreedCode('Custom breed'),'Custom breed');
 vm.runInContext('for (const [code,name] of breedOptions.filter(([c])=>c && c!=="OTHER")) { if (normalizeBreedCode(name)!==code || normalizeBreedCode(breedDisplayCode(code))!==code) throw Error(name); }',context);
+vm.runInContext('for (const [code,name] of breedOptions.filter(([c])=>c && c!=="OTHER")) { if (normalizeBreedCode(name+"s")!==code || normalizeBreedCode(name+" ("+code+")")!==code) throw Error(name); }',context);
+Object.assign(context,{lciDivisions:[],lciStakes:[]});
+vm.runInContext(block('function normalizeImportedLciParts(','function matchImportedHound(')+block('function normalizeLciHoundShape(','function runGroupBreedForEntry('),context);
+assert.deepEqual({...context.normalizeLciHoundShape({id:'existing',breed:'Ibizan Hounds'})},{id:'existing',breed:'IB'});
 let trial,items,prompts=0,writes=0,draws=0,accept=false,changeDuringPrompt=false;
 Object.assign(context,{runoffMessage:{},showMessage:()=>{},readForm:()=>structuredClone(trial),collectRunoffItems:()=>items,drawnRunoffForItem:(t,i)=>(t.preliminaryDraw.groups.find(g=>g.id===i.groupId)?.runoffs||[]).find(r=>r.key===i.tie.key),showTrialConfirm:async options=>{prompts++;assert.equal(options.focusSecondary,true);assert.match(options.message,/posted/);if(changeDuringPrompt)trial.entries.push({id:'changed'});return accept;},createRunoffDrawFromRows:(rows,tie)=>({key:tie.key,id:'new'+(++draws),courses:[{hounds:[{entryId:'a',tieBreakBlanketColor:'YELLOW'}]}]}),createBobRunoffDraw:()=>null,runoffKeyForTie:tie=>tie.key,upsertTrial:t=>{trial=structuredClone(t);writes++;},saveTrials:()=>{},render:()=>{}});
 vm.runInContext(block('function runoffItemAlreadyDrawn(','async function drawSingleRunoff('),context);
