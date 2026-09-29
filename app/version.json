@@ -1,9 +1,23 @@
 {
-    "name": "Field Trial Secretary",
-    "version": "0.4.4",
-    "releaseDate": "2026-09-28",
-    "channel": "beta",
-    "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.4",
-    "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-    "notes": "Adds one-click verified program updates, explicit first-run database creation or restore, database-free installers, safer transfer packaging, improved breed imports, corrected runoff huntmaster labels, and required ASFA field clerks."
+    "name": "
+Field Trial Secretary
+",
+    "version": "
+0.4.5
+",
+    "releaseDate": "
+2026-09-29
+",
+    "channel": "
+beta
+",
+    "releaseUrl": "
+https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.5
+",
+    "latestVersionUrl": "
+https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json
+",
+    "notes": "
+Fixes final trial archive downloads and closes SQLite connections reliably to prevent Windows database file locks.
+"
 }

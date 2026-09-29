@@ -1,6 +1,6 @@
 # Updates & Versions
 
-The app reads https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json without login. The private source repository remains private.
+The app reads https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json without login. The application source repository and installer repository are public and remain separate.
 
 Publish completed installers as GitHub Release assets in johnsjungle/field-trial-secretary-updates. Add their public browser download URLs to downloads.windows, downloads.appleSilicon, and downloads.intel in the public index. Publish the matching README and release notes under versions/<version>/. Mark a version available when its advertised downloads are ready; pending versions show notes without download buttons, and archived entries contain documentation only.
 

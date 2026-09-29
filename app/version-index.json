@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.4.5",
+      "date": "2026-09-29",
+      "channel": "beta",
+      "status": "pending",
+      "summary": "Fixes final trial archive downloads and closes SQLite connections reliably to prevent Windows database file locks.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.5",
+      "downloads": {}
+    },
+    {
       "version": "0.4.4",
       "date": "2026-09-28",
       "channel": "beta",

@@ -2,13 +2,13 @@
 
 Offline-first field trial secretary application for setting up lure coursing trials, entering hounds, managing workers and judges, drawing courses, scoring, and producing ASFA/AKC paperwork.
 
-## Current release: v0.4.4 beta
+## Current release: v0.4.5 beta
 
-This release adds one-click verified updates, safe first-run database setup and database-free installers, along with import, runoff paperwork, and ASFA setup corrections. See [full release notes](docs/RELEASE_NOTES_0.4.4.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
+This release fixes final trial archive downloads and Windows SQLite file locking while retaining the safe first-run database setup and one-click updater. See [full release notes](docs/RELEASE_NOTES_0.4.5.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
 
 ## Update checker
 
-Use **Admin → Updates & Versions** to check for releases. In a packaged Windows or Mac installation, **Update Program** downloads the verified release, backs up SQLite, closes the app, replaces program files, verifies the new version, and restarts automatically. Trial data stays in its existing data location. Installers are hosted in the public GitHub Releases repository, separately from the private application source. See [maintaining the version index](docs/UPDATES.md).
+Use **Admin → Updates & Versions** to check for releases. In a packaged Windows or Mac installation, **Update Program** downloads the verified release, backs up SQLite, closes the app, replaces program files, verifies the new version, and restarts automatically. Trial data stays in its existing data location. Installers are hosted in the public GitHub Releases repository, separately from the application source repository. See [maintaining the version index](docs/UPDATES.md).
 
 ## Run Locally
 
