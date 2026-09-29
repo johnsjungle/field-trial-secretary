@@ -196,6 +196,7 @@ function normalizeTrialRuleset(trial) {
 function associationHasStarted(trial) {
     return Boolean(trial && (
         (trial.entries || []).length
+        || (trial.akcTests || []).length
         || trial.preliminaryDraw
         || (trial.runPlan || []).length
         || (trial.bobRunoffs || []).length
@@ -208,6 +209,8 @@ function applyAssociationControlState(trial = getSelectedTrial()) {
     const started = associationHasStarted(trial);
     select.disabled = Boolean(started);
     const profile = rulesForTrial(trial);
+    const akcTestChoices = document.getElementById('entryAkcTestChoices');
+    if (akcTestChoices) akcTestChoices.hidden = profile.association !== 'AKC';
     const lciCheckbox = document.getElementById('lciOffered');
     if (lciCheckbox) {
         if (!profile.lciAllowed) {
@@ -1003,6 +1006,7 @@ let selectedCatalogTrialIds = new Set();
 let catalogSelectionInitialized = false;
 let editingHoundId = '';
 let editingEntryId = '';
+let editingAkcTestId = '';
 let entryDocumentIdsMarkedForRemoval = new Set();
 let selectedEntryHoundId = '';
 let selectedRunPlanRowId = '';
@@ -2716,6 +2720,7 @@ function readForm() {
     data.updatedAt = new Date().toISOString();
     data.documentsReady = readCheckedValues('documentOptions');
     data.entries = normalizeLciEntries(getSelectedArray('entries'));
+    data.akcTests = existing && Array.isArray(existing.akcTests) ? existing.akcTests.map(window.AkcTests.normalize) : [];
     if (data.entries.length === 0) {
         data.entries = normalizeLciEntries(getSelectedArray('hounds'));
     }
@@ -2801,6 +2806,7 @@ function writeForm(trial) {
     }    writeCheckedValues('documentOptions', trial ? trial.documentsReady : []);
     renderClassOptions(trial);
     renderRosterTables(trial || {});
+    renderAkcTests(trial || {});
     renderRollCall(trial || {});
     renderChecklist(trial);
     renderOfficialForms(trial);
@@ -2858,9 +2864,13 @@ function renderSecretaryFeeSummary(trial) {
     }
     const summary = calculateSecretaryFees(trial || {});
     const isAkc = rulesForTrial(trial || {}).association === 'AKC';
-    const akcEntryCount = (trial.entries || []).length;
+    const akcRegularEntryCount = (trial.entries || []).length;
+    const akcTestEntryCount = (trial.akcTests || []).length;
+    const akcEntryCount = akcRegularEntryCount + akcTestEntryCount;
     const rows = isAkc
         ? [
+            ['Regular trial entries', akcRegularEntryCount],
+            ['JC/QC test entries', akcTestEntryCount],
             ['Total entries', akcEntryCount],
             ['AKC recording fee', currency(4.5)],
             ['Total service fees', currency(akcEntryCount * 4.5)],
@@ -20348,7 +20358,10 @@ function editMasterHound(houndId) {
 }
 
 function removeMasterHound(houndId) {
-    const usedInTrials = trials.some((trial) => (trial.entries || []).some((entry) => entry.houndId === houndId));
+    const usedInTrials = trials.some((trial) =>
+        (trial.entries || []).some((entry) => entry.houndId === houndId)
+        || (trial.akcTests || []).some((entry) => entry.houndId === houndId)
+    );
     if (usedInTrials) {
         showMessage(masterHoundMessage, 'This hound is entered in at least one trial. Remove the trial entries before deleting the hound record.', 'warning');
         return;
@@ -20403,6 +20416,9 @@ function updateTrialEntriesForHound(hound, previousHound = hound) {
                 registrationVerificationStatus: registration.verificationStatus,
             };
         }),
+        akcTests: (trial.akcTests || []).map((record) => record.houndId === hound.id
+            ? { ...record, ...window.AkcTests.houndSnapshot(hound), updatedAt: new Date().toISOString() }
+            : record),
         updatedAt: new Date().toISOString(),
     }));
     saveTrials();
@@ -20580,6 +20596,7 @@ async function addTrialEntry() {
             });
         });
 
+        syncSelectedAkcTestsForTrials(targetIds, hound, selectedRegistration, className, editingEntryId);
         saveTrials();
         clearEntryForm();
         showMessage(
@@ -20626,6 +20643,7 @@ async function addTrialEntry() {
         });
     });
 
+    syncSelectedAkcTestsForTrials(targetIds, hound, selectedRegistration, className);
     saveTrials();
     clearEntryForm();
     showMessage(entryMessage, `Entry added to ${added} trial${added === 1 ? '' : 's'}. ${skipped ? `${skipped} duplicate skipped.` : ''}`, added ? 'success' : 'warning');
@@ -23015,6 +23033,8 @@ function clearEntryForm() {
     document.getElementById('entryAdditionalKennel').checked = false;
     document.getElementById('entryAdditionalBreeder').checked = false;
     document.getElementById('entryAdditionalBench').checked = false;
+    document.getElementById('entryAkcJc').checked = false;
+    document.getElementById('entryAkcQc').checked = false;
     document.getElementById('entryInfoChanged').checked = false;
     document.getElementById('entryDismissedLastSix').checked = false;
     document.getElementById('entryPaid').checked = false;
@@ -23099,6 +23119,9 @@ function editTrialEntry(entryId) {
     document.getElementById('entryAdditionalKennel').checked = Boolean(entry.additionalKennel);
     document.getElementById('entryAdditionalBreeder').checked = Boolean(entry.additionalBreeder);
     document.getElementById('entryAdditionalBench').checked = Boolean(entry.additionalBench);
+    const linkedAkcTests = trial.akcTests || [];
+    document.getElementById('entryAkcJc').checked = linkedAkcTests.some((record) => record.sourceEntryId === entry.id && record.testType === 'JC');
+    document.getElementById('entryAkcQc').checked = linkedAkcTests.some((record) => record.sourceEntryId === entry.id && record.testType === 'QC');
     document.getElementById('entryInfoChanged').checked = Boolean(entry.infoChanged);
     document.getElementById('entryDismissedLastSix').checked = Boolean(entry.dismissedLastSix);
     document.getElementById('entryPaid').checked = Boolean(entry.paid);
@@ -23189,7 +23212,7 @@ function removeTrialEntry(entryId) {
         return;
     }
 
-    trials = trials.map((item) => item.id === trial.id ? { ...item, entries: nextEntries, updatedAt: new Date().toISOString() } : item);
+    trials = trials.map((item) => item.id === trial.id ? { ...item, entries: nextEntries, akcTests: (item.akcTests || []).map((record) => record.sourceEntryId === entryId ? { ...record, sourceEntryId: '' } : record), updatedAt: new Date().toISOString() } : item);
     saveTrials();
     if (editingEntryId === entryId) {
         clearEntryForm();
@@ -23912,6 +23935,7 @@ function clearMessages() {
 }
 
 function switchTab(tab) {
+    if (tab === 'jcqc' && rulesForTrial(getSelectedTrial() || {}).association !== 'AKC') tab = 'entries';
     const legacyAdminTabs = {
         hounds: 'Hound DB',
         people: 'Judges & Workers',

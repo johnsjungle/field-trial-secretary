@@ -39,6 +39,7 @@
         <nav class="main-tabs" aria-label="Trial areas">
             <button type="button" class="tab-button active" data-tab-target="setup">Trials</button>
             <button type="button" class="tab-button" data-tab-target="entries">Entries</button>
+            <button type="button" class="tab-button" data-tab-target="jcqc" id="akcTestsTabButton" hidden>JC / QC Tests</button>
             <button type="button" class="tab-button" data-tab-target="runplan">Running Order</button>
             <button type="button" class="tab-button" data-tab-target="rollcall">Roll Call</button>
             <button type="button" class="tab-button" data-tab-target="scoring">Scoring</button>
@@ -625,6 +626,11 @@
                                 <label class="switch"><input id="entryAdditionalBreeder" type="checkbox"> <span>Breeder</span></label>
                                 <label class="switch"><input id="entryAdditionalBench" type="checkbox"> <span>Bench (Dual Champion)</span></label>
                             </div>
+                            <div class="entry-detail-row entry-detail-secondary" id="entryAkcTestChoices" hidden>
+                                <label class="switch"><input id="entryAkcJc" type="checkbox"> <span>Also enter Junior Courser (JC)</span></label>
+                                <label class="switch"><input id="entryAkcQc" type="checkbox"> <span>Also enter Qualified Courser (QC)</span></label>
+                                <p class="field-note">These create separate pass/fail test entries and do not place the hound in another competitive stake.</p>
+                            </div>
                             <div class="grid two" id="entryFirstTimeDocs">
                                 <label>
                                     Registration certificate
@@ -766,6 +772,68 @@
                                 </tr>
                             </thead>
                             <tbody id="jotformImportPreviewTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="form-section" data-tab="jcqc" id="akcTestsSection">
+                    <div class="section-heading">
+                        <div>
+                            <h2>JC / QC Test Entries</h2>
+                            <p>Add Junior Courser and Qualified Courser tests at any time. They remain separate from the competitive draw and scoring.</p>
+                        </div>
+                    </div>
+                    <div class="form-message compact" id="akcTestMessage"></div>
+                    <datalist id="akcTestHoundOptions"></datalist>
+                    <datalist id="akcTestJudgeOptions"></datalist>
+                    <div class="entry-form-grid">
+                        <section class="entry-form-card">
+                            <h3>Hound and Test</h3>
+                            <div class="inline-entry">
+                                <label class="field-label wide">Find an entered or saved hound<input id="akcTestHoundSearch" list="akcTestHoundOptions" placeholder="Search call name, registered name, or registration"></label>
+                                <button type="button" class="secondary small" id="useAkcTestHoundButton">Use Selected Hound</button>
+                            </div>
+                            <div class="inline-entry">
+                                <label class="field-label">Call name<input id="akcTestCallName"></label>
+                                <label class="field-label">Registered name<input id="akcTestRegisteredName"></label>
+                                <label class="field-label">Breed<select id="akcTestBreed"></select></label>
+                                <label class="field-label">AKC registration #<input id="akcTestRegistrationNumber"></label>
+                            </div>
+                            <div class="inline-entry">
+                                <label class="field-label">Test<select id="akcTestType"><option value="JC">Junior Courser (JC)</option><option value="QC">Qualified Courser (QC)</option></select></label>
+                                <label class="field-label">Result<select id="akcTestResult"><option value="pending">Pending</option><option value="pass">Pass</option><option value="fail">Fail</option><option value="scratch">Scratch</option></select></label>
+                                <label class="field-label">Judge<input id="akcTestJudgeName" list="akcTestJudgeOptions"></label>
+                                <label class="field-label">Judge number<input id="akcTestJudgeNumber"></label>
+                            </div>
+                            <div class="inline-entry">
+                                <label class="field-label">Owner<input id="akcTestOwner"></label>
+                                <label class="field-label">Handler<input id="akcTestHandler"></label>
+                                <label class="field-label">Date of birth<input id="akcTestDob" type="date"></label>
+                                <label class="field-label">Sex<select id="akcTestSex"><option value="">Sex</option><option>Dog</option><option>Bitch</option></select></label>
+                            </div>
+                        </section>
+                        <details class="entry-form-card entry-collapsible" id="akcQcPartnerCard"><summary>QC testing hound</summary>
+                            <p class="field-note">For QC, record the hound that ran with the testing hound. It may be entered from the hound list or typed here.</p>
+                            <div class="inline-entry">
+                                <label class="field-label">Partner name<input id="akcTestPartnerName"></label>
+                                <label class="field-label">Partner breed<input id="akcTestPartnerBreed"></label>
+                                <label class="field-label">Partner registration #<input id="akcTestPartnerRegistrationNumber"></label>
+                            </div>
+                        </details>
+                        <details class="entry-form-card entry-collapsible"><summary>Notes</summary>
+                            <label class="stacked-label">Test notes<textarea id="akcTestNotes" rows="3" placeholder="Optional running or paperwork note"></textarea></label>
+                        </details>
+                    </div>
+                    <div class="button-row">
+                        <button type="button" class="primary" id="saveAkcTestButton">Add Test Entry</button>
+                        <button type="button" class="secondary" id="cancelAkcTestEditButton" hidden>Cancel Edit</button>
+                        <button type="button" class="secondary" id="printAkcTestSheetButton">Print JC/QC Record Sheet</button>
+                    </div>
+                    <div class="quick-grid" id="akcTestSummary"></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Order</th><th>Test</th><th>Hound</th><th>Breed</th><th>Registration</th><th>Judge</th><th>QC Partner</th><th>Result</th><th>Actions</th></tr></thead>
+                            <tbody id="akcTestsTable"></tbody>
                         </table>
                     </div>
                 </section>
@@ -1937,6 +2005,8 @@
     <script src="asfa_recent_hounds.js"></script>
     <script src="default_form_alignment.js?v=20260802"></script>
     <script src="association_rules.js?v=20260808-akc-foundation"></script>
+    <script src="akc_tests.js?v=20260929-jcqc"></script>
+    <script src="akc_tests_ui.js?v=20260929-jcqc"></script>
     <script src="specialty_stakes.js"></script>
     <script src="bie.js?v=20260913-bie-balanced-courses"></script>
     <script src="bie_rounds.js?v=20260913-bie-balanced-courses"></script>

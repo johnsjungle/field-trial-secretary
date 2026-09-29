@@ -127,6 +127,7 @@ RECORD_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "SEC-01-Record-Sheet-Rev-03-02.pdf",
     "AKC": APP_DIR / "templates" / "akc" / "JERSC3-Lure-Coursing-Scoresheet-4-22.pdf",
 }
+AKC_TEST_RECORD_TEMPLATE = APP_DIR / "templates" / "akc" / "JERSC4_1021-fillable1.pdf"
 ENTRY_FORM_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "EF-A-Entry-Form-Rev-06-26.pdf",
     "ASFA_LCI": APP_DIR / "templates" / "asfa" / "EF-A-LCI-Entry-Form-Rev-08-24.pdf",
@@ -2632,6 +2633,140 @@ def blank_akc_scoresheet_fields() -> dict[str, object]:
     return fields
 
 
+def _akc_test_name_lines(value: object) -> tuple[str, str]:
+    words = " ".join(str(value or "").split()).split()
+    if not words:
+        return "", ""
+    first: list[str] = []
+    second: list[str] = []
+    for word in words:
+        target = first if len(" ".join(first + [word])) <= 28 or not first else second
+        target.append(word)
+    return " ".join(first), " ".join(second)
+
+
+def _akc_test_result_fields(row_index: int) -> tuple[str, str]:
+    suffix = "" if row_index == 0 else str(row_index)
+    fail_prefix = "FaIL" if row_index >= 7 else "Fail"
+    return f"Pass{suffix}", f"{fail_prefix}{suffix}"
+
+
+def _pdf_widget_rects(template_path: Path) -> dict[str, tuple[float, float, float, float]]:
+    reader = PdfReader(template_path)
+    result: dict[str, tuple[float, float, float, float]] = {}
+    for page in reader.pages:
+        for annotation_ref in page.get("/Annots", []):
+            annotation = annotation_ref.get_object()
+            parent = annotation.get("/Parent")
+            parent_object = parent.get_object() if parent else None
+            name = annotation.get("/T") or (parent_object.get("/T") if parent_object else None)
+            rect = annotation.get("/Rect")
+            if not name or not rect:
+                continue
+            x1, y1, x2, y2 = [float(value) for value in rect]
+            result[str(name)] = (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+    return result
+
+
+def _draw_text_in_pdf_rect(pdf: canvas.Canvas, rects: dict, field_name: str, value: object, maximum_size: float = 10) -> None:
+    text = " ".join(str(value or "").split())
+    rect = rects.get(field_name)
+    if not text or not rect:
+        return
+    left, bottom, right, top = rect
+    width = max(1.0, right - left - 3)
+    size = maximum_size
+    measured = pdfmetrics.stringWidth(text, "Helvetica", size)
+    if measured > width:
+        size = max(5.5, size * width / measured)
+    baseline = bottom + max(1.2, ((top - bottom) - size) / 2 + 1)
+    pdf.setFont("Helvetica", size)
+    pdf.setFillColorRGB(0, 0, 0)
+    pdf.drawString(left + 1.5, baseline, text)
+
+
+def _build_akc_test_overlay(trial: dict, judge_name: str, records: list[dict]) -> bytes:
+    rects = _pdf_widget_rects(AKC_TEST_RECORD_TEMPLATE)
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    header_values = {
+        "Event": trial.get("eventNumber") or "",
+        "Host Club": trial.get("clubName") or "",
+        "Date": trial.get("startsOn") or "",
+        "Print Judges Name": judge_name,
+        "Print Trial Secretarys Name": trial.get("secretaryName") or "",
+    }
+    for field_name, value in header_values.items():
+        _draw_text_in_pdf_rect(pdf, rects, field_name, value, 10)
+
+    for index, record in enumerate(records[:14]):
+        row_number = index + 1
+        first_name, second_name = _akc_test_name_lines(record.get("registeredName"))
+        values = {
+            f"Breed InitialsRow{row_number}": record.get("breed") or "",
+            f"Call NameRow{row_number}": record.get("callName") or "",
+            f"Registered NameRow{index * 2 + 1}": first_name,
+            f"Registered NameRow{index * 2 + 2}": second_name,
+            f"AKC Registration NoRow{row_number}": record.get("registrationNumber") or "",
+            f"Specify either QC or JCRow{row_number}": str(record.get("testType") or "JC").upper(),
+        }
+        for field_name, value in values.items():
+            _draw_text_in_pdf_rect(pdf, rects, field_name, value, 9)
+        pass_field, fail_field = _akc_test_result_fields(index)
+        result = str(record.get("result") or "pending").strip().lower()
+        result_field = pass_field if result == "pass" else fail_field if result == "fail" else ""
+        if result_field and result_field in rects:
+            left, bottom, right, top = rects[result_field]
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawCentredString((left + right) / 2, bottom + max(1.5, ((top - bottom) - 12) / 2 + 1), "X")
+
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
+def generate_akc_test_record_sheet_pdf(trial: dict) -> bytes:
+    """Fill the official AKC Qualified Courser/Junior Courser Test Record Sheet."""
+    if not AKC_TEST_RECORD_TEMPLATE.exists():
+        raise FileNotFoundError(f"AKC JC/QC record template not found: {AKC_TEST_RECORD_TEMPLATE}")
+    records = [row for row in (trial.get("akcTests") or []) if isinstance(row, dict)]
+    if not records:
+        raise ValueError("No JC or QC test entries were found.")
+
+    ordered = sorted(records, key=lambda row: (
+        int(row.get("runOrder") or 9999),
+        str(row.get("testType") or ""),
+        str(row.get("registeredName") or ""),
+    ))
+    judge_groups: list[tuple[str, list[dict]]] = []
+    for record in ordered:
+        judge_name = str(record.get("judgeName") or "").strip()
+        key = judge_name or "Judge not assigned"
+        match = next((group for group in judge_groups if group[0] == key), None)
+        if match:
+            match[1].append(record)
+        else:
+            judge_groups.append((key, [record]))
+
+    final_writer = PdfWriter()
+    for judge_key, judge_records in judge_groups:
+        for page_start in range(0, len(judge_records), 14):
+            page = fresh_template_page(AKC_TEST_RECORD_TEMPLATE)
+            page.pop("/Annots", None)
+            display_judge = "" if judge_key == "Judge not assigned" else judge_key
+            overlay = PdfReader(io.BytesIO(_build_akc_test_overlay(
+                trial,
+                display_judge,
+                judge_records[page_start:page_start + 14],
+            ))).pages[0]
+            page.merge_page(overlay)
+            final_writer.add_page(page)
+
+    output = io.BytesIO()
+    final_writer.write(output)
+    return output.getvalue()
+
+
 def generate_akc_record_sheet_pdf(
     trial: dict,
     group_id: str = "",
@@ -2649,10 +2784,15 @@ def generate_akc_record_sheet_pdf(
         raise FileNotFoundError(f"AKC record sheet template not found: {template_path}")
 
     groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting)
-    if not groups:
-        raise ValueError("No score rows were found for the AKC record sheet.")
+    include_akc_tests = not group_id and not breed and bool(trial.get("akcTests"))
+    if not groups and not include_akc_tests:
+        raise ValueError("No AKC trial or JC/QC test rows were found for the record packet.")
 
     final_writer = PdfWriter()
+    if include_akc_tests:
+        test_reader = PdfReader(io.BytesIO(generate_akc_test_record_sheet_pdf(trial)))
+        for test_page in test_reader.pages:
+            final_writer.add_page(test_page)
     rows_per_page = 12  # JERSC3 has 12 hound rows per page
 
     for group in groups:
@@ -6777,6 +6917,23 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/akc-test-record-sheet":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_pdf(generate_akc_test_record_sheet_pdf(trial), "akc-jc-qc-record-sheet.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/asfa-record-packet":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
@@ -7382,6 +7539,23 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 association = str(trial.get("association") or "ASFA").upper()
                 pdf = generate_secretary_report_pdf(trial, layout)
                 self.send_pdf(pdf, f"{association.lower()}-secretary-report.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/akc-test-record-sheet":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_pdf(generate_akc_test_record_sheet_pdf(trial), "akc-jc-qc-record-sheet.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
