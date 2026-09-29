@@ -2,9 +2,9 @@
 
 Offline-first field trial secretary application for setting up lure coursing trials, entering hounds, managing workers and judges, drawing courses, scoring, and producing ASFA/AKC paperwork.
 
-## Current release: v0.4.3 beta
+## Current release: v0.4.4 beta
 
-This release expands BIE event management with multi-trial qualification, breed pre-qualifiers, up to six judges, balanced course draws, runner confirmation, record sheets, previous-round corrections, and safer Undo behavior. See [full release notes](docs/RELEASE_NOTES_0.4.3.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
+This release adds one-click verified updates, safe first-run database setup and database-free installers, along with import, runoff paperwork, and ASFA setup corrections. See [full release notes](docs/RELEASE_NOTES_0.4.4.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
 
 ## Update checker
 

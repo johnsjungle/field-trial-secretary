@@ -285,7 +285,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Field Trial Secretary ${{ github.ref_name }}
-          prerelease: true
+          prerelease: false
           body_path: ${{ env.RELEASE_NOTES }}
           files: release-assets/*
 
