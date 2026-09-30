@@ -50,10 +50,14 @@ const assert = require('node:assert/strict');
   assert.match(await page.locator('#akcTestsTable').innerText(), /Dash Registered/);
   assert.match(await page.locator('#akcTestsTable').innerText(), /QC/);
   assert.match(await page.locator('#akcTestsTable').innerText(), /Pending/);
+  assert.equal(await page.locator('#akcTestsTable button', { hasText: 'Print QC Certificate' }).count(), 1);
   await page.locator('#akcTestsTable button', { hasText: 'Edit' }).click();
   await page.locator('#akcTestResult').selectOption('pass');
   await page.locator('#saveAkcTestButton').click();
   assert.match(await page.locator('#akcTestsTable').innerText(), /Pass/);
+
+  await page.locator('.tab-button[data-tab-target="wrapup"]').click();
+  assert.equal(await page.locator('#printAkcJudgesBookButton').isVisible(), true);
 
   await page.evaluate(() => {
     trials[0].association = 'ASFA';

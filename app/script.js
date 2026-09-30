@@ -13605,8 +13605,9 @@ async function printAsfaRecordPacket() {
         showMessage(message, `Build the preliminary draw before printing the ${profile.association} submission packet.`, 'warning');
         return;
     }
+    const packetTrial = profile.association === 'AKC' ? trialWithJudgeContacts(trial) : trial;
     const printed = await openTrialPdf('/api/asfa-record-packet', {
-        trial,
+        trial: packetTrial,
         layout: getAsfaRecordLayout(),
         entryLayout: getAsfaEntryLayout(),
         lciEntryLayout: getAsfaLciEntryLayout(),
@@ -24083,10 +24084,12 @@ function renderWrapUpPages() {
     const recDesc = document.getElementById('recordPacketDesc');
     const recBtn = document.getElementById('printAsfaRecordPacketButton');
     const entryFormsBtn = document.getElementById('printAsfaEntryFormsButton');
+    const judgesBookBtn = document.getElementById('printAkcJudgesBookButton');
     if (recHeading) recHeading.textContent = isAkc ? 'AKC Submission Packet' : 'ASFA Record Packet';
     if (recDesc) recDesc.textContent = isAkc ? 'Create the complete end-of-trial AKC event submission packet.' : 'Create the complete end-of-trial ASFA record packet with all record sheets in order.';
     if (recBtn) recBtn.textContent = isAkc ? 'Print AKC Submission Packet' : 'Print ASFA Record Packet';
     if (entryFormsBtn) entryFormsBtn.style.display = isAkc ? 'none' : '';
+    if (judgesBookBtn) judgesBookBtn.hidden = !isAkc;
 
     const submissionDesc = document.getElementById('paperworkSubmissionDesc');
     if (submissionDesc) {

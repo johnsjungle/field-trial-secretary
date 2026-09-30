@@ -128,6 +128,8 @@ RECORD_TEMPLATES = {
     "AKC": APP_DIR / "templates" / "akc" / "JERSC3-Lure-Coursing-Scoresheet-4-22.pdf",
 }
 AKC_TEST_RECORD_TEMPLATE = APP_DIR / "templates" / "akc" / "JERSC4_1021-fillable1.pdf"
+AKC_QC_CERTIFICATE_TEMPLATE = APP_DIR / "templates" / "akc" / "JERSC6_518-fillable.pdf"
+AKC_JUDGES_BOOK_TEMPLATE = APP_DIR / "templates" / "akc" / "JEBK01-817-Static.fillable.pdf"
 ENTRY_FORM_TEMPLATES = {
     "ASFA": APP_DIR / "templates" / "asfa" / "EF-A-Entry-Form-Rev-06-26.pdf",
     "ASFA_LCI": APP_DIR / "templates" / "asfa" / "EF-A-LCI-Entry-Form-Rev-08-24.pdf",
@@ -2406,6 +2408,8 @@ def generate_asfa_record_sheet_pdf(
             combine_mixed_posting=combine_mixed_posting,
             include_signed_judge_sheets=include_signed_judge_sheets,
             include_first_time_documents=include_first_time_documents,
+            include_secretary_report=include_secretary_report,
+            include_judges_book=include_secretary_report,
             entry_layout=entry_layout,
             lci_entry_layout=lci_entry_layout,
         )
@@ -2725,6 +2729,119 @@ def _build_akc_test_overlay(trial: dict, judge_name: str, records: list[dict]) -
     return buffer.getvalue()
 
 
+def _draw_static_pdf_text(pdf: canvas.Canvas, x: float, y: float, value: object, maximum_width: float, maximum_size: float = 10) -> None:
+    text = " ".join(str(value or "").split())
+    if not text:
+        return
+    size = maximum_size
+    measured = pdfmetrics.stringWidth(text, "Helvetica", size)
+    if measured > maximum_width:
+        size = max(5.5, size * maximum_width / measured)
+    pdf.setFont("Helvetica", size)
+    pdf.setFillColorRGB(0, 0, 0)
+    pdf.drawString(x, y, text)
+
+
+def generate_akc_qc_certificate_pdf(trial: dict, test_id: str = "") -> bytes:
+    """Create an individual official AKC Qualified Courser Certificate."""
+    if not AKC_QC_CERTIFICATE_TEMPLATE.exists():
+        raise FileNotFoundError(f"AKC QC certificate template not found: {AKC_QC_CERTIFICATE_TEMPLATE}")
+    records = [
+        row for row in (trial.get("akcTests") or [])
+        if isinstance(row, dict) and clean_text(row.get("testType")) == "QC"
+    ]
+    record = next((row for row in records if str(row.get("id") or "") == str(test_id or "")), None)
+    if record is None and len(records) == 1 and not test_id:
+        record = records[0]
+    if record is None:
+        raise ValueError("The selected QC test entry was not found.")
+    if clean_text(record.get("result")) in {"FAIL", "SCRATCH"}:
+        raise ValueError("A QC certificate cannot be printed for a failed or scratched test.")
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    _draw_static_pdf_text(pdf, 91, 418, catalog_breed_label(record.get("breed")), 190, 10)
+    _draw_static_pdf_text(pdf, 351, 418, record.get("callName"), 173, 10)
+    _draw_static_pdf_text(pdf, 199, 382, record.get("registeredName"), 326, 10)
+    _draw_static_pdf_text(pdf, 218, 358, record.get("registrationNumber"), 307, 10)
+    _draw_static_pdf_text(pdf, 228, 291, record.get("handler") or record.get("owner"), 297, 10)
+    _draw_static_pdf_text(pdf, 478, 264, trial.get("startsOn"), 47, 8)
+    _draw_static_pdf_text(pdf, 187, 142, record.get("judgeName"), 167, 10)
+    _draw_static_pdf_text(pdf, 460, 142, record.get("judgeNumber"), 65, 10)
+    _draw_static_pdf_text(pdf, 478, 116, trial.get("startsOn"), 47, 8)
+    pdf.showPage()
+    pdf.save()
+
+    page = fresh_template_page(AKC_QC_CERTIFICATE_TEMPLATE)
+    page.pop("/Annots", None)
+    page.merge_page(PdfReader(io.BytesIO(buffer.getvalue())).pages[0])
+    writer = PdfWriter()
+    writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def _judge_complete_address(judge: dict) -> tuple[str, str]:
+    address = str(judge.get("address") or judge.get("mailingAddress") or "").strip()
+    locality = ", ".join(filter(None, [
+        str(judge.get("city") or "").strip(),
+        " ".join(filter(None, [
+            str(judge.get("state") or "").strip(),
+            str(judge.get("postalCode") or judge.get("zip") or "").strip(),
+        ])).strip(),
+    ]))
+    return address, locality
+
+
+def generate_akc_judges_book_cover_pdf(trial: dict) -> bytes:
+    """Fill the official AKC Judges' Book cover for a lure coursing event."""
+    if not AKC_JUDGES_BOOK_TEMPLATE.exists():
+        raise FileNotFoundError(f"AKC Judges' Book template not found: {AKC_JUDGES_BOOK_TEMPLATE}")
+    page = fresh_template_page(AKC_JUDGES_BOOK_TEMPLATE)
+    page.pop("/Annots", None)
+    rects = _pdf_widget_rects(AKC_JUDGES_BOOK_TEMPLATE)
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    header = {
+        "NAME Of Club": trial.get("clubName") or "",
+        "Event Number": trial.get("eventNumber") or "",
+        "Event Location": trial.get("siteName") or trial.get("location") or trial.get("siteAddress") or "",
+        "Date": trial.get("startsOn") or "",
+    }
+    for field_name, value in header.items():
+        _draw_text_in_pdf_rect(pdf, rects, field_name, value, 10)
+
+    judges: list[dict] = []
+    seen: set[str] = set()
+    for judge in (trial.get("judges") or []):
+        if not isinstance(judge, dict):
+            continue
+        key = clean_text(judge.get("number") or judge.get("name"))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        judges.append(judge)
+    for index, judge in enumerate(judges[:4], start=1):
+        address, locality = _judge_complete_address(judge)
+        values = {
+            f"Name {index}": judge.get("name") or "",
+            f"CA{index * 2 - 1}": address,
+            f"CA{index * 2}": locality,
+            f"TelNum{index}": judge.get("phone") or (judge.get("phones") or [""])[0],
+        }
+        for field_name, value in values.items():
+            _draw_text_in_pdf_rect(pdf, rects, field_name, value, 8.5)
+    pdf.showPage()
+    pdf.save()
+    page.merge_page(PdfReader(io.BytesIO(buffer.getvalue())).pages[0])
+    writer = PdfWriter()
+    writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def generate_akc_test_record_sheet_pdf(trial: dict) -> bytes:
     """Fill the official AKC Qualified Courser/Junior Courser Test Record Sheet."""
     if not AKC_TEST_RECORD_TEMPLATE.exists():
@@ -2775,6 +2892,8 @@ def generate_akc_record_sheet_pdf(
     combine_mixed_posting: bool = False,
     include_signed_judge_sheets: bool = False,
     include_first_time_documents: bool = False,
+    include_secretary_report: bool = False,
+    include_judges_book: bool = False,
     entry_layout: dict | None = None,
     lci_entry_layout: dict | None = None,
 ) -> bytes:
@@ -2789,6 +2908,14 @@ def generate_akc_record_sheet_pdf(
         raise ValueError("No AKC trial or JC/QC test rows were found for the record packet.")
 
     final_writer = PdfWriter()
+    if include_secretary_report:
+        secretary_reader = PdfReader(io.BytesIO(generate_akc_secretary_report_pdf(trial)))
+        for secretary_page in secretary_reader.pages:
+            final_writer.add_page(secretary_page)
+    if include_judges_book:
+        cover_reader = PdfReader(io.BytesIO(generate_akc_judges_book_cover_pdf(trial)))
+        for cover_page in cover_reader.pages:
+            final_writer.add_page(cover_page)
     if include_akc_tests:
         test_reader = PdfReader(io.BytesIO(generate_akc_test_record_sheet_pdf(trial)))
         for test_page in test_reader.pages:
@@ -6917,6 +7044,40 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/akc-qc-certificate":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_pdf(generate_akc_qc_certificate_pdf(trial, str(payload.get("testId") or "")), "akc-qc-certificate.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/akc-judges-book":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_pdf(generate_akc_judges_book_cover_pdf(trial), "akc-judges-book-cover.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/akc-test-record-sheet":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
@@ -7539,6 +7700,40 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 association = str(trial.get("association") or "ASFA").upper()
                 pdf = generate_secretary_report_pdf(trial, layout)
                 self.send_pdf(pdf, f"{association.lower()}-secretary-report.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/akc-qc-certificate":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_pdf(generate_akc_qc_certificate_pdf(trial, str(payload.get("testId") or "")), "akc-qc-certificate.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/akc-judges-book":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_pdf(generate_akc_judges_book_cover_pdf(trial), "akc-judges-book-cover.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return

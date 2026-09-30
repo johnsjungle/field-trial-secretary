@@ -149,7 +149,16 @@ function renderAkcTests(trial) {
             remove.textContent = 'Remove';
             remove.disabled = Boolean(trial.archivedAt);
             remove.addEventListener('click', () => removeAkcTest(record.id));
-            actions.append(edit, up, down, remove);
+            actions.append(edit);
+            if (record.testType === 'QC' && !['fail', 'scratch'].includes(record.result)) {
+                const certificate = document.createElement('button');
+                certificate.type = 'button';
+                certificate.className = 'secondary small';
+                certificate.textContent = 'Print QC Certificate';
+                certificate.addEventListener('click', () => printAkcQcCertificate(record.id));
+                actions.appendChild(certificate);
+            }
+            actions.append(up, down, remove);
             row.appendChild(actions);
             tbody.appendChild(row);
         });
@@ -333,12 +342,57 @@ async function printAkcTestSheet() {
     );
 }
 
+function trialWithJudgeContacts(trial) {
+    if (!trial) return trial;
+    return {
+        ...trial,
+        judges: (trial.judges || []).map((judge) => {
+            const directory = masterJudges.find((item) =>
+                (judge.judgeId && item.id === judge.judgeId)
+                || (judge.number && clean(item.number) === clean(judge.number))
+                || clean(item.name) === clean(judge.name)
+            );
+            return directory ? { ...directory, ...judge } : judge;
+        }),
+    };
+}
+
+async function printAkcQcCertificate(testId) {
+    const trial = getSelectedTrial();
+    const message = document.getElementById('akcTestMessage');
+    if (!trial) return;
+    await openTrialPdf(
+        '/api/akc-qc-certificate',
+        { trial, testId },
+        message,
+        'QC certificate opened. Have the owner or agent and certifying judge sign it after the hound passes.',
+        'Could not create the QC certificate.'
+    );
+}
+
+async function printAkcJudgesBook() {
+    const trial = readForm();
+    const message = document.getElementById('wrapUpMessage');
+    if (rulesForTrial(trial).association !== 'AKC') {
+        showMessage(message, 'The AKC Judges’ Book is available only for AKC events.', 'warning');
+        return;
+    }
+    await openTrialPdf(
+        '/api/akc-judges-book',
+        { trial: trialWithJudgeContacts(trial) },
+        message,
+        'AKC Judges’ Book cover opened.',
+        'Could not create the AKC Judges’ Book cover.'
+    );
+}
+
 function bindAkcTestControls() {
     document.getElementById('useAkcTestHoundButton')?.addEventListener('click', useSelectedAkcTestHound);
     document.getElementById('saveAkcTestButton')?.addEventListener('click', saveAkcTest);
     document.getElementById('cancelAkcTestEditButton')?.addEventListener('click', clearAkcTestForm);
     document.getElementById('printAkcTestSheetButton')?.addEventListener('click', printAkcTestSheet);
     document.getElementById('akcTestType')?.addEventListener('change', toggleAkcQcFields);
+    document.getElementById('printAkcJudgesBookButton')?.addEventListener('click', printAkcJudgesBook);
     document.getElementById('akcTestJudgeName')?.addEventListener('change', (event) => {
         const judge = [...(getSelectedTrial()?.judges || []), ...masterJudges].find((item) => clean(item.name) === clean(event.target.value));
         if (judge) document.getElementById('akcTestJudgeNumber').value = judge.number || '';
@@ -349,4 +403,5 @@ else bindAkcTestControls();
 
 window.renderAkcTests = renderAkcTests;
 window.syncSelectedAkcTestsForTrials = syncSelectedAkcTestsForTrials;
+window.trialWithJudgeContacts = trialWithJudgeContacts;
 })();
