@@ -22,7 +22,7 @@ if (-not $python) {
 }
 
 Set-Location -LiteralPath $root
-Write-Host "Starting Field Trial Secretary with SQLite storage..."
+Write-Host "Starting HALO with SQLite storage..."
 Write-Host "Open this address in your browser:"
 Write-Host "http://127.0.0.1:8765/"
 Write-Host ""

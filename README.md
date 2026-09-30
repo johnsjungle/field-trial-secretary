@@ -1,6 +1,8 @@
-# Field Trial Secretary
+# HALO
 
-Offline-first field trial secretary application for setting up lure coursing trials, entering hounds, managing workers and judges, drawing courses, scoring, and producing ASFA/AKC paperwork.
+**Hound Administration & Lure Operations** is an offline-first field trial secretary application for setting up lure coursing trials, entering hounds, managing workers and judges, drawing courses, scoring, and producing ASFA/AKC paperwork.
+
+In remembrance of “Halo” — *MBIF FC Kamars God Speed MC LCX2 TKN LCM3 HOF*.
 
 ## Current release: v0.4.6 beta
 
@@ -44,7 +46,7 @@ choose **Build Installers**, and select **Run workflow**. When both
 jobs finish, download the two DMG artifacts from the workflow run.
 
 The Mac application keeps its live SQLite database and backups outside the
-application bundle at:
+application bundle at the legacy-compatible data path:
 
 ```text
 ~/Library/Application Support/Field Trial Secretary

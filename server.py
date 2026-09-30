@@ -623,7 +623,7 @@ def database_is_ready() -> bool:
 
 def validate_application_database(path: Path) -> None:
     if not path.is_file() or path.stat().st_size < 512:
-        raise ValueError("The selected file is not a valid Field Trial Secretary database.")
+        raise ValueError("The selected file is not a valid HALO database.")
     try:
         with closing(sqlite3.connect(path)) as conn:
             integrity = conn.execute("PRAGMA integrity_check").fetchone()
@@ -631,7 +631,7 @@ def validate_application_database(path: Path) -> None:
                 raise ValueError("The selected SQLite database failed its integrity check.")
             row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_state'").fetchone()
             if not row:
-                raise ValueError("The selected database does not contain Field Trial Secretary application data.")
+                raise ValueError("The selected database does not contain HALO application data.")
     except sqlite3.DatabaseError as exc:
         raise ValueError("The selected file is not a readable SQLite database.") from exc
 
@@ -1039,7 +1039,7 @@ def portable_package_folder() -> Path:
 
 def app_version_info() -> dict:
     fallback = {
-        "name": "Field Trial Secretary",
+        "name": "HALO",
         "version": "0.0.0",
         "releaseDate": "",
         "channel": "local",
@@ -1112,7 +1112,7 @@ def portable_package_status() -> dict:
 
 def build_portable_package() -> dict:
     if getattr(sys, "frozen", False):
-        raise ValueError("This app is running from the portable EXE. Close it, open the source-folder copy of Field Trial Secretary on the build computer, then run Build Portable EXE from Admin > Tools.")
+        raise ValueError("HALO is running from the portable EXE. Close it, open the source-folder copy on the build computer, then run Build Portable EXE from Admin > Tools.")
     script = ROOT / "build_portable_package.ps1"
     if not script.exists():
         raise FileNotFoundError("build_portable_package.ps1 was not found.")
@@ -1167,7 +1167,7 @@ def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
         raise RuntimeError("Portable package folder was not created.")
 
     notes = [
-        "Field Trial Secretary Installer Package",
+        "HALO Installer Package",
         f"Version: {app_version_info().get('version')}",
         f"Created: {utc_now()}",
         "",
@@ -1182,11 +1182,11 @@ def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
         "1. Copy this zip to the other computer.",
         "2. Right-click the zip and choose Extract All.",
         "3. Extract it into the folder where you want the app to live.",
-        "4. Open the Field Trial Secretary folder.",
-        "5. Double-click Start Field Trial Secretary.vbs, or use the desktop shortcut if one was created.",
+        "4. Open the Field Trial Secretary compatibility folder.",
+        "5. Double-click Start HALO.vbs, or use the desktop shortcut if one was created.",
         "",
         "Run without installing:",
-        "Open Field Trial Secretary and double-click Start Field Trial Secretary.vbs.",
+        "Open the Field Trial Secretary compatibility folder and double-click Start HALO.vbs.",
         "",
         "Important: create a fresh transfer package after making program changes or entering new trial data.",
         "The target computer does not need Python installed.",
@@ -1195,19 +1195,19 @@ def create_transfer_package(payload: dict) -> tuple[bytes, str, str]:
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("README-TRANSFER.txt", "\n".join(notes) + "\n")
         archive.writestr(
-            "Start Field Trial Secretary.bat",
+            "Start HALO.bat",
             '@echo off\r\n'
             'cd /d "%~dp0Field Trial Secretary"\r\n'
-            'call "Start Field Trial Secretary.bat"\r\n',
+            'call "Start HALO.bat"\r\n',
         )
         archive.writestr(
-            "Start Field Trial Secretary.vbs",
+            "Start HALO.vbs",
             'Set shell = CreateObject("WScript.Shell")\r\n'
             'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
             'root = fso.GetParentFolderName(WScript.ScriptFullName)\r\n'
             'appFolder = fso.BuildPath(root, "Field Trial Secretary")\r\n'
             'shell.CurrentDirectory = appFolder\r\n'
-            'shell.Run """" & fso.BuildPath(appFolder, "Start Field Trial Secretary.vbs") & """", 0, False\r\n',
+            'shell.Run """" & fso.BuildPath(appFolder, "Start HALO.vbs") & """", 0, False\r\n',
         )
         for path in package_folder.rglob("*"):
             if not path.is_file():
@@ -1245,7 +1245,7 @@ def create_program_update_package() -> tuple[bytes, str, str]:
         'setlocal\r\n'
         'set "SOURCE=%~dp0Field Trial Secretary"\r\n'
         'set "DEFAULT_TARGET=%USERPROFILE%\\Documents\\Field Trial Secretary Portable"\r\n'
-        'echo Field Trial Secretary program updater\r\n'
+        'echo HALO program updater\r\n'
         'echo.\r\n'
         'echo This updates program files only. It will not replace your SQLite trial database.\r\n'
         'echo.\r\n'
@@ -1277,20 +1277,20 @@ def create_program_update_package() -> tuple[bytes, str, str]:
     )
 
     notes = [
-        "Field Trial Secretary Program Update Package",
+        "HALO Program Update Package",
         f"Version: {app_version_info().get('version')}",
         f"Created: {utc_now()}",
         "",
         "This package updates program files only.",
         "It does not include or replace data\\field_trial_secretary.sqlite.",
         "",
-        "Use on a computer that already has Field Trial Secretary installed:",
-        "1. Close Field Trial Secretary on that computer.",
+        "Use on a computer that already has HALO installed:",
+        "1. Close HALO on that computer.",
         "2. Copy this zip to that computer.",
         "3. Right-click the zip and choose Extract All.",
         "4. Double-click Update Field Trial Secretary.bat.",
         "5. Press Enter for the default folder or type the installed app folder.",
-        "6. Start Field Trial Secretary again.",
+        "6. Start HALO again.",
     ]
 
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -6160,7 +6160,7 @@ class CatalogPdfCanvas:
         self.pdf.setFillColorRGB(0.35, 0.38, 0.38)
         self.pdf.setFont("Helvetica", 7.5)
         clubs = ", ".join(dict.fromkeys(catalog_clean_text(trial.get("clubName")) for trial in self.trials if trial.get("clubName")))
-        self.pdf.drawString(36, 22, safe_text(clubs or "Field Trial Secretary", 85))
+        self.pdf.drawString(36, 22, safe_text(clubs or "HALO", 85))
         self.pdf.drawRightString(letter[0] - 36, 22, f"Page {self.page_number}")
 
     def ensure(self, height: float) -> None:
@@ -6814,14 +6814,14 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/restart":
             try:
-                self.send_json({"ok": True, "message": "Field Trial Secretary is restarting the app server."})
+                self.send_json({"ok": True, "message": "HALO is restarting the app server."})
                 threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if parsed.path == "/api/shutdown":
             try:
-                self.send_json({"ok": True, "message": "Field Trial Secretary has saved your data and closed the app server."})
+                self.send_json({"ok": True, "message": "HALO has saved your data and closed the app server."})
                 threading.Thread(target=shutdown_server, args=(self.server,), daemon=False).start()
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -7127,7 +7127,7 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Field Trial Secretary locally with SQLite storage.")
+    parser = argparse.ArgumentParser(description="Run HALO locally with SQLite storage.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8765, type=int)
     parser.add_argument("--open-browser", action="store_true", help="Open the local app page in the default browser after startup.")
@@ -7135,7 +7135,7 @@ def main() -> None:
 
     server = ExclusiveTrialHTTPServer((args.host, args.port), FieldTrialSecretaryHandler)
     url = f"http://{args.host}:{args.port}/"
-    print(f"Field Trial Secretary running at {url}")
+    print(f"HALO running at {url}")
     print(f"SQLite database: {DB_PATH}")
     print("Press Ctrl+C to stop.")
     should_open_browser = args.open_browser or (
@@ -7473,14 +7473,14 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/restart":
             try:
-                self.send_json({"ok": True, "message": "Field Trial Secretary is restarting the app server."})
+                self.send_json({"ok": True, "message": "HALO is restarting the app server."})
                 threading.Thread(target=restart_server, args=(self.server,), daemon=False).start()
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if parsed.path == "/api/shutdown":
             try:
-                self.send_json({"ok": True, "message": "Field Trial Secretary has saved your data and closed the app server."})
+                self.send_json({"ok": True, "message": "HALO has saved your data and closed the app server."})
                 threading.Thread(target=shutdown_server, args=(self.server,), daemon=False).start()
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)

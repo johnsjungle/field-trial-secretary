@@ -3928,3 +3928,64 @@ button.danger-button {
     #rollCallPrint .roll-call-format-detailed th,
     #rollCallPrint .roll-call-format-detailed td { padding: 2px; }
 }
+
+/* HALO application identity */
+.brand-logo {
+    display: block;
+    height: 46px;
+    object-fit: contain;
+    object-position: left center;
+    width: 132px;
+}
+.splash-logo {
+    display: block;
+    max-height: 150px;
+    object-fit: contain;
+    width: min(72vw, 560px);
+}
+.database-setup-logo {
+    display: block;
+    margin-bottom: 12px;
+    max-height: 130px;
+    object-fit: contain;
+    object-position: left center;
+    width: min(100%, 390px);
+}
+.halo-identity-card {
+    align-items: center;
+    background: linear-gradient(135deg, #f8fbfa, #fff9e8);
+    border: 1px solid #d8c27a;
+    border-radius: 12px;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(220px, 390px) minmax(260px, 1fr);
+    margin: 12px 0 18px;
+    padding: 16px 18px;
+}
+.halo-identity-logo {
+    display: block;
+    max-height: 140px;
+    object-fit: contain;
+    width: 100%;
+}
+.halo-identity-copy p { margin: 5px 0; }
+.halo-acronym {
+    color: #0f3f38;
+    font-size: 18px;
+}
+.halo-remembrance {
+    color: #6c5421;
+    font-size: 15px;
+    font-weight: 700;
+}
+.halo-honor {
+    color: var(--muted);
+    font-size: 14px;
+}
+@media (max-width: 760px) {
+    .halo-identity-card { grid-template-columns: 1fr; }
+    .halo-identity-logo {
+        max-height: 115px;
+        object-position: left center;
+    }
+}

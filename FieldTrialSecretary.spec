@@ -43,7 +43,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\johns\\Documents\\Field Trial Secretary\\app\\assets\\field-trial-secretary-icon.ico'],
+    icon=['C:\\Users\\johns\\Documents\\Field Trial Secretary\\app\\assets\\halo-icon.ico'],
 )
 coll = COLLECT(
     exe,

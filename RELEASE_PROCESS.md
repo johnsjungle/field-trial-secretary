@@ -1,4 +1,4 @@
-# Field Trial Secretary Release Process
+# HALO Release Process
 
 Use this when preparing a portable update for another computer.
 
@@ -8,7 +8,7 @@ Use this when preparing a portable update for another computer.
    - Increase `version`.
    - Set `releaseDate`.
    - Add a short `notes` value.
-2. Start Field Trial Secretary in server mode.
+2. Start HALO in server mode.
 3. Go to `Admin > Tools`.
 4. Click `Create Transfer Package`.
 5. Copy the generated `field-trial-secretary-<version>-installer-*.zip` to the other computer.
@@ -17,10 +17,10 @@ The transfer package includes the current live SQLite database and a blank start
 
 ## Build A Program-Only Update
 
-Use this for a computer that already has Field Trial Secretary installed and should keep its existing trial database.
+Use this for a computer that already has HALO installed and should keep its existing trial database.
 
 1. Update `app/version.json`.
-2. Start Field Trial Secretary in server mode.
+2. Start HALO in server mode.
 3. Go to `Admin > Tools`.
 4. Click `Create Program Update Package`.
 5. Copy the generated `field-trial-secretary-<version>-program-update-*.zip` to the other computer.
@@ -31,19 +31,19 @@ The program update package does not include `data\field_trial_secretary.sqlite`.
 
 1. Right-click the zip and choose `Extract All`.
 2. Extract it into the folder where you want the app to live.
-3. Open the `Field Trial Secretary` folder.
-4. Double-click `Start Field Trial Secretary.bat`.
+3. Open the `Field Trial Secretary` compatibility folder.
+4. Double-click `Start HALO.vbs`.
 
 The target computer does not need Python.
 
 ## Update An Existing Computer
 
-1. Close Field Trial Secretary on that computer.
+1. Close HALO on that computer.
 2. Right-click the program update zip and choose `Extract All`.
 3. Open the extracted folder.
 4. Double-click `Update Field Trial Secretary.bat`.
-5. Press Enter to update the suggested folder, or type the folder where Field Trial Secretary is installed.
-6. Start the app again with `Start Field Trial Secretary.bat`.
+5. Press Enter to update the suggested folder, or type the folder where HALO is installed.
+6. Start the app again with `Start HALO.vbs`.
 
 This updates program files and leaves the existing SQLite database alone.
 
@@ -53,7 +53,7 @@ For a public download, upload the generated installer zip to a GitHub Release or
 
 Recommended release title:
 
-`Field Trial Secretary v<version>`
+`HALO v<version>`
 
 Recommended asset:
 

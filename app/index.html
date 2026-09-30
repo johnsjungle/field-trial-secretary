@@ -3,10 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Field Trial Secretary</title>
-    <link rel="icon" href="assets/field-trial-secretary-icon.png" type="image/png">
-    <link rel="shortcut icon" href="assets/field-trial-secretary-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20260913-bie-balanced-courses">
+    <title>HALO</title>
+    <link rel="icon" href="assets/halo-icon.png" type="image/png">
+    <link rel="shortcut icon" href="assets/halo-icon.ico">
+    <link rel="stylesheet" href="styles.css?v=20260930-halo-brand">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -15,11 +15,11 @@
             <div class="splash-vignette"></div>
             <div class="splash-caption">Lure coursing trial day is loading</div>
         </div>
-        <div class="splash-title">Field Trial Secretary</div>
+        <img class="splash-logo" src="assets/branding/halo-logo-primary.png" alt="HALO">
     </div>
     <section class="database-setup-overlay" id="databaseSetupOverlay" hidden aria-modal="true" role="dialog" aria-labelledby="databaseSetupTitle">
         <div class="database-setup-card">
-            <div class="database-setup-mark">Field Trial Secretary</div>
+            <img class="database-setup-logo" src="assets/branding/halo-logo-primary.png" alt="HALO">
             <h1 id="databaseSetupTitle">Choose your trial database</h1>
             <p>This copy of the program does not have a database yet. Start empty on a new computer, or restore the SQLite database from another installation.</p>
             <div class="database-setup-actions">
@@ -34,7 +34,7 @@
     <div class="sticky-navigation">
     <header class="topbar">
         <div class="brand">
-            <h1>Field Trial Secretary</h1>
+            <img class="brand-logo" src="assets/branding/halo-logo-primary.png" alt="HALO">
         </div>
         <nav class="main-tabs" aria-label="Trial areas">
             <button type="button" class="tab-button active" data-tab-target="setup">Trials</button>
@@ -329,7 +329,7 @@
                             <h2>Hound Database</h2>
                             <p>Add or update master hound records, then review the database list below.</p>
                         </div>
-                        <button type="button" class="secondary small" id="exportHoundDatabaseButton" data-help="Exports the reusable hound and owner records as a CSV file that another Field Trial Secretary installation can import. Trial entries, scores, workers, and paperwork are not included.">Export Hound Database</button>
+                        <button type="button" class="secondary small" id="exportHoundDatabaseButton" data-help="Exports the reusable hound and owner records as a CSV file that another HALO installation can import. Trial entries, scores, workers, and paperwork are not included.">Export Hound Database</button>
                         <button type="button" class="secondary small" id="importAsfaHoundsButton">Import ASFA Recent</button>
                         <button type="button" class="secondary small" id="addMasterHoundButton">Save Hound</button>
                     </div>
@@ -407,7 +407,7 @@
                             <label>
                                 Import file(s)
                                 <input id="houndDatabaseImportFiles" type="file" multiple>
-                                <small>Use Excel (.xlsx or .xls), CSV, tab-delimited text, JSON, or a Field Trial Secretary JSON backup.</small>
+                                <small>Use Excel (.xlsx or .xls), CSV, tab-delimited text, JSON, or a HALO JSON backup.</small>
                             </label>
                             <label>
                                 Import template
@@ -1936,7 +1936,7 @@
 
                         <div class="backup-tool-card">
                             <h3>Update Existing Install</h3>
-                            <p>Build a smaller update zip for a computer that already has Field Trial Secretary installed. It updates app files and leaves that computer's SQLite database alone.</p>
+                            <p>Build a smaller update zip for a computer that already has HALO installed. It updates app files and leaves that computer's SQLite database alone.</p>
                             <div class="button-row">
                                 <button type="button" class="secondary small" id="createProgramUpdatePackageButton">Create Program Update</button>
                                 <button type="button" class="secondary small danger-button" id="restoreTransferAppFilesButton">Restore App Files</button>
@@ -1984,6 +1984,14 @@
 
                 <section class="form-section" data-tab="admin" data-admin-page="Updates &amp; Versions">
                     <h2>Updates &amp; Versions</h2>
+                    <div class="halo-identity-card">
+                        <img class="halo-identity-logo" src="assets/branding/halo-logo-primary.png" alt="HALO">
+                        <div class="halo-identity-copy">
+                            <p class="halo-acronym"><strong>HALO</strong> — Hound Administration &amp; Lure Operations</p>
+                            <p class="halo-remembrance">In remembrance of “Halo”</p>
+                            <p class="halo-honor"><em>MBIF FC Kamars God Speed MC LCX2 TKN LCM3 HOF</em></p>
+                        </div>
+                    </div>
                     <p id="installedVersionText"></p>
                     <div class="button-row"><button type="button" class="secondary" id="checkVersionsButton">Check for Updates</button>
                     <label><input type="checkbox" id="includeBetaVersions" checked> Include beta releases</label></div>
@@ -2012,8 +2020,8 @@
     <script src="bie.js?v=20260913-bie-balanced-courses"></script>
     <script src="bie_rounds.js?v=20260913-bie-balanced-courses"></script>
     <script src="test_trial_tools.js"></script>
-    <script src="updates.js?v=20260928-auto-update"></script>
-    <script src="script.js?v=20260930-qc-book"></script>
+    <script src="updates.js?v=20260930-halo-brand"></script>
+    <script src="script.js?v=20260930-halo-brand"></script>
     <script src="hound_database_import.js?v=20260810-mac-file-picker"></script>
     <script src="help.js?v=20260930-qc-book"></script>
 </body>

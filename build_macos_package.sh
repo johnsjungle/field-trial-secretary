@@ -21,9 +21,10 @@ VERSION="$(
 ARCH="$(uname -m)"
 BUILD_ROOT="$ROOT/build/macos"
 ICONSET="$BUILD_ROOT/FieldTrialSecretary.iconset"
-ICON_PNG="$ROOT/app/assets/field-trial-secretary-icon.png"
+ICON_PNG="$ROOT/app/assets/halo-icon.png"
 ICON_FILE="$BUILD_ROOT/FieldTrialSecretary.icns"
 APP_NAME="Field Trial Secretary"
+APP_DISPLAY_NAME="HALO"
 APP_PATH="$ROOT/dist/$APP_NAME.app"
 DMG_NAME="Field-Trial-Secretary-${VERSION}-macOS-${ARCH}.dmg"
 DMG_PATH="$ROOT/dist/$DMG_NAME"
@@ -62,6 +63,9 @@ fi
 
 python3 -m PyInstaller "${PYINSTALLER_ARGS[@]}" server.py
 
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_DISPLAY_NAME" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_DISPLAY_NAME" "$APP_PATH/Contents/Info.plist"
+
 if [[ -n "$SIGN_IDENTITY" ]]; then
   codesign \
     --force \
@@ -83,7 +87,7 @@ cp -R "$APP_PATH" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
 hdiutil create \
-  -volname "$APP_NAME" \
+  -volname "$APP_DISPLAY_NAME" \
   -srcfolder "$STAGING" \
   -ov \
   -format UDZO \

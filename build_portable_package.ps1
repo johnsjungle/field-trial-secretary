@@ -77,7 +77,7 @@ if ($Clean) {
 }
 
 Write-Host "Building FieldTrialSecretary.exe..."
-$iconPath = Join-Path $root "app\assets\field-trial-secretary-icon.ico"
+$iconPath = Join-Path $root "app\assets\halo-icon.ico"
 $pyInstallerArgs = @(
     "--noconfirm",
     "--clean",
@@ -141,11 +141,11 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $blankDb)) {
     throw "Blank SQLite database template creation failed."
 }
 
-$startBat = Join-Path $packageRoot "Start Field Trial Secretary.bat"
+$startBat = Join-Path $packageRoot "Start HALO.bat"
 @'
 @echo off
 cd /d "%~dp0"
-echo Starting Field Trial Secretary...
+echo Starting HALO...
 echo.
 echo If the browser does not open, go to:
 echo http://127.0.0.1:8765/
@@ -154,7 +154,7 @@ echo.
 if errorlevel 1 pause
 '@ | Set-Content -LiteralPath $startBat -Encoding ASCII
 
-$startVbs = Join-Path $packageRoot "Start Field Trial Secretary.vbs"
+$startVbs = Join-Path $packageRoot "Start HALO.vbs"
 @'
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -168,46 +168,46 @@ $shortcutBat = Join-Path $packageRoot "Create Desktop Shortcut.bat"
 @'
 @echo off
 cd /d "%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$desktop=[Environment]::GetFolderPath('Desktop'); $shell=New-Object -ComObject WScript.Shell; $shortcut=$shell.CreateShortcut((Join-Path $desktop 'Field Trial Secretary.lnk')); $shortcut.TargetPath=(Join-Path $env:WINDIR 'System32\wscript.exe'); $shortcut.Arguments='""' + (Join-Path $PWD 'Start Field Trial Secretary.vbs') + '""'; $shortcut.WorkingDirectory=$PWD.Path; $shortcut.IconLocation=(Join-Path $PWD 'app\assets\field-trial-secretary-icon.ico'); $shortcut.Description='Start Field Trial Secretary'; $shortcut.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$desktop=[Environment]::GetFolderPath('Desktop'); $shell=New-Object -ComObject WScript.Shell; $shortcut=$shell.CreateShortcut((Join-Path $desktop 'HALO.lnk')); $shortcut.TargetPath=(Join-Path $env:WINDIR 'System32\wscript.exe'); $shortcut.Arguments='""' + (Join-Path $PWD 'Start HALO.vbs') + '""'; $shortcut.WorkingDirectory=$PWD.Path; $shortcut.IconLocation=(Join-Path $PWD 'app\assets\halo-icon.ico'); $shortcut.Description='Start HALO'; $shortcut.Save()"
 echo Desktop shortcut created.
 pause
 '@ | Set-Content -LiteralPath $shortcutBat -Encoding ASCII
 
-$installBat = Join-Path $packageRoot "Install Field Trial Secretary.bat"
+$installBat = Join-Path $packageRoot "Install HALO.bat"
 @'
 @echo off
 cd /d "%~dp0"
-echo Field Trial Secretary is portable.
+echo HALO is portable.
 echo.
 echo To choose an install location, move or extract this whole folder wherever you want it.
 echo This folder is currently:
 echo %CD%
 echo.
-echo Starting Field Trial Secretary...
-start "" "%~dp0Start Field Trial Secretary.vbs"
+echo Starting HALO...
+start "" "%~dp0Start HALO.vbs"
 '@ | Set-Content -LiteralPath $installBat -Encoding ASCII
 
 $readme = Join-Path $packageRoot "README-PORTABLE.txt"
 @'
-Field Trial Secretary - Portable Package
+HALO - Portable Package
 Version: __APP_VERSION__
 
 Fast install on a new computer:
 1. Extract the zip into the folder where you want the app to live.
-2. Open the "Field Trial Secretary" folder.
-3. Double-click "Start Field Trial Secretary.vbs".
-4. Optional: double-click "Create Desktop Shortcut.bat" to add a desktop shortcut with the Field Trial Secretary icon.
+2. Open the "Field Trial Secretary" compatibility folder.
+3. Double-click "Start HALO.vbs".
+4. Optional: double-click "Create Desktop Shortcut.bat" to add a desktop shortcut with the HALO icon.
 
 To run without installing:
-1. Double-click "Start Field Trial Secretary.vbs".
+1. Double-click "Start HALO.vbs".
 2. Your browser should open to http://127.0.0.1:8765/.
 3. Click Exit in the app header to stop the app. You can then close the browser tab.
 
 Troubleshooting:
-If the quiet launcher does not open, double-click "Start Field Trial Secretary.bat" to see startup messages.
+If the quiet launcher does not open, double-click "Start HALO.bat" to see startup messages.
 
 To move to another computer:
-Copy this whole "Field Trial Secretary" folder, or use the installer batch file after extracting the zip.
+Copy this whole "Field Trial Secretary" compatibility folder, or use the installer batch file after extracting the zip.
 
 Important files:
 - The package contains no live trial database.

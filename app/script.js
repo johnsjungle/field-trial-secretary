@@ -44,7 +44,7 @@ const buttonHelpText = {
     restoreBrowserBackupButton: 'Restores the latest protected browser safety backup. Use only if SQLite data is missing or unavailable.',
     importDataBackupButton: 'Imports a JSON data backup and replaces the current browser/app data after confirmation.',
     createTransferPackageButton: 'Builds one installer zip for a new computer, including the app, current SQLite database, and a blank starter database.',
-    createProgramUpdatePackageButton: 'Builds a smaller update zip for a computer that already has Field Trial Secretary installed. It leaves that computer’s database alone.',
+    createProgramUpdatePackageButton: 'Builds a smaller update zip for a computer that already has HALO installed. It leaves that computer’s database alone.',
     restoreTransferAppFilesButton: 'Restores program files and templates from a transfer package without replacing the current SQLite database.',
     refreshPortableStatusButton: 'Checks whether the portable executable package is current.',
     buildPortablePackageButton: 'Rebuilds the portable executable only. Most users should use Create Transfer Installer or Create Program Update instead.',
@@ -1472,7 +1472,7 @@ function renderAppVersion() {
     const channel = appVersionInfo.channel && appVersionInfo.channel !== 'local' ? ` ${appVersionInfo.channel}` : '';
     appVersionBadge.textContent = `v${version}${channel}`;
     const releaseDate = appVersionInfo.releaseDate ? ` | ${appVersionInfo.releaseDate}` : '';
-    appVersionBadge.title = `${appVersionInfo.name || 'Field Trial Secretary'} ${version}${releaseDate}`;
+    appVersionBadge.title = `${appVersionInfo.name || 'HALO'} ${version}${releaseDate}`;
 }
 
 async function loadAppVersion() {
@@ -2403,7 +2403,7 @@ async function createProgramUpdatePackage() {
     const proceed = await showTrialConfirm({
         title: 'Create Program Update Package',
         eyebrow: 'Update Existing Computer',
-        message: 'Build a smaller update zip for a computer that already has Field Trial Secretary installed? This package updates program files only and does not include the live SQLite database.',
+        message: 'Build a smaller update zip for a computer that already has HALO installed? This package updates program files only and does not include the live SQLite database.',
         primaryText: 'Build Update',
     });
     if (!proceed) {
@@ -2483,7 +2483,7 @@ function showAppClosedScreen(message) {
     overlay.id = 'appClosedScreen';
     overlay.innerHTML = `
         <div>
-            <h2>Field Trial Secretary Is Closed</h2>
+            <h2>HALO Is Closed</h2>
             <p></p>
             <strong>You can close this browser tab.</strong>
         </div>
@@ -2498,9 +2498,9 @@ async function exitAppServer() {
         return;
     }
     const exit = await showTrialConfirm({
-        title: 'Exit Field Trial Secretary',
+        title: 'Exit HALO',
         eyebrow: 'Local Server',
-        message: 'Save your current data and close the local Field Trial Secretary app server now?',
+        message: 'Save your current data and close the local HALO app server now?',
         primaryText: 'Save and Exit',
     });
     if (!exit) {
@@ -2509,7 +2509,7 @@ async function exitAppServer() {
     try {
         await saveToSQLite();
         const payload = await apiRequest('/api/shutdown', { method: 'POST', body: '{}' });
-        showAppClosedScreen(payload.message || 'Field Trial Secretary has stopped.');
+        showAppClosedScreen(payload.message || 'HALO has stopped.');
     } catch (error) {
         showMessage(storageSafetyMessage || adminTestMessage, `Exit failed: ${error.message}`, 'warning');
     }
