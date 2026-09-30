@@ -5,10 +5,30 @@
       "version": "0.4.6",
       "date": "2026-09-29",
       "channel": "beta",
-      "status": "pending",
+      "status": "available",
       "summary": "Adds a complete AKC JC/QC workflow with independent entries, pass/fail scoring, official test record sheets, individual QC certificates, and a prefilled Judges' Book cover.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.6",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.6/Field-Trial-Secretary-0.4.6-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.6/Field-Trial-Secretary-0.4.6-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.6/Field-Trial-Secretary-0.4.6-portable-20260930-005208.zip"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.6/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.6/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.6/Field-Trial-Secretary-0.4.6-macOS-arm64.dmg",
+          "sha256": "23a5c554ab29d971a2f7249c7ba2007c64217307f73967f0c604344a8185f101"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.6/Field-Trial-Secretary-0.4.6-macOS-x86_64.dmg",
+          "sha256": "7cad0552c0b3b3c06b06beff86d8f4ce9df36b808c04cb9d497e69af200bc0f1"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.6/Field-Trial-Secretary-0.4.6-portable-20260930-005208.zip",
+          "sha256": "71f04ad49dea6c8c6897a4d130ff56bc87ef4a17e8da90f86aaa33e6c9899565"
+        }
+      }
     },
     {
       "version": "0.4.5",
