@@ -195,7 +195,7 @@ function toggleAkcQcFields() {
     const card = document.getElementById('akcQcPartnerCard');
     if (card) {
         card.hidden = !isQc;
-        if (isQc && editingAkcTestId) card.open = true;
+        if (isQc) card.open = true;
     }
 }
 

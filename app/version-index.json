@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.4.6",
+      "date": "2026-09-29",
+      "channel": "beta",
+      "status": "pending",
+      "summary": "Adds a complete AKC JC/QC workflow with independent entries, pass/fail scoring, official test record sheets, individual QC certificates, and a prefilled Judges' Book cover.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.6",
+      "downloads": {}
+    },
+    {
       "version": "0.4.5",
       "date": "2026-09-29",
       "channel": "beta",

@@ -2,9 +2,9 @@
 
 Offline-first field trial secretary application for setting up lure coursing trials, entering hounds, managing workers and judges, drawing courses, scoring, and producing ASFA/AKC paperwork.
 
-## Current release: v0.4.5 beta
+## Current release: v0.4.6 beta
 
-This release fixes final trial archive downloads and Windows SQLite file locking while retaining the safe first-run database setup and one-click updater. See [full release notes](docs/RELEASE_NOTES_0.4.5.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
+This release adds a complete AKC JC/QC workflow, official test paperwork, individual QC certificates, and a prefilled Judges' Book cover. See [full release notes](docs/RELEASE_NOTES_0.4.6.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
 
 ## Update checker
 

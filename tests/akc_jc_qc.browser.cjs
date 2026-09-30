@@ -57,6 +57,7 @@ const assert = require('node:assert/strict');
   assert.match(await page.locator('#akcTestsTable').innerText(), /Pass/);
 
   await page.locator('.tab-button[data-tab-target="wrapup"]').click();
+  await page.locator('.sub-tab-button', { hasText: 'AKC Submission Packet' }).click();
   assert.equal(await page.locator('#printAkcJudgesBookButton').isVisible(), true);
 
   await page.evaluate(() => {
