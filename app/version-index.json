@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.4.7",
+      "date": "2026-09-30",
+      "channel": "beta",
+      "status": "pending",
+      "summary": "Introduces HALO branding in remembrance of Halo, explains the HALO workflow, and adds practical preparation guidance for first-time field trial use.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.7",
+      "downloads": {}
+    },
+    {
       "version": "0.4.6",
       "date": "2026-09-29",
       "channel": "beta",
@@ -297,5 +306,6 @@
       "downloads": {}
     }
   ],
-  "releasesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases"
+  "releasesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases",
+  "generatedAt": "2026-09-30"
 }

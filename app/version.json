@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.4.6",
-  "releaseDate": "2026-09-29",
+  "version": "0.4.7",
+  "releaseDate": "2026-09-30",
   "channel": "beta",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.6",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.7",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Adds a complete AKC JC/QC workflow with independent entries, pass/fail scoring, official test record sheets, individual QC certificates, and a prefilled Judges' Book cover."
+  "notes": "Introduces HALO branding in remembrance of Halo, explains the HALO workflow, and adds practical preparation guidance for first-time field trial use."
 }

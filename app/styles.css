@@ -4007,6 +4007,30 @@ button.danger-button {
     font-size: 16px;
     text-align: left;
 }
+.halo-about-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0 0 18px;
+}
+.halo-about-card {
+    background: #f8fbfa;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.halo-about-card h3 {
+    color: #0f3f38;
+    margin: 0 0 8px;
+}
+.halo-about-card p {
+    line-height: 1.5;
+    margin: 7px 0;
+}
+.halo-about-card a {
+    color: #0f6b5a;
+    font-weight: 800;
+}
 @media (max-width: 900px) {
     .halo-identity-card { grid-template-columns: minmax(210px, 320px) 1fr; }
     .halo-update-details {
@@ -4018,6 +4042,7 @@ button.danger-button {
     }
 }
 @media (max-width: 760px) {
+    .halo-about-grid { grid-template-columns: 1fr; }
     .splash-track { height: min(50vh, 450px); }
     .splash-brand-row {
         gap: 8px;

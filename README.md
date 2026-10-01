@@ -4,9 +4,9 @@
 
 In remembrance of “Halo” — *MBIF FC Kamars God Speed MC LCX2 TKN LCM3 HOF*.
 
-## Current release: v0.4.6 beta
+## Current release: v0.4.7 beta
 
-This release adds a complete AKC JC/QC workflow, official test paperwork, individual QC certificates, and a prefilled Judges' Book cover. See [full release notes](docs/RELEASE_NOTES_0.4.6.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
+This release introduces the HALO identity in remembrance of Halo, adds clear explanations of the HALO workflow, and provides practical preparation guidance for first-time trial use. See [full release notes](docs/RELEASE_NOTES_0.4.7.md), [BIE setup](docs/BIE_EVENTS.md), and [specialty stakes](docs/SPECIALTY_STAKES.md).
 
 ## Update checker
 

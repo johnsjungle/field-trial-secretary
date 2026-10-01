@@ -53,6 +53,14 @@ const assert = require('node:assert/strict');
     assert.match(cardText, /Administration of trials, workers, and judges/);
     assert.match(cardText, /Lure coursing events/);
     assert.match(cardText, /Operations from roll call through final paperwork/);
+    const aboutText = await page.locator('.halo-about-grid').textContent();
+    assert.match(aboutText, /offline field trial management program/);
+    assert.match(aboutText, /Admin .* Hound DB .* Import Hound Database/);
+    assert.match(aboutText, /create realistic test trials/);
+    assert.equal(
+      await page.getByRole('link', { name: 'HALO Releases page' }).getAttribute('href'),
+      'https://github.com/johnsjungle/field-trial-secretary-updates/releases'
+    );
     assert.deepEqual(pageErrors, []);
     await page.screenshot({ path: '.tmp/halo-updates-page.png', fullPage: true });
     console.log('HALO branding verified: loading details below photos and four-part meaning to the right on Updates.');
