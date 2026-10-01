@@ -3937,11 +3937,19 @@ button.danger-button {
     object-position: left center;
     width: 132px;
 }
+.splash-brand-row {
+    align-items: center;
+    display: grid;
+    gap: 24px;
+    grid-template-columns: minmax(240px, 560px) minmax(300px, 1fr);
+    width: min(86vw, 1080px);
+}
 .splash-logo {
     display: block;
     max-height: 150px;
+    max-width: 560px;
     object-fit: contain;
-    width: min(72vw, 560px);
+    width: 100%;
 }
 .database-setup-logo {
     display: block;
@@ -3958,7 +3966,7 @@ button.danger-button {
     border-radius: 12px;
     display: grid;
     gap: 18px;
-    grid-template-columns: minmax(220px, 390px) minmax(260px, 1fr);
+    grid-template-columns: minmax(220px, 340px) minmax(250px, 1fr) minmax(280px, 1.15fr);
     margin: 12px 0 18px;
     padding: 16px 18px;
 }
@@ -3982,10 +3990,48 @@ button.danger-button {
     color: var(--muted);
     font-size: 14px;
 }
+.halo-expansion-list {
+    color: #163f39;
+    line-height: 1.35;
+}
+.halo-expansion-list p { margin: 4px 0; }
+.halo-expansion-list strong {
+    color: #0f6b5a;
+    font-weight: 900;
+}
+.halo-update-details {
+    border-left: 1px solid rgba(216, 194, 122, 0.75);
+    padding-left: 20px;
+}
+.splash-halo-details {
+    font-size: 16px;
+    text-align: left;
+}
+@media (max-width: 900px) {
+    .halo-identity-card { grid-template-columns: minmax(210px, 320px) 1fr; }
+    .halo-update-details {
+        border-left: 0;
+        border-top: 1px solid rgba(216, 194, 122, 0.75);
+        grid-column: 1 / -1;
+        padding-left: 0;
+        padding-top: 12px;
+    }
+}
 @media (max-width: 760px) {
+    .splash-track { height: min(50vh, 450px); }
+    .splash-brand-row {
+        gap: 8px;
+        grid-template-columns: 1fr;
+    }
+    .splash-logo {
+        justify-self: center;
+        max-height: 95px;
+    }
+    .splash-halo-details { font-size: 13px; }
     .halo-identity-card { grid-template-columns: 1fr; }
     .halo-identity-logo {
         max-height: 115px;
         object-position: left center;
     }
+    .halo-update-details { grid-column: auto; }
 }

@@ -16,6 +16,15 @@ const assert = require('node:assert/strict');
         : route.fulfill({ json: { ok: true } })
     );
     await page.goto('http://127.0.0.1:8765/');
+    const splashDetailsLocator = page.locator('.splash-halo-details');
+    const splashDetails = await splashDetailsLocator.textContent();
+    const splashTrackBox = await page.locator('.splash-track').boundingBox();
+    const splashDetailsBox = await splashDetailsLocator.boundingBox();
+    assert.ok(splashDetailsBox.y >= splashTrackBox.y + splashTrackBox.height);
+    assert.match(splashDetails, /Hound entries and records/);
+    assert.match(splashDetails, /Administration of trials, workers, and judges/);
+    assert.match(splashDetails, /Lure coursing events/);
+    assert.match(splashDetails, /Operations from roll call through final paperwork/);
     await page.locator('#startupSplash').waitFor({ state: 'detached' });
 
     assert.equal(await page.title(), 'HALO');
@@ -34,12 +43,19 @@ const assert = require('node:assert/strict');
     const card = page.locator('.halo-identity-card');
     await card.waitFor({ state: 'visible' });
     const cardText = await card.textContent();
+    const identityBox = await page.locator('.halo-identity-copy').boundingBox();
+    const updateDetailsBox = await page.locator('.halo-update-details').boundingBox();
+    assert.ok(updateDetailsBox.x > identityBox.x);
     assert.match(cardText, /Hound Administration & Lure Operations/);
     assert.match(cardText, /In remembrance of .Halo./);
     assert.match(cardText, /MBIF FC Kamars God Speed MC LCX2 TKN LCM3 HOF/);
+    assert.match(cardText, /Hound entries and records/);
+    assert.match(cardText, /Administration of trials, workers, and judges/);
+    assert.match(cardText, /Lure coursing events/);
+    assert.match(cardText, /Operations from roll call through final paperwork/);
     assert.deepEqual(pageErrors, []);
     await page.screenshot({ path: '.tmp/halo-updates-page.png', fullPage: true });
-    console.log('HALO branding verified: title, header logo, icon, acronym, remembrance, and honor line.');
+    console.log('HALO branding verified: loading details below photos and four-part meaning to the right on Updates.');
   } finally {
     await browser.close();
   }
