@@ -5,10 +5,30 @@
       "version": "0.4.7",
       "date": "2026-09-30",
       "channel": "beta",
-      "status": "pending",
+      "status": "available",
       "summary": "Introduces HALO branding in remembrance of Halo, explains the HALO workflow, and adds practical preparation guidance for first-time field trial use.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.7",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-portable-20261001-013009.zip"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.7/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.7/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-macOS-arm64.dmg",
+          "sha256": "841fe5603daff58042bc61dc7b3a4cb2f80c9e550ff57db51248094532c8f7ea"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-macOS-x86_64.dmg",
+          "sha256": "9c9925947453ad712598fb94b0bb65f500f683b26500bf13abc0186e3ca89c9f"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-portable-20261001-013009.zip",
+          "sha256": "27a20fe52a9a8997399cecbeb641f02670a68248b9efa4d52974be9a06937284"
+        }
+      }
     },
     {
       "version": "0.4.6",
