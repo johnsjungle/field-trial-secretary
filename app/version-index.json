@@ -11,7 +11,9 @@
       "downloads": {
         "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-macOS-arm64.dmg",
         "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-macOS-x86_64.dmg",
-        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-portable-20261001-013009.zip"
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-portable-20261001-013009.zip",
+        "linuxAppImage": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/HALO-0.4.7-x86_64.AppImage",
+        "linuxDeb": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/HALO-0.4.7-Ubuntu-amd64.deb"
       },
       "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.7/README.md",
       "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.7/RELEASE_NOTES.md",
@@ -27,6 +29,10 @@
         "windows": {
           "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/Field-Trial-Secretary-0.4.7-portable-20261001-013009.zip",
           "sha256": "27a20fe52a9a8997399cecbeb641f02670a68248b9efa4d52974be9a06937284"
+        },
+        "linuxAppImage": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.7/HALO-0.4.7-x86_64.AppImage",
+          "sha256": "0afcac11183e3dc93fd2a953c72551a8b4e084b75cad8bf5eda3ad847f73e57a"
         }
       }
     },
