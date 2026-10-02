@@ -48,6 +48,7 @@ from reportlab.pdfgen import canvas
 
 IS_FROZEN = bool(getattr(sys, "frozen", False))
 IS_MAC_APP = IS_FROZEN and sys.platform == "darwin"
+IS_LINUX_APP = IS_FROZEN and sys.platform.startswith("linux")
 
 if IS_MAC_APP:
     ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
@@ -60,7 +61,11 @@ APP_DIR = ROOT / "app"
 STORAGE_ROOT = (
     Path.home() / "Library" / "Application Support" / "Field Trial Secretary"
     if IS_MAC_APP
-    else ROOT
+    else (
+        Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")) / "HALO"
+        if IS_LINUX_APP
+        else ROOT
+    )
 )
 DATA_DIR = STORAGE_ROOT / "data"
 DB_PATH = DATA_DIR / "field_trial_secretary.sqlite"
@@ -7139,7 +7144,7 @@ def main() -> None:
     print(f"SQLite database: {DB_PATH}")
     print("Press Ctrl+C to stop.")
     should_open_browser = args.open_browser or (
-        IS_MAC_APP and not bool(os.environ.get("CI"))
+        (IS_MAC_APP or IS_LINUX_APP) and not bool(os.environ.get("CI"))
     )
     if should_open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()

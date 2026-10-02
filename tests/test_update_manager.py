@@ -11,6 +11,21 @@ class UpdateTests(unittest.TestCase):
         with self.assertRaises(ValueError):u.select_update(index,'0.4.0','0.4.0','windows')
         index['versions'][0]['updates']['windows']['url']='https://evil.test/package.zip'
         with self.assertRaises(ValueError):u.select_update(index,'0.4.0','0.3.10','windows')
+    def test_linux_appimage_selection(self):
+        url=u.RELEASE_PREFIX+'v0.4.0/HALO-0.4.0-x86_64.AppImage'
+        index={'schemaVersion':1,'versions':[{'version':'0.4.0','status':'available','updates':{'linuxAppImage':{'url':url,'sha256':'b'*64}}}]}
+        self.assertEqual(u.select_update(index,'0.4.0','0.3.10','linuxAppImage'),(url,'b'*64))
+        index['versions'][0]['updates']['linuxAppImage']['url']=u.RELEASE_PREFIX+'v0.4.0/HALO-0.4.0-amd64.deb'
+        with self.assertRaises(ValueError):u.select_update(index,'0.4.0','0.3.10','linuxAppImage')
+
+    def test_stage_linux_appimage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); source=root/'download.AppImage'; source.write_bytes(b'x'*(1024*1024))
+            staged=u.stage_linux_appimage(source,root/'work','0.4.0','HALO.AppImage')
+            self.assertTrue(staged.is_file())
+            if u.os.name != 'nt': self.assertTrue(staged.stat().st_mode & 0o100)
+            with self.assertRaises(ValueError):u.stage_linux_appimage(source,root/'bad','0.4.0','../HALO.AppImage')
+
     def test_extract_excludes_data_and_traversal(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); archive=root/'a.zip'

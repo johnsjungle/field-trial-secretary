@@ -38,6 +38,8 @@ def platform_key():
         return 'windows'
     if sys.platform == 'darwin':
         return 'appleSilicon' if platform.machine().lower() in ('arm64', 'aarch64') else 'intel'
+    if sys.platform.startswith('linux') and platform.machine().lower() in ('x86_64', 'amd64'):
+        return 'linuxAppImage'
     return ''
 
 
@@ -69,8 +71,8 @@ def select_update(index, version, current, key):
     expected = RELEASE_PREFIX + 'v' + version + '/'
     if not url.startswith(expected) or parsed.query or parsed.fragment or not re.fullmatch('[a-fA-F0-9]{64}', digest):
         raise ValueError('A verified automatic update is not available for this platform. Use the release download link.')
-    suffix = '.zip' if key == 'windows' else '.dmg'
-    if not parsed.path.lower().endswith(suffix):
+    suffix = {'windows': '.zip', 'appleSilicon': '.dmg', 'intel': '.dmg', 'linuxAppImage': '.appimage'}.get(key)
+    if not suffix or not parsed.path.lower().endswith(suffix):
         raise ValueError('Incorrect installer type.')
     return url, digest.lower()
 
@@ -161,6 +163,18 @@ def stage_mac(dmg, work, version):
         subprocess.run(['/usr/bin/hdiutil', 'detach', str(mount)], capture_output=True, timeout=60)
 
 
+def stage_linux_appimage(appimage, work, version, target_name):
+    if not re.fullmatch(r'[A-Za-z0-9._-]+\.AppImage', target_name, re.IGNORECASE):
+        raise ValueError('Invalid AppImage installation name.')
+    if not appimage.is_file() or appimage.stat().st_size < 1024 * 1024:
+        raise ValueError('Linux installer is incomplete.')
+    staged = work / 'program' / target_name
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(appimage, staged)
+    staged.chmod(staged.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return staged
+
+
 def write_json(path, value):
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value, indent=2), encoding='utf-8')
@@ -179,11 +193,21 @@ class UpdateManager:
 
     def capability(self):
         if not getattr(sys, 'frozen', False) or not platform_key():
-            return False, 'Automatic installation requires the packaged Windows or Mac app. Source installations use manual updates.'
-        target = app_bundle(sys.executable) if sys.platform == 'darwin' else self.root
-        if not target or '/AppTranslocation/' in str(target) or str(target).startswith('/Volumes/'):
-            return False, 'Move the app into Applications before updating.'
-        parent = target.parent if sys.platform == 'darwin' else target
+            return False, 'Automatic installation requires a packaged Windows, Mac, or Ubuntu app. Source installations use manual updates.'
+        if sys.platform == 'darwin':
+            target = app_bundle(sys.executable)
+            if not target or '/AppTranslocation/' in str(target) or str(target).startswith('/Volumes/'):
+                return False, 'Move the app into Applications before updating.'
+            parent = target.parent
+        elif sys.platform.startswith('linux'):
+            appimage = os.environ.get('APPIMAGE', '')
+            target = Path(appimage).resolve() if appimage else None
+            if not target or not target.is_file():
+                return False, 'Automatic installation is available for the HALO AppImage. Debian package installations use the Ubuntu download link.'
+            parent = target.parent
+        else:
+            target = self.root
+            parent = target
         if not os.access(parent, os.W_OK):
             return False, 'This installation folder is not writable. Use the download link and install with administrator permissions.'
         return True, ''
@@ -216,7 +240,7 @@ class UpdateManager:
             work = self.storage / 'updates' / secrets.token_hex(12)
             work.mkdir(parents=True)
             self.work = work
-            suffix = '.zip' if sys.platform == 'win32' else '.dmg'
+            suffix = '.zip' if sys.platform == 'win32' else ('.dmg' if sys.platform == 'darwin' else '.AppImage')
             archive = work / ('installer' + suffix)
             def progress(message):
                 with self.lock: self.state['message'] = message
@@ -228,14 +252,21 @@ class UpdateManager:
                 helper.mkdir()
                 shutil.copy2(sys.executable, helper / 'FieldTrialSecretary.exe')
                 shutil.copytree(self.root / '_internal', helper / '_internal')
-                self.helper_exe = helper / 'FieldTrialSecretary.exe'
+                self.helper_command = [str(helper / 'FieldTrialSecretary.exe')]
                 target = self.root
-            else:
+            elif sys.platform == 'darwin':
                 stage_mac(archive, work, version)
                 target = app_bundle(sys.executable)
                 helper = work / 'helper.app'
                 subprocess.run(['/usr/bin/ditto', str(target), str(helper)], check=True, capture_output=True, timeout=180)
-                self.helper_exe = helper / 'Contents' / 'MacOS' / Path(sys.executable).name
+                self.helper_command = [str(helper / 'Contents' / 'MacOS' / Path(sys.executable).name)]
+            else:
+                target = Path(os.environ['APPIMAGE']).resolve()
+                stage_linux_appimage(archive, work, version, target.name)
+                helper = work / 'helper.AppImage'
+                shutil.copy2(target, helper)
+                helper.chmod(helper.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                self.helper_command = [str(helper), '--appimage-extract-and-run']
             self.target = target
             self.token = secrets.token_urlsafe(32)
             with self.lock: self.state.update(phase='ready', message='Verified update is ready. Install and Restart will back up your database first.')
@@ -265,7 +296,7 @@ class UpdateManager:
                 kwargs = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(self.work))
                 if sys.platform == 'win32': kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
                 else: kwargs['start_new_session'] = True
-                subprocess.Popen([str(self.helper_exe), '--apply-program-update', str(self.work / 'job.json')], **kwargs)
+                subprocess.Popen(self.helper_command + ['--apply-program-update', str(self.work / 'job.json')], **kwargs)
                 self.state.update(phase='installing', message='Database backed up. Closing and installing the verified update.', backup=str(backup))
             except Exception:
                 self.installing = False
@@ -335,18 +366,24 @@ def apply_update_job(job_path):
         if job['platform'] == 'windows':
             names = WINDOWS_PARTS
             destination, staged = target, work / 'program'
-            executable = target / 'FieldTrialSecretary.exe'
-        else:
+            command = [str(target / 'FieldTrialSecretary.exe')]
+        elif job['platform'] in ('appleSilicon', 'intel'):
             names = (target.name,)
             destination, staged = target.parent, work / 'program'
-            executable = target / 'Contents' / 'MacOS' / 'Field Trial Secretary'
+            command = [str(target / 'Contents' / 'MacOS' / 'Field Trial Secretary')]
+        elif job['platform'] == 'linuxAppImage':
+            names = (target.name,)
+            destination, staged = target.parent, work / 'program'
+            command = [str(target), '--appimage-extract-and-run']
+        else:
+            raise ValueError('Unsupported update platform.')
         moved, installed = replace_program_components(destination, staged, work / 'rollback', names)
         env = dict(os.environ, CI='1')
         kwargs = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         if sys.platform == 'win32': kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
         process = None
         try:
-            process = subprocess.Popen([str(executable), '--host', job['host'], '--port', str(job['port'])], **kwargs)
+            process = subprocess.Popen(command + ['--host', job['host'], '--port', str(job['port'])], **kwargs)
             for _ in range(60):
                 if process.poll() is not None: raise ValueError('Updated application exited before startup.')
                 try:
@@ -359,7 +396,7 @@ def apply_update_job(job_path):
             if process and process.poll() is None:
                 process.terminate(); process.wait(timeout=20)
             restore_components(destination, work / 'rollback', moved, installed)
-            subprocess.Popen([str(executable), '--host', job['host'], '--port', str(job['port'])], **kwargs)
+            subprocess.Popen(command + ['--host', job['host'], '--port', str(job['port'])], **kwargs)
             raise ValueError('Update startup failed; previous program restored. Your database was not replaced.')
         write_json(result, {'phase':'complete','version':job['version'],'message':'Update installed. Database preserved.','backup':job['backup']})
     except Exception as exc:

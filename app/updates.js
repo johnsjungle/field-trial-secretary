@@ -39,7 +39,7 @@ function renderVersionBrowser() {
                 button.disabled=['preparing','ready','installing'].includes(programUpdateState.phase);
                 button.addEventListener('click',()=>startAutomaticProgramUpdate(release.version));links.appendChild(button);
             }
-            for(const [key,label] of [['windows','Download Windows'],['appleSilicon','Download Mac — Apple Silicon'],['intel','Download Mac — Intel']]){const link=versionLink(label,release.downloads?.[key]);if(link)links.appendChild(link);}
+            for(const [key,label] of [['windows','Download Windows'],['linuxAppImage','Download Ubuntu — AppImage'],['linuxDeb','Download Ubuntu — .deb'],['appleSilicon','Download Mac — Apple Silicon'],['intel','Download Mac — Intel']]){const link=versionLink(label,release.downloads?.[key]);if(link)links.appendChild(link);}
             const legacy=versionLink('Release downloads',release.releaseUrl);if(legacy)links.appendChild(legacy);
         }
         card.append(title,date,summary,links);list.appendChild(card);
