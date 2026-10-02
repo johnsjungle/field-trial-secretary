@@ -150,8 +150,9 @@ jobs:
         run: |
           DEB="$(find dist -maxdepth 1 -name 'HALO-*-Ubuntu-amd64.deb' -print -quit)"
           dpkg-deb --info "$DEB"
-          dpkg-deb --contents "$DEB" | grep -q './usr/lib/halo/FieldTrialSecretary'
-          dpkg-deb --contents "$DEB" | grep -q './usr/share/applications/halo.desktop'
+          dpkg-deb --contents "$DEB" > build/deb-contents.txt
+          grep -q './usr/lib/halo/FieldTrialSecretary' build/deb-contents.txt
+          grep -q './usr/share/applications/halo.desktop' build/deb-contents.txt
 
       - name: Upload Ubuntu installers
         uses: actions/upload-artifact@v4
