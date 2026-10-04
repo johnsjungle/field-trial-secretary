@@ -5,10 +5,36 @@
       "version": "0.4.8",
       "date": "2026-10-04",
       "channel": "beta",
-      "status": "pending",
+      "status": "available",
       "summary": "Adds Ubuntu installers and fixes entry-document and signed judge-sheet uploads.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.8",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/Field-Trial-Secretary-0.4.8-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/Field-Trial-Secretary-0.4.8-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/Field-Trial-Secretary-0.4.8-portable-20261004-160922.zip",
+        "linuxAppImage": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/HALO-0.4.8-x86_64.AppImage",
+        "linuxDeb": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/HALO-0.4.8-Ubuntu-amd64.deb"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.8/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.8/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/Field-Trial-Secretary-0.4.8-macOS-arm64.dmg",
+          "sha256": "af5b2c50ba9f0ab35bc0d3200728a0684b830c5a26667962b8c42b3634092a08"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/Field-Trial-Secretary-0.4.8-macOS-x86_64.dmg",
+          "sha256": "2dd48a244841687bbdff0c6e19ae592e9b71155976f995f01e719b6431c57e07"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/Field-Trial-Secretary-0.4.8-portable-20261004-160922.zip",
+          "sha256": "14614aa9007838b395078f81b5fc5df2eb1683fe5d0cc318f352f72bc2957748"
+        },
+        "linuxAppImage": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.8/HALO-0.4.8-x86_64.AppImage",
+          "sha256": "225651fbf90ec08d233f25259b9ba8c6d2c998e7563f327c9867113b83dbd8bb"
+        }
+      }
     },
     {
       "version": "0.4.7",
