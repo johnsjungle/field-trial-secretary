@@ -84,6 +84,7 @@ MIN_DB_BACKUPS = 5
 MAX_DB_BACKUPS_LIMIT = 250
 MAX_UNDO_HISTORY = 20
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
+MAX_DOCUMENT_REQUEST_BYTES = ((MAX_DOCUMENT_BYTES + 2) // 3) * 4 + 1024 * 1024
 MAX_DATABASE_RESTORE_BYTES = 4 * 1024 * 1024 * 1024
 TEMPLATE_IMAGE_CACHE: dict[str, bytes] = {}
 TEMPLATE_IMAGE_LOCK = threading.Lock()
@@ -583,7 +584,7 @@ def ensure_app_tables(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS entry_documents (
+        CREATE TABLE IF NOT EXISTS stored_documents (
             id TEXT PRIMARY KEY,
             file_name TEXT NOT NULL,
             mime_type TEXT NOT NULL,
@@ -594,6 +595,20 @@ def ensure_app_tables(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    legacy_columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(entry_documents)").fetchall()
+    }
+    blob_columns = {"id", "file_name", "mime_type", "content", "size_bytes", "source", "created_at"}
+    if blob_columns.issubset(legacy_columns):
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO stored_documents
+                (id, file_name, mime_type, content, size_bytes, source, created_at)
+            SELECT id, file_name, mime_type, content, size_bytes, source, created_at
+            FROM entry_documents
+            """
+        )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS state_history (
@@ -989,7 +1004,7 @@ def create_trial_archive_package(payload: dict) -> tuple[bytes, str, str]:
         f"Club: {trial.get('clubName') or ''}",
         f"Date: {trial.get('startsOn') or ''}",
         "",
-        "The SQLite backup contains the uploaded first-time-entry documents stored in the entry_documents table.",
+        "The SQLite backup contains uploaded entry and signed judge-sheet documents stored in the stored_documents table.",
     ]
 
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -1614,7 +1629,7 @@ def save_entry_document_bytes(
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute(
             """
-            INSERT INTO entry_documents (id, file_name, mime_type, content, size_bytes, source, created_at)
+            INSERT INTO stored_documents (id, file_name, mime_type, content, size_bytes, source, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (saved_id, saved_name, saved_mime, sqlite3.Binary(content), len(content), saved_source, created_at),
@@ -1694,7 +1709,7 @@ def read_entry_document(document_id: object) -> dict | None:
     ensure_database()
     with closing(sqlite3.connect(DB_PATH)) as conn:
         row = conn.execute(
-            "SELECT id, file_name, mime_type, content, size_bytes, source, created_at FROM entry_documents WHERE id = ?",
+            "SELECT id, file_name, mime_type, content, size_bytes, source, created_at FROM stored_documents WHERE id = ?",
             (str(document_id),),
         ).fetchone()
     if not row:
@@ -6806,6 +6821,36 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
         if not database_is_ready() and parsed.path not in {"/api/client-log", "/api/restart", "/api/shutdown"}:
             self.send_json({"ok": False, "error": "Choose a new or existing database before using the application."}, HTTPStatus.CONFLICT)
             return
+        if parsed.path in {"/api/document", "/api/document-from-url"}:
+            try:
+                content_type = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+                if content_type != "application/json":
+                    raise ValueError("Document uploads must use JSON.")
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    raise ValueError("The document upload is empty.")
+                if length > MAX_DOCUMENT_REQUEST_BYTES:
+                    self.send_json(
+                        {"ok": False, "error": "Document is larger than the 20 MB limit."},
+                        HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    )
+                    return
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise ValueError("The document upload ended before the complete file was received.")
+                payload = json.loads(raw.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("Document upload payload must be an object.")
+                with STATE_WRITE_LOCK:
+                    document = (
+                        save_linked_entry_document(payload)
+                        if parsed.path == "/api/document-from-url"
+                        else save_entry_document(payload)
+                    )
+                self.send_json({"ok": True, "document": document})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if handle_catalog_report_post(self, parsed):
             return
         if handle_trial_archive_post(self, parsed):
@@ -7464,6 +7509,36 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             return
         if not database_is_ready() and parsed.path not in {"/api/client-log", "/api/restart", "/api/shutdown"}:
             self.send_json({"ok": False, "error": "Choose a new or existing database before using the application."}, HTTPStatus.CONFLICT)
+            return
+        if parsed.path in {"/api/document", "/api/document-from-url"}:
+            try:
+                content_type = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+                if content_type != "application/json":
+                    raise ValueError("Document uploads must use JSON.")
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    raise ValueError("The document upload is empty.")
+                if length > MAX_DOCUMENT_REQUEST_BYTES:
+                    self.send_json(
+                        {"ok": False, "error": "Document is larger than the 20 MB limit."},
+                        HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    )
+                    return
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise ValueError("The document upload ended before the complete file was received.")
+                payload = json.loads(raw.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("Document upload payload must be an object.")
+                with STATE_WRITE_LOCK:
+                    document = (
+                        save_linked_entry_document(payload)
+                        if parsed.path == "/api/document-from-url"
+                        else save_entry_document(payload)
+                    )
+                self.send_json({"ok": True, "document": document})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if handle_catalog_report_post(self, parsed):
             return
