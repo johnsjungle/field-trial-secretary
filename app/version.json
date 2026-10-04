@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.4.7",
-  "releaseDate": "2026-09-30",
+  "version": "0.4.8",
+  "releaseDate": "2026-10-04",
   "channel": "beta",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.7",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.8",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Introduces HALO branding in remembrance of Halo, explains the HALO workflow, and adds practical preparation guidance for first-time field trial use."
+  "notes": "Adds Ubuntu installers and fixes entry-document and signed judge-sheet uploads."
 }

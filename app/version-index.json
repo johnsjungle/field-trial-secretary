@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.4.8",
+      "date": "2026-10-04",
+      "channel": "beta",
+      "status": "pending",
+      "summary": "Adds Ubuntu installers and fixes entry-document and signed judge-sheet uploads.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.8",
+      "downloads": {}
+    },
+    {
       "version": "0.4.7",
       "date": "2026-09-30",
       "channel": "beta",
@@ -333,5 +342,5 @@
     }
   ],
   "releasesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases",
-  "generatedAt": "2026-09-30"
+  "generatedAt": "2026-10-04"
 }
