@@ -4638,12 +4638,17 @@ def append_first_time_documents_for_group(writer: PdfWriter, trial: dict, group:
     lci_layout_settings = asfa_lci_entry_layout(lci_entry_layout)
     for entry_id in group_entry_ids(group):
         entry = entries_by_id.get(entry_id)
-        if not entry or not (bool(entry.get("firstTime")) or bool(entry.get("infoChanged"))):
+        if not entry:
             continue
-        append_asfa_entry_form_for_entry(writer, trial, entry, lci_layout_settings if is_lci_entry(entry) else layout_settings)
-        document_ids = first_time_document_ids_for_entry(entry, group) if bool(entry.get("firstTime")) else []
-        if bool(entry.get("infoChanged")):
+        is_first_time = bool(entry.get("firstTime"))
+        information_changed = bool(entry.get("infoChanged"))
+        document_ids = first_time_document_ids_for_entry(entry, group)
+        if information_changed:
             document_ids.extend(information_change_document_ids_for_entry(entry))
+        if not (is_first_time or information_changed or document_ids):
+            continue
+        if is_first_time or information_changed:
+            append_asfa_entry_form_for_entry(writer, trial, entry, lci_layout_settings if is_lci_entry(entry) else layout_settings)
         for document_id in document_ids:
             if not document_id or document_id in seen_documents:
                 continue
@@ -7074,6 +7079,29 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/api/asfa-entry-forms":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                pdf = generate_asfa_entry_forms_pdf(
+                    trial,
+                    str(payload.get("entryId") or ""),
+                    payload.get("layout"),
+                    payload.get("lciLayout"),
+                )
+                self.send_pdf(pdf, "asfa-first-time-entry-forms.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/api/asfa-secretary-report":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length)
@@ -7760,6 +7788,29 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                 )
                 association = str(trial.get("association") or "ASFA").upper()
                 self.send_pdf(pdf, f"{association.lower()}-record-sheet.pdf")
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/asfa-entry-forms":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception:
+                self.send_json({"ok": False, "error": "Invalid JSON payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            trial = payload.get("trial")
+            if not isinstance(trial, dict):
+                self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                pdf = generate_asfa_entry_forms_pdf(
+                    trial,
+                    str(payload.get("entryId") or ""),
+                    payload.get("layout"),
+                    payload.get("lciLayout"),
+                )
+                self.send_pdf(pdf, "asfa-first-time-entry-forms.pdf")
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
