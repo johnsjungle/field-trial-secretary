@@ -3358,6 +3358,15 @@ button.danger-button {
     line-height: 1.35;
 }
 
+.import-row-review td {
+    background: #fff4d6;
+}
+
+.import-row-review .import-preview-notes {
+    color: #7a4a00;
+    font-weight: 700;
+}
+
 .import-row-complete {
     background: #eaf6ef;
 }

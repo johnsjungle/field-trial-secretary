@@ -21225,6 +21225,8 @@ function renderJotformImportPreview() {
         const row = document.createElement('tr');
         if (item.imported) {
             row.classList.add('import-row-complete');
+        } else if (importedHoundNeedsReview(item)) {
+            row.classList.add('import-row-review');
         }
         const docs = uniqueNames([...(item.documents || []), ...(item.attachmentNames || [])]);
         const documentUrls = importedDocumentUrls([...(item.documentUrls || []), ...docs]);
@@ -21249,7 +21251,17 @@ function renderJotformImportPreview() {
         if ((item.documentDownloadErrors || []).length) {
             notes.push(`${item.documentDownloadErrors.length} document link${item.documentDownloadErrors.length === 1 ? '' : 's'} could not be saved.`);
         }
-        if (!item.match) {
+        if (item.match) {
+            notes.push(`Matched existing hound by ${item.matchType || 'manual review'}.`);
+        } else if (importedHoundNeedsReview(item)) {
+            const possibleMatches = importedHoundPossibleMatches(item);
+            notes.push('Review required: not marked first-time and no exact database match.');
+            if (possibleMatches.length) {
+                notes.push(`${possibleMatches.length} possible existing hound${possibleMatches.length === 1 ? '' : 's'} found.`);
+            }
+        } else if (item.houndMatchReviewed) {
+            notes.push('New hound creation confirmed.');
+        } else {
             notes.push('Will create hound.');
         }
         if (normalizedEntryDatesForImport(item).length > 0 && destinations.length === 0) {
@@ -21326,7 +21338,8 @@ function renderJotformImportPreview() {
     });
 
     if (importButton) {
-        importButton.disabled = !stagedJotformEntries.some((item) => item.selected !== false && !item.imported);
+        const selectedPending = stagedJotformEntries.filter((item) => item.selected !== false && !item.imported);
+        importButton.disabled = selectedPending.length === 0 || selectedPending.some(importedHoundNeedsReview);
     }
     updateMissingImportTrialsButton();
 }
@@ -21396,6 +21409,9 @@ function appendImportPreviewEditor(row, index, key, value, label) {
                 item.className = normalizeImportedClass(item.className);
             }
         }
+        if (['callName', 'registeredName', 'breed', 'registrationNumber'].includes(key)) {
+            refreshImportedHoundMatch(index);
+        }
         renderJotformImportPreview();
     });
     cell.appendChild(input);
@@ -21425,9 +21441,17 @@ function buildJotformHoundChoice(index) {
     container.className = 'import-hound-choice';
     const select = document.createElement('select');
     select.className = 'small-select';
+    const reviewRequired = importedHoundNeedsReview(item);
+    if (reviewRequired) {
+        const reviewOption = document.createElement('option');
+        reviewOption.value = 'review';
+        reviewOption.textContent = 'Review required - choose hound';
+        reviewOption.disabled = true;
+        select.appendChild(reviewOption);
+    }
     const newOption = document.createElement('option');
     newOption.value = 'new';
-    newOption.textContent = 'Create new hound';
+    newOption.textContent = reviewRequired ? 'Confirm create new hound' : 'Create new hound';
     select.appendChild(newOption);
 
     const suggestions = suggestedHoundsForImport(item);
@@ -21438,7 +21462,7 @@ function buildJotformHoundChoice(index) {
         select.appendChild(option);
     });
 
-    select.value = item.match ? item.match.id : 'new';
+    select.value = item.match ? item.match.id : (reviewRequired ? 'review' : 'new');
     select.disabled = Boolean(item.imported);
     select.addEventListener('change', (event) => chooseJotformHoundForRow(index, event.target.value));
     container.appendChild(select);
@@ -21471,30 +21495,19 @@ function buildJotformHoundChoice(index) {
 }
 
 function suggestedHoundsForImport(item) {
-    const suggestions = [];
-    const add = (hound) => {
-        if (hound && !suggestions.some((candidate) => candidate.id === hound.id)) {
-            suggestions.push(hound);
-        }
-    };
-    add(item.match);
-    const reg = clean(item.registrationNumber);
-    if (reg) {
-        masterHounds.forEach((hound) => {
-            if ([hound.registrationNumber, hound.alternateRegistrationNumber].map(clean).includes(reg)) {
-                add(hound);
-            }
-        });
+    return importedHoundPossibleMatches(item);
+}
+
+function refreshImportedHoundMatch(index) {
+    const item = stagedJotformEntries[index];
+    if (!item || item.matchType === 'manual choice') {
+        return;
     }
-    const call = clean(item.callName);
-    if (call) {
-        masterHounds.forEach((hound) => {
-            if (clean(hound.callName) === call) {
-                add(hound);
-            }
-        });
-    }
-    return suggestions;
+    const match = matchImportedHound(item);
+    stagedJotformEntries[index] = hydrateImportedEntryFromHound({
+        ...item,
+        houndMatchReviewed: Boolean(match.hound),
+    }, match.hound, match.type);
 }
 
 function chooseJotformHoundForRow(index, houndId) {
@@ -21502,11 +21515,15 @@ function chooseJotformHoundForRow(index, houndId) {
     if (!item) {
         return;
     }
+    if (houndId === 'review') {
+        return;
+    }
     if (houndId === 'new') {
         stagedJotformEntries[index] = {
             ...item,
             match: null,
-            matchType: '',
+            matchType: 'confirmed new hound',
+            houndMatchReviewed: true,
         };
         renderJotformImportPreview();
         return;
@@ -21886,6 +21903,7 @@ function hydrateImportedEntryFromHound(item, hound, matchType) {
             ...item,
             match: null,
             matchType: '',
+            houndMatchReviewed: Boolean(item.houndMatchReviewed),
         };
     }
     const lciParts = normalizeImportedLciParts(item.breed, item.className);
@@ -21900,6 +21918,7 @@ function hydrateImportedEntryFromHound(item, hound, matchType) {
         ownerPhone: item.ownerPhone || hound.ownerPhone || '',
         match: hound,
         matchType,
+        houndMatchReviewed: true,
     };
 }
 
@@ -22644,6 +22663,75 @@ function normalizeImportedLciParts(breedValue, classValue) {
     return { breed, className: className || 'Open' };
 }
 
+
+function importedHoundNeedsReview(item) {
+    return Boolean(item)
+        && item.selected !== false
+        && !item.imported
+        && !item.firstTime
+        && !item.match
+        && !item.houndMatchReviewed;
+}
+
+function importedHoundEditDistance(leftValue, rightValue) {
+    const left = clean(leftValue);
+    const right = clean(rightValue);
+    if (!left) return right.length;
+    if (!right) return left.length;
+    const matrix = Array.from({ length: left.length + 1 }, () => Array(right.length + 1).fill(0));
+    for (let row = 0; row <= left.length; row += 1) matrix[row][0] = row;
+    for (let column = 0; column <= right.length; column += 1) matrix[0][column] = column;
+    for (let row = 1; row <= left.length; row += 1) {
+        for (let column = 1; column <= right.length; column += 1) {
+            const cost = left[row - 1] === right[column - 1] ? 0 : 1;
+            matrix[row][column] = Math.min(
+                matrix[row - 1][column] + 1,
+                matrix[row][column - 1] + 1,
+                matrix[row - 1][column - 1] + cost
+            );
+            if (row > 1 && column > 1 && left[row - 1] === right[column - 2] && left[row - 2] === right[column - 1]) {
+                matrix[row][column] = Math.min(matrix[row][column], matrix[row - 2][column - 2] + 1);
+            }
+        }
+    }
+    return matrix[left.length][right.length];
+}
+
+function importedHoundPossibleMatches(imported) {
+    const candidates = [];
+    const add = (hound, priority) => {
+        if (!hound) return;
+        const existing = candidates.find((candidate) => candidate.hound.id === hound.id);
+        if (existing) {
+            existing.priority = Math.min(existing.priority, priority);
+            return;
+        }
+        candidates.push({ hound, priority });
+    };
+    add(imported.match, 0);
+    const registration = clean(imported.registrationNumber);
+    const registeredName = clean(imported.registeredName);
+    const callName = clean(imported.callName);
+    const breed = clean(imported.breed);
+    masterHounds.forEach((hound) => {
+        const registrations = [hound.registrationNumber, hound.alternateRegistrationNumber].map(clean).filter(Boolean);
+        if (registration && registrations.includes(registration)) add(hound, 0);
+        else if (registration.length >= 5 && registrations.some((number) => number.length >= 5 && importedHoundEditDistance(registration, number) <= 1)) add(hound, 1);
+
+        const knownName = clean(hound.registeredName);
+        if (registeredName && knownName === registeredName) add(hound, 0);
+        else if (registeredName.length >= 6 && knownName.length >= 6) {
+            const threshold = Math.min(2, Math.max(1, Math.floor(Math.max(registeredName.length, knownName.length) * 0.08)));
+            const breedCompatible = !breed || !clean(hound.breed) || clean(hound.breed) === breed;
+            if (breedCompatible && importedHoundEditDistance(registeredName, knownName) <= threshold) add(hound, 2);
+        }
+        if (callName && clean(hound.callName) === callName) add(hound, clean(hound.breed) === breed ? 0 : 3);
+    });
+    return candidates
+        .sort((left, right) => left.priority - right.priority || String(left.hound.callName || left.hound.registeredName || '').localeCompare(String(right.hound.callName || right.hound.registeredName || '')))
+        .map((candidate) => candidate.hound);
+}
+
 function matchImportedHound(imported) {
     const reg = clean(imported.registrationNumber);
     if (reg) {
@@ -22845,6 +22933,12 @@ async function importStagedJotformEntries() {
     const incomplete = selected.filter((item) => !item.breed || !item.className || (!item.callName && !item.registeredName && !item.registrationNumber));
     if (incomplete.length > 0) {
         showMessage(entryImportMessageElement(), `Fix or uncheck ${incomplete.length} row${incomplete.length === 1 ? '' : 's'} missing breed, stake/class, or hound identification. The fields can be corrected directly in the preview.`, 'warning');
+        return;
+    }
+    const unresolvedHoundReviews = selected.filter(importedHoundNeedsReview);
+    if (unresolvedHoundReviews.length > 0) {
+        const names = unresolvedHoundReviews.map((item) => item.callName || item.registeredName || item.registrationNumber || 'Unknown hound').join(', ');
+        showMessage(entryImportMessageElement(), `Review the hound match for: ${names}. These entries are not marked first-time and do not exactly match the current hound database. Choose an existing hound or explicitly confirm creating a new one.`, 'warning');
         return;
     }
     const unmatchedDates = selected.filter((item) => importDestinationTrials(item, target.id).length === 0);
