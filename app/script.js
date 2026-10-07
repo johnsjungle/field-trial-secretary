@@ -14264,7 +14264,7 @@ function renderScoreReportPrint(trial, groups, headingText) {
         const table = document.createElement('table');
         const thead = document.createElement('thead');
         const header = document.createElement('tr');
-        ['Prelim Course', 'Blanket', 'Hound', 'Stake', 'Prelim J1', 'Prelim J2', 'Prelim Total', 'Outcome', 'Finals', 'Final J1', 'Final J2', 'Final Total', 'Combined', 'Placement'].forEach((label) => {
+        ['Prelim Course', 'Blanket', 'Hound', 'Stake', 'Prelim J1', 'Prelim J2', 'Prelim Total', 'Outcome', 'Finals', 'Final J1', 'Final J2', 'Final Total', 'Combined', 'Placement', 'Runoff Draw'].forEach((label) => {
             const th = document.createElement('th');
             th.textContent = label;
             header.appendChild(th);
@@ -14290,6 +14290,7 @@ function renderScoreReportPrint(trial, groups, headingText) {
                 row.finalScore || scoreOutcomeLabel(row.finalOutcome),
                 row.combinedScore || '',
                 row.placement || '',
+                row.runoffDraw || '',
             ].forEach((value) => tr.appendChild(textCell(value)));
             tbody.appendChild(tr);
         });
@@ -14570,6 +14571,17 @@ function renderRibbonBifSection(trial, container) {
 
 function scoreReportRows(group) {
     const finalByEntry = new Map();
+    const runoffByEntry = new Map();
+    (group.runoffs || []).forEach((runoff) => {
+        (runoff.courses || []).forEach((course) => {
+            (course.hounds || []).forEach((hound) => {
+                const color = hound.tieBreakBlanketColor || hound.blanketColor || '';
+                const draw = hound.tieBreakCode || String(course.number || '') + blanketCode(color);
+                const label = runoff.label || hound.tieBreakLabel || '';
+                runoffByEntry.set(hound.entryId, [label, draw].filter(Boolean).join(' - '));
+            });
+        });
+    });
     if (group.finalDraw && Array.isArray(group.finalDraw.courses)) {
         group.finalDraw.courses.forEach((course) => {
             (course.hounds || []).forEach((hound) => {
@@ -14599,6 +14611,7 @@ function scoreReportRows(group) {
                 finalOutcome: finalByEntry.get(hound.entryId)?.outcome || '',
                 combinedScore: finalByEntry.get(hound.entryId)?.combinedScore || '',
                 placement: finalByEntry.get(hound.entryId)?.placement || '',
+                runoffDraw: runoffByEntry.get(hound.entryId) || '',
             }))
         ));
 }

@@ -2605,7 +2605,8 @@ def akc_scoresheet_breed_key(value: object) -> str:
 def build_akc_scoresheet_breed_overlay(group: dict, trial: dict | None = None) -> bytes:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
-    draw_field_label(pdf, field_name_for_breed(trial or {}, group.get("breed")), 780, 600, right=True, font_size=8)
+    trial = trial or {}
+    draw_field_label(pdf, field_name_for_breed(trial, group.get("breed")), 780, 600, right=True, font_size=8)
     breed_key = akc_scoresheet_breed_key(group.get("breed"))
     circle = AKC_SCORESHEET_BREED_CIRCLES.get(breed_key)
     if circle:
@@ -2614,6 +2615,11 @@ def build_akc_scoresheet_breed_overlay(group: dict, trial: dict | None = None) -
         pdf.setStrokeColorRGB(0.85, 0, 0)
         pdf.setLineWidth(1.4)
         pdf.ellipse(center_x - radius_x, center_y - 6.5, center_x + radius_x, center_y + 6.5, stroke=1, fill=0)
+    # Print names directly because signature widgets do not flatten consistently.
+    pdf.setFillColorRGB(0.75, 0, 0)
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(390, y_from_top(566), safe_text(trial.get("secretaryName") or "", 30))
+    pdf.drawString(670, y_from_top(565), safe_text(trial.get("trialChair") or trial.get("chairName") or "", 24))
     pdf.showPage()
     pdf.save()
     return buffer.getvalue()
@@ -2630,6 +2636,23 @@ def akc_scoresheet_award_and_placement(value: object) -> tuple[str, str]:
     ]
     placement = placement_parts[0] if placement_parts else ""
     return award, placement
+
+
+def akc_scoresheet_placement(value: object) -> str:
+    """Return compact placement text that fits the JERSC3 Place column."""
+    text = str(value or "").strip()
+    if "TIE" in clean_text(text):
+        return safe_text(f"T{concise_tie_label(text)}", 5)
+    return akc_scoresheet_award_and_placement(text)[1]
+
+
+def akc_scoresheet_runoff_value(row: dict) -> str:
+    """Show the runoff draw before scoring, then its result after scoring."""
+    draw = str(row.get("stakesRunoffDraw") or "").strip()
+    result = str(row.get("stakesRunoffCode") or "").strip()
+    if draw and result:
+        return safe_text(f"{draw}/{result}", 8)
+    return safe_text(result or draw, 8)
 
 
 def blank_akc_scoresheet_fields() -> dict[str, object]:
@@ -2991,9 +3014,9 @@ def generate_akc_record_sheet_pdf(
             # ── Hound rows ───────────────────────────────────────────────────
             for i, row in enumerate(page_rows):
                 r = i + 1  # 1-based row index within the form
-                award, placement = akc_scoresheet_award_and_placement(row.get("placement"))
+                award, _placement = akc_scoresheet_award_and_placement(row.get("placement"))
                 fields[_akc_scoresheet_field(r, 1)] = award
-                fields[_akc_scoresheet_field(r, 2)] = safe_text(placement, 5)
+                fields[_akc_scoresheet_field(r, 2)] = akc_scoresheet_placement(row.get("placement"))
                 fields[_akc_scoresheet_field(r, 3)] = safe_text(row.get("registrationNumber") or "", 14)
                 fields[_akc_scoresheet_field(r, 4)] = fit_akc_registered_name(row.get("registeredName") or "")
                 fields[_akc_scoresheet_field(r, 5)] = fit_akc_call_name(safe_text(row.get("callName") or "", 18))
@@ -3008,7 +3031,7 @@ def generate_akc_record_sheet_pdf(
                 fields[_akc_scoresheet_field(r, 12)] = safe_text(str(row.get("finalJudge2") or ""), 6)
                 fields[_akc_scoresheet_field(r, 13)] = safe_text(str(row.get("finalScore") or ""), 6)
                 fields[_akc_scoresheet_field(r, 14)] = safe_text(str(row.get("combinedScore") or ""), 6)
-                fields[_akc_scoresheet_field(r, 15)] = safe_text(str(row.get("stakesRunoffCode") or ""), 6)
+                fields[_akc_scoresheet_field(r, 15)] = akc_scoresheet_runoff_value(row)
                 fields[_akc_scoresheet_field(r, 16)] = safe_text(str(row.get("bobRunoffCode") or ""), 6)
 
             # ── Judges ───────────────────────────────────────────────────────
@@ -3187,6 +3210,28 @@ def generate_asfa_secretary_report_pdf(trial: dict, layout: dict | None = None) 
     return output.getvalue()
 
 
+def build_akc_secretary_checkbox_overlay(template_path: Path, selected_fields: list[str]) -> bytes:
+    reader = PdfReader(str(template_path))
+    page = reader.pages[0]
+    width = float(page.mediabox.width)
+    height = float(page.mediabox.height)
+    rects = _pdf_widget_rects(template_path)
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=(width, height))
+    pdf.setStrokeColorRGB(0, 0, 0)
+    pdf.setLineWidth(1.4)
+    for field_name in selected_fields:
+        rect = rects.get(field_name)
+        if not rect:
+            continue
+        left, bottom, right, top = rect
+        inset = 3.5
+        pdf.line(left + inset, bottom + inset, right - inset, top - inset)
+        pdf.line(left + inset, top - inset, right - inset, bottom + inset)
+    pdf.save()
+    return buffer.getvalue()
+
+
 def generate_akc_secretary_report_pdf(trial: dict) -> bytes:
     template_path = SECRETARY_REPORT_TEMPLATES["AKC"]
     if not template_path.exists():
@@ -3272,6 +3317,13 @@ def generate_akc_secretary_report_pdf(trial: dict) -> bytes:
     writer = PdfWriter()
     writer.clone_document_from_reader(reader)
     writer.update_page_form_field_values(writer.pages[0], fields, auto_regenerate=False, flatten=True)
+    selected_checkboxes = [name for name, value in fields.items() if value == "/Yes"]
+    checkbox_overlay = PdfReader(io.BytesIO(build_akc_secretary_checkbox_overlay(template_path, selected_checkboxes))).pages[0]
+    writer.pages[0].merge_page(checkbox_overlay)
+    # Remove widgets so PDF viewers do not draw typed values twice.
+    for page in writer.pages:
+        page.pop("/Annots", None)
+    writer.root_object.pop("/AcroForm", None)
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
@@ -3948,7 +4000,7 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
             placement = final_placement_by_entry.get(entry_id) or ""
             if placement and not combined_score_qualifies(combined_by_entry.get(entry_id), qualifying_minimum):
                 placement = ""
-            if "TIE" in clean_text(placement):
+            if "TIE" in clean_text(placement) and clean_text(trial.get("association")) != "AKC":
                 placement = ""
             rows.append({
                 "callName": asfa_record_call_name(hound, entry, group),
@@ -3969,6 +4021,7 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
                 "combinedScore": combined_by_entry.get(entry_id) or "",
                 "stakesRunoffLabel": stake_runoff_by_entry.get(entry_id, {}).get("label", ""),
                 "stakesRunoffColor": stake_runoff_by_entry.get(entry_id, {}).get("color", ""),
+                "stakesRunoffDraw": stake_runoff_by_entry.get(entry_id, {}).get("draw", ""),
                 "stakesRunoffCode": stake_runoff_by_entry.get(entry_id, {}).get("code", ""),
                 "bobRunoffLabel": bob_runoff_by_entry.get(entry_id, {}).get("label", ""),
                 "bobRunoffCode": bob_runoff_by_entry.get(entry_id, {}).get("code", ""),
@@ -4237,6 +4290,7 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                     boxes[entry_id] = {
                         "label": label,
                         "color": runoff_blanket_color_code(hound, course),
+                        "draw": course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("bobBlanketColor") or hound.get("blanketColor")),
                         "code": str(code),
                     }
     group_entry_ids = {
@@ -4266,6 +4320,7 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                 boxes[entry_id] = {
                     "label": "Overall",
                     "color": runoff_blanket_color_code(hound, course),
+                    "draw": course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("bobBlanketColor") or hound.get("blanketColor")),
                     "code": str(code),
                 }
     group_id = str(group.get("id") or "").split("::", 1)[0]
@@ -4308,6 +4363,7 @@ def stake_runoff_boxes_by_entry(trial: dict, group: dict) -> dict[str, dict[str,
                     boxes[entry_id] = {
                         "label": label,
                         "color": runoff_blanket_color_code(hound, course),
+                        "draw": course_color_code(course.get("number"), hound.get("tieBreakBlanketColor") or hound.get("bobBlanketColor") or hound.get("blanketColor")),
                         "code": str(code),
                     }
     return boxes
@@ -5612,6 +5668,14 @@ def build_akc_judge_overlay(trial: dict, course: dict) -> bytes:
         pdf.drawString(390, 642, safe_text(course.get("stake"), 14))
     draw_akc_course_check(pdf, course.get("course"))
     draw_akc_split_stake_mark(pdf, course.get("flight"))
+    runoff_text = str(course.get("runoffText") or "").strip()
+    if runoff_text:
+        stake = str(course.get("stake") or "").strip()
+        label = f"RUNOFF FOR {runoff_text}"
+        if stake:
+            label += f" - {stake}"
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawCentredString(306, 600, safe_text(label.upper(), 48))
     judge_index = max(1, min(2, int(course.get("judgeIndex") or 1)))
     judge_y = 588 if judge_index == 1 else 568
     pdf.drawString(236, judge_y, safe_text(course.get("judge") or "", 30))
