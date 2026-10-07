@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.4.8",
-  "releaseDate": "2026-10-04",
+  "version": "0.4.9",
+  "releaseDate": "2026-10-07",
   "channel": "beta",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.8",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.9",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Adds Ubuntu installers and fixes entry-document and signed judge-sheet uploads."
+  "notes": "Prevents duplicate hounds during entry import and improves AKC trial paperwork."
 }
