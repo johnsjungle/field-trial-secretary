@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.4.10",
+      "date": "2026-10-07",
+      "channel": "beta",
+      "status": "pending",
+      "summary": "Fixes AKC placement and event-number printing and ensures AKC and ASFA record sheets document every non-scoring status.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.10",
+      "downloads": {}
+    },
+    {
       "version": "0.4.9",
       "date": "2026-10-07",
       "channel": "beta",
