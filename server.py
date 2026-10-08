@@ -45,6 +45,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
+from system_test_runner import run_server_system_tests
+
 
 IS_FROZEN = bool(getattr(sys, "frozen", False))
 IS_MAC_APP = IS_FROZEN and sys.platform == "darwin"
@@ -7038,6 +7040,24 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": "An update is installing. Please wait for restart."}, HTTPStatus.SERVICE_UNAVAILABLE)
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/system-test":
+            try:
+                content_type = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+                if content_type != "application/json":
+                    raise ValueError("System tests must use JSON.")
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 0 or length > 1024 * 1024:
+                    raise ValueError("System test request is too large.")
+                payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                client_results = payload.get("clientResults", []) if isinstance(payload, dict) else []
+                if not isinstance(client_results, list):
+                    raise ValueError("clientResults must be a list.")
+                self.send_json(run_server_system_tests(globals(), client_results))
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/api/database-create":
             try:
                 self.send_json({"ok": True, **create_new_database()})
@@ -7750,6 +7770,24 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": "An update is installing. Please wait for restart."}, HTTPStatus.SERVICE_UNAVAILABLE)
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/system-test":
+            try:
+                content_type = str(self.headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+                if content_type != "application/json":
+                    raise ValueError("System tests must use JSON.")
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 0 or length > 1024 * 1024:
+                    raise ValueError("System test request is too large.")
+                payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                client_results = payload.get("clientResults", []) if isinstance(payload, dict) else []
+                if not isinstance(client_results, list):
+                    raise ValueError("clientResults must be a list.")
+                self.send_json(run_server_system_tests(globals(), client_results))
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/api/database-create":
             try:
                 self.send_json({"ok": True, **create_new_database()})

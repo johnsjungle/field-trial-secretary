@@ -4069,3 +4069,34 @@ button.danger-button {
     }
     .halo-update-details { grid-column: auto; }
 }
+
+/* Full System Test */
+.system-test-panel { border-color: #d7b45b; background: linear-gradient(180deg, #fffdf6 0%, #fff 100%); }
+.system-test-progress { display: flex; align-items: center; gap: .7rem; padding: .8rem 1rem; margin: .75rem 0; border-radius: .6rem; background: #eef6f4; color: #073c3d; font-weight: 700; }
+.system-test-progress[hidden] { display: none; }
+.system-test-spinner { width: 1.1rem; height: 1.1rem; border: 3px solid #b9d4cf; border-top-color: #08736d; border-radius: 50%; animation: system-test-spin .8s linear infinite; }
+@keyframes system-test-spin { to { transform: rotate(360deg); } }
+.system-test-summary { display: grid; grid-template-columns: repeat(4, minmax(95px, 1fr)); gap: .65rem; margin: 1rem 0; }
+.system-test-summary[hidden], .system-test-filters[hidden] { display: none; }
+.system-test-count { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: .75rem .9rem; border: 1px solid #d8dfdd; border-radius: .6rem; background: #fff; }
+.system-test-count strong { font-size: 1.45rem; color: #073c3d; }
+.system-test-count.failed strong { color: #a42727; }
+.system-test-count.warnings strong { color: #8b5a00; }
+.system-test-count.passed strong { color: #197044; }
+.system-test-filters { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(150px, 1fr); gap: .75rem; align-items: end; margin-bottom: 1rem; }
+.system-test-results { display: grid; gap: .9rem; }
+.system-test-group { border: 1px solid #dfe6e4; border-radius: .65rem; overflow: hidden; background: #fff; }
+.system-test-group > h3 { margin: 0; padding: .65rem .85rem; background: #f2f6f5; color: #073c3d; font-size: 1rem; }
+.system-test-result { display: grid; grid-template-columns: 1.8rem 1fr; gap: .65rem; padding: .7rem .85rem; border-top: 1px solid #edf0ef; }
+.system-test-result:first-of-type { border-top: 0; }
+.system-test-result p { margin: .18rem 0; color: #40504e; }
+.system-test-result small { color: #71807d; }
+.system-test-icon { display: grid; place-items: center; width: 1.55rem; height: 1.55rem; border-radius: 50%; color: #fff; font-weight: 900; line-height: 1; }
+.system-test-result.pass .system-test-icon { background: #22814f; }
+.system-test-result.warning .system-test-icon { background: #b5790b; }
+.system-test-result.fail .system-test-icon { background: #b53333; }
+.system-test-result.fail { background: #fff8f8; }
+@media (max-width: 720px) {
+    .system-test-summary { grid-template-columns: repeat(2, 1fr); }
+    .system-test-filters { grid-template-columns: 1fr; }
+}

@@ -6,7 +6,7 @@
     <title>HALO</title>
     <link rel="icon" href="assets/halo-icon.png" type="image/png">
     <link rel="shortcut icon" href="assets/halo-icon.ico">
-    <link rel="stylesheet" href="styles.css?v=20261007-import-review">
+    <link rel="stylesheet" href="styles.css?v=20261008-system-test">
 </head>
 <body>
     <div class="startup-splash" id="startupSplash" aria-hidden="true">
@@ -1772,6 +1772,28 @@
                     </article>
                     <div class="form-message compact" id="catalogReportMessage"></div>
                 </section>
+                <section class="form-section system-test-panel" data-tab="admin" data-admin-page="Tools">
+                    <div class="section-heading with-action">
+                        <div>
+                            <h2>Full System Test</h2>
+                            <p>Run the maintained regression checklist against isolated sample trials. It checks core rules, draws, scoring, BIF/BIE, official forms, reports, updates, and database safety without changing your trials.</p>
+                        </div>
+                        <div class="button-row">
+                            <button type="button" class="secondary" id="runFullSystemTestButton">Test All Functions</button>
+                            <button type="button" class="secondary small" id="copySystemTestReportButton" hidden>Copy Report</button>
+                        </div>
+                    </div>
+                    <div class="system-test-progress" id="systemTestProgress" hidden><span class="system-test-spinner" aria-hidden="true"></span><span>Running browser, database, rules, and official paperwork checks...</span></div>
+                    <div class="form-message compact" id="systemTestMessage" role="status" aria-live="polite"></div>
+                    <div class="system-test-summary" id="systemTestSummary" hidden></div>
+                    <div class="system-test-filters" id="systemTestFilters" hidden>
+                        <label>Find a check <input id="systemTestSearch" type="search" placeholder="Search tests and details"></label>
+                        <label>Status <select id="systemTestStatusFilter"><option value="all">All results</option><option value="fail">Failed</option><option value="warning">Warnings</option><option value="pass">Passed</option></select></label>
+                    </div>
+                    <div class="system-test-results" id="systemTestResults"></div>
+                    <p class="field-note">This is a scenario-based regression suite. Add a check whenever a defect is fixed or a workflow is added so future releases keep covering it.</p>
+                </section>
+
                 <section class="form-section" data-tab="admin" data-admin-page="Tools">
                     <div class="section-heading with-action">
                         <div>
@@ -2050,5 +2072,6 @@
     <script src="script.js?v=20261007-import-review"></script>
     <script src="hound_database_import.js?v=20260810-mac-file-picker"></script>
     <script src="help.js?v=20260930-qc-book"></script>
+    <script src="system_tests.js?v=20261008"></script>
 </body>
 </html>

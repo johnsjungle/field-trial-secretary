@@ -19,6 +19,7 @@ const buttonHelpText = {
     printJudgeSheetsButton: 'Creates preliminary judge sheets for the courses and judges assigned in the run plan.',
     printJudgesMapButton: 'Prints a breed and stake map showing course breakdowns and judge assignments in running order.',
     printRollCallButton: 'Prints the current roll-call preview. Choose all dogs, separate lanes, separate fields, or field-and-lane sheets before printing.',
+    runFullSystemTestButton: 'Runs the maintained browser, rules, database, official-form, report, BIF/BIE, and update checks with isolated sample data. It does not change your trials.',
     createAdminTestTrialButton: 'Creates a realistic test trial with hounds, judges, workers, and a starter run plan.',
     populateAdminScoresButton: 'Fills preliminary Judge 1 and Judge 2 scores for testing, following the judges assigned in the run plan.',
     populateAdminFinalsScoresButton: 'Fills finals Judge 1 and Judge 2 scores for testing, then recomputes combined scores and placements.',
