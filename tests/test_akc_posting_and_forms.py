@@ -99,6 +99,34 @@ class AkcPostingAndFormsTests(unittest.TestCase):
         self.assertEqual(boxes["dog-1"]["label"], "2-3")
         self.assertEqual(boxes["dog-1"]["draw"], "2P")
 
+    def test_akc_one_judge_scores_keep_valid_placements(self):
+        trial = self.trial()
+        trial["entries"] = [
+            {"id": "winner", "callName": "Winner", "registrationNumber": "HP-1"},
+            {"id": "second", "callName": "Second", "registrationNumber": "HP-2"},
+        ]
+        trial["runPlan"] = [{"breed": "RR", "judge1": "Judge Sample", "judge2": ""}]
+        group = {
+            "id": "rr-specials",
+            "breed": "RR",
+            "stake": "Specials",
+            "courses": [{"number": 1, "hounds": [
+                {"entryId": "winner", "prelimScore": "37", "blanketColor": "Yellow"},
+                {"entryId": "second", "prelimScore": "35", "blanketColor": "Pink"},
+            ]}],
+            "finalDraw": {"courses": [{"number": 1, "hounds": [
+                {"entryId": "winner", "finalScore": "36", "combinedScore": "73", "placement": "1"},
+                {"entryId": "second", "finalScore": "30", "combinedScore": "65", "placement": "2"},
+            ]}]},
+        }
+        rows = {row["callName"]: row for row in server.asfa_record_rows(trial, group)}
+        self.assertEqual(server.placement_qualifying_minimum_for_group(trial, group), 50)
+        self.assertEqual(rows["Winner"]["placement"], "1")
+        self.assertEqual(rows["Second"]["placement"], "2")
+
+    def test_akc_event_number_accepts_legacy_saved_names(self):
+        self.assertEqual(server.trial_event_number({"sanctionNumber": "AKC-LEGACY-9"}), "AKC-LEGACY-9")
+
     def test_akc_secretary_report_is_static_and_not_double_drawn(self):
         reader = PdfReader(io.BytesIO(server.generate_akc_secretary_report_pdf(self.trial())))
         self.assertFalse(reader.trailer["/Root"].get("/AcroForm"))

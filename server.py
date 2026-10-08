@@ -2602,10 +2602,38 @@ def akc_scoresheet_breed_key(value: object) -> str:
     return AKC_SCORESHEET_BREED_ALIASES.get(raw, "OTHER" if raw and raw != "BIF" else "")
 
 
-def build_akc_scoresheet_breed_overlay(group: dict, trial: dict | None = None) -> bytes:
+def trial_event_number(trial: dict) -> str:
+    for key in ("eventNumber", "eventNo", "event_number", "sanctionNumber", "sanctionNo", "eventOrSanctionNumber"):
+        value = str(trial.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def build_akc_scoresheet_breed_overlay(
+    group: dict,
+    trial: dict | None = None,
+    rows: list[dict] | None = None,
+) -> bytes:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
     trial = trial or {}
+    rects = _pdf_widget_rects(RECORD_TEMPLATES["AKC"])
+    _draw_text_in_pdf_rect(
+        pdf,
+        rects,
+        "Event",
+        trial_event_number(trial) or "NOT ENTERED",
+        9,
+    )
+    for row_number, row in enumerate(rows or [], start=1):
+        _draw_text_in_pdf_rect(
+            pdf,
+            rects,
+            _akc_scoresheet_field(row_number, 2),
+            akc_scoresheet_placement(row.get("placement")),
+            9,
+        )
     draw_field_label(pdf, field_name_for_breed(trial, group.get("breed")), 780, 600, right=True, font_size=8)
     breed_key = akc_scoresheet_breed_key(group.get("breed"))
     circle = AKC_SCORESHEET_BREED_CIRCLES.get(breed_key)
@@ -2971,10 +2999,7 @@ def generate_akc_record_sheet_pdf(
             continue
 
         total_count = len(rows)
-        starters = sum(
-            1 for r in rows
-            if clean_text(r.get("prelimScore")) not in {"SCRATCH", "DISQUALIFIED", "ABSENT", "CANCELLED", "EXCUSED"}
-        )
+        starters = sum(1 for row in rows if record_row_is_starter(row))
 
         for page_start in range(0, max(1, len(rows)), rows_per_page):
             page_rows = rows[page_start:page_start + rows_per_page]
@@ -2990,7 +3015,7 @@ def generate_akc_record_sheet_pdf(
             # ── Header ──────────────────────────────────────────────────────
             fields["Host Club Name"] = safe_text(trial.get("clubName") or "", 50)
             fields["Date"] = safe_text(trial.get("startsOn") or "", 20)
-            fields["Event"] = safe_text(trial.get("eventNumber") or "", 20)
+            fields["Event"] = ""
             fields["of Entries"] = str(total_count)
             fields["of Starters"] = str(starters)
 
@@ -3016,7 +3041,7 @@ def generate_akc_record_sheet_pdf(
                 r = i + 1  # 1-based row index within the form
                 award, _placement = akc_scoresheet_award_and_placement(row.get("placement"))
                 fields[_akc_scoresheet_field(r, 1)] = award
-                fields[_akc_scoresheet_field(r, 2)] = akc_scoresheet_placement(row.get("placement"))
+                fields[_akc_scoresheet_field(r, 2)] = ""
                 fields[_akc_scoresheet_field(r, 3)] = safe_text(row.get("registrationNumber") or "", 14)
                 fields[_akc_scoresheet_field(r, 4)] = fit_akc_registered_name(row.get("registeredName") or "")
                 fields[_akc_scoresheet_field(r, 5)] = fit_akc_call_name(safe_text(row.get("callName") or "", 18))
@@ -3055,7 +3080,7 @@ def generate_akc_record_sheet_pdf(
             writer.write(buf)
             filled_reader = PdfReader(io.BytesIO(buf.getvalue()))
             filled_page = filled_reader.pages[0]
-            breed_overlay = PdfReader(io.BytesIO(build_akc_scoresheet_breed_overlay(group, trial))).pages[0]
+            breed_overlay = PdfReader(io.BytesIO(build_akc_scoresheet_breed_overlay(group, trial, page_rows))).pages[0]
             filled_page.merge_page(breed_overlay)
             final_writer.add_page(filled_page)
 
@@ -3109,7 +3134,7 @@ def build_akc_record_overlay(trial: dict, group: dict, rows: list[dict], total_c
     pdf.drawString(starts_on_x, y_from_top(starts_on_y), safe_text(trial.get("startsOn") or "", 15))
     pdf.drawString(event_num_x, y_from_top(event_num_y), safe_text(trial.get("eventNumber") or "", 15))
     pdf.drawString(entries_count_x, y_from_top(club_name_y), str(total_count))
-    starters = sum(1 for r in rows if clean_text(r.get("prelimScore")) not in {"SCRATCH", "DISQUALIFIED", "ABSENT", "CANCELLED", "EXCUSED"})
+    starters = sum(1 for row in rows if record_row_is_starter(row))
     pdf.drawString(starters_count_x, y_from_top(club_name_y), str(starters))
 
     raw_breed = clean_text(group.get("breed") or "")
@@ -3846,6 +3871,86 @@ def is_lci_entry(entry: dict) -> bool:
     return clean_text(run_group_breed_for_entry(entry)).startswith("LCI") or clean_text(entry.get("className")).startswith("LCI")
 
 
+RECORD_UNAVAILABLE_ROLL_CALL_STATUSES = {
+    "ABSENT",
+    "LAME",
+    "INSEASON",
+    "SEASON",
+    "BREEDDQ",
+    "BREEDDISQUALIFIED",
+    "SCRATCHED",
+    "SCRATCH",
+    "EXCUSED",
+}
+
+
+def record_groups_with_unavailable_entries(
+    trial: dict,
+    groups: list[dict],
+    group_id: str = "",
+    breed: str = "",
+) -> list[dict]:
+    augmented = [copy.deepcopy(group) for group in groups]
+    existing_entry_ids = {
+        str(hound.get("entryId") or "")
+        for group in augmented
+        for course in group.get("courses") or []
+        for hound in course.get("hounds") or []
+        if hound.get("entryId")
+    }
+    unavailable = [
+        entry for entry in trial.get("entries") or []
+        if clean_text(entry.get("rollCallStatus")) in RECORD_UNAVAILABLE_ROLL_CALL_STATUSES
+        and str(entry.get("id") or "")
+        and str(entry.get("id") or "") not in existing_entry_ids
+    ]
+    for entry in unavailable:
+        entry_breed = run_group_breed_for_entry(entry)
+        if breed and clean_text(entry_breed) != clean_text(breed):
+            continue
+        entry_stake = run_group_stake_for_entry(entry)
+        candidates = [
+            group for group in augmented
+            if clean_text(group.get("breed")) == clean_text(entry_breed)
+            and clean_text(group.get("stake")) == clean_text(entry_stake)
+        ]
+        if group_id:
+            candidates = [group for group in candidates if str(group.get("id") or "") == str(group_id)]
+        if candidates:
+            target = sorted(candidates, key=lambda group: str(group.get("flight") or "A"))[0]
+        elif group_id:
+            continue
+        else:
+            target = {
+                "id": f"record-unavailable-{clean_text(entry_breed).lower()}-{clean_text(entry_stake).lower()}",
+                "breed": entry_breed,
+                "stake": entry_stake,
+                "flight": "A",
+                "courses": [],
+            }
+            augmented.append(target)
+        unavailable_course = next(
+            (course for course in target.get("courses") or [] if course.get("recordUnavailable")),
+            None,
+        )
+        if unavailable_course is None:
+            unavailable_course = {"number": 999, "recordUnavailable": True, "hounds": []}
+            target.setdefault("courses", []).append(unavailable_course)
+        unavailable_course["hounds"].append({
+            "entryId": str(entry.get("id") or ""),
+            "callName": entry.get("callName") or "",
+            "registeredName": entry.get("registeredName") or "",
+            "registrationNumber": entry.get("registrationNumber") or "",
+            "breed": entry.get("breed") or entry_breed,
+            "entryBreed": entry.get("breed") or entry_breed,
+            "stake": entry_stake,
+            "drawPosition": 999999,
+            "recordUnavailable": True,
+        })
+        existing_entry_ids.add(str(entry.get("id") or ""))
+    return augmented
+
+
 def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "", combine_mixed_posting: bool = False) -> list[dict]:
     groups = draw_groups_for_print(trial)
     if group_id:
@@ -3856,6 +3961,9 @@ def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", so
         groups = sorted(groups, key=record_packet_sort_key)
     if not combine_mixed_posting:
         groups = split_mixed_record_groups(groups)
+    groups = record_groups_with_unavailable_entries(trial, groups, group_id, breed)
+    if sort_mode == "alpha":
+        groups = sorted(groups, key=record_packet_sort_key)
     event_label = clean_text(((trial.get("scorebook") or {}).get("bif") or {}).get("eventType") or "BIF")
     if not group_id and (not breed or clean_text(breed) == event_label):
         groups.extend(bif_record_groups(trial))
@@ -4013,11 +4121,18 @@ def asfa_record_rows(trial: dict, group: dict) -> list[dict]:
                 "prelimCode": course_color_code(course.get("number"), hound.get("blanketColor")),
                 "prelimJudge1": hound.get("prelimJudge1Score") or "",
                 "prelimJudge2": hound.get("prelimJudge2Score") or "",
-                "prelimScore": score_or_outcome(hound.get("prelimScore"), hound.get("prelimOutcome")),
+                "prelimScore": score_or_outcome(
+                    hound.get("prelimScore"),
+                    hound.get("prelimOutcome"),
+                    entry.get("rollCallStatus"),
+                ),
                 "finalCode": final_by_entry.get(entry_id) or "",
                 "finalJudge1": final_judge_scores.get(entry_id, {}).get("judge1", ""),
                 "finalJudge2": final_judge_scores.get(entry_id, {}).get("judge2", ""),
-                "finalScore": final_score_by_entry.get(entry_id) or "",
+                "finalScore": score_or_outcome(
+                    final_score_by_entry.get(entry_id),
+                    final_outcome_by_id.get(entry_id),
+                ),
                 "combinedScore": combined_by_entry.get(entry_id) or "",
                 "stakesRunoffLabel": stake_runoff_by_entry.get(entry_id, {}).get("label", ""),
                 "stakesRunoffColor": stake_runoff_by_entry.get(entry_id, {}).get("color", ""),
@@ -4042,7 +4157,9 @@ def asfa_record_call_name(hound: dict, entry: dict, group: dict) -> str:
 
 def placement_qualifying_minimum_for_group(trial: dict, group: dict) -> float:
     judge1, judge2 = judges_for_group(trial, group)
-    return 200.0 if str(judge2 or "").strip() else 100.0
+    judge_count = 2 if str(judge2 or "").strip() else 1
+    minimum_per_judge = 50.0 if clean_text(trial.get("association")) == "AKC" else 100.0
+    return minimum_per_judge * judge_count
 
 
 def combined_score_qualifies(score: object, qualifying_minimum: float) -> bool:
@@ -4669,11 +4786,22 @@ def asfa_record_refund_reason(row: dict) -> str:
     return ""
 
 
+def record_roll_call_outcome_label(value: object) -> str:
+    return {
+        "ABSENT": "ABSENT",
+        "LAME": "LAME",
+        "INSEASON": "IN SEASON",
+        "SEASON": "IN SEASON",
+        "BREEDDQ": "BREED DQ",
+        "BREEDDISQUALIFIED": "BREED DQ",
+        "SCRATCHED": "SCRATCHED",
+        "SCRATCH": "SCRATCHED",
+        "EXCUSED": "EXCUSED",
+    }.get(clean_text(value), "")
+
+
 def asfa_record_strike_reason(row: dict) -> str:
-    reason = asfa_record_refund_reason(row)
-    if clean_text(reason) in {"DISMISSED", "EXCUSED"}:
-        return ""
-    return reason
+    return asfa_record_refund_reason(row) or record_roll_call_outcome_label(row.get("rollCallStatus"))
 
 
 def final_codes_by_entry(group: dict) -> dict[str, str]:
@@ -4916,18 +5044,57 @@ def course_color_code(course_number: object, color: object) -> str:
     return f"{course_number}{color_code}"
 
 
-def score_or_outcome(score: object, outcome: object) -> str:
+def score_or_outcome(score: object, outcome: object, fallback_outcome: object = "") -> str:
     if score not in (None, ""):
         return str(score)
-    return {
-        "excused": "EXC",
-        "dismissed": "DIS",
-        "dq": "DQ",
-        "disqualified": "DQ",
-        "forfeit": "F",
-        "pull": "PUL",
-        "no_score": "NS",
-    }.get(str(outcome or ""), "")
+    labels = {
+        "LAME": "LAME",
+        "EXCUSED": "EXC",
+        "EXC": "EXC",
+        "DISMISSED": "DIS",
+        "DIS": "DIS",
+        "DQ": "DQ",
+        "DISQUALIFIED": "DQ",
+        "FORFEIT": "FOR",
+        "FOR": "FOR",
+        "PULL": "PUL",
+        "PULLED": "PUL",
+        "NOSCORE": "NS",
+        "NS": "NS",
+        "ABSENT": "ABS",
+        "INSEASON": "SEASON",
+        "SEASON": "SEASON",
+        "BREEDDQ": "BDQ",
+        "BREEDDISQUALIFIED": "BDQ",
+        "SCRATCHED": "SCR",
+        "SCRATCH": "SCR",
+        "CANCELLED": "CAN",
+        "CANCELED": "CAN",
+    }
+    for value in (outcome, fallback_outcome):
+        label = labels.get(clean_text(value))
+        if label:
+            return label
+    return ""
+
+
+def record_row_is_starter(row: dict) -> bool:
+    if clean_text(row.get("rollCallStatus")) in RECORD_UNAVAILABLE_ROLL_CALL_STATUSES:
+        return False
+    return clean_text(row.get("prelimScore")) not in {
+        "SCRATCH",
+        "SCRATCHED",
+        "SCR",
+        "DISQUALIFIED",
+        "DQ",
+        "ABSENT",
+        "ABS",
+        "CANCELLED",
+        "CANCELED",
+        "CAN",
+        "EXCUSED",
+        "EXC",
+    }
 
 
 def build_asfa_record_overlay(trial: dict, group: dict, rows: list[dict], entry_count: int, refund_count: int, per_capita_count: int, page_start: int, layout: dict) -> bytes:
