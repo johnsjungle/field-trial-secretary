@@ -5,10 +5,36 @@
       "version": "0.4.10",
       "date": "2026-10-07",
       "channel": "beta",
-      "status": "pending",
+      "status": "available",
       "summary": "Fixes AKC placement and event-number printing and ensures AKC and ASFA record sheets document every non-scoring status.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.10",
-      "downloads": {}
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/Field-Trial-Secretary-0.4.10-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/Field-Trial-Secretary-0.4.10-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/Field-Trial-Secretary-0.4.10-portable-20261008-014015.zip",
+        "linuxAppImage": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/HALO-0.4.10-x86_64.AppImage",
+        "linuxDeb": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/HALO-0.4.10-Ubuntu-amd64.deb"
+      },
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.10/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.4.10/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/Field-Trial-Secretary-0.4.10-macOS-arm64.dmg",
+          "sha256": "27051d4913215411bc29a6f807d825acae640d2ab7e86ae5dc4948ea85e9f3b8"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/Field-Trial-Secretary-0.4.10-macOS-x86_64.dmg",
+          "sha256": "0eedac551a53ba7837a3dcb08fb0307ad24b13e0990c7d7fb68b01bcad7aae0c"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/Field-Trial-Secretary-0.4.10-portable-20261008-014015.zip",
+          "sha256": "109ce63beced07404cf2b65b23e51a1b5744dcda284ad60ec9d6318190a36702"
+        },
+        "linuxAppImage": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.4.10/HALO-0.4.10-x86_64.AppImage",
+          "sha256": "3ba294bc2570b5afa7b726746cf3356682782d06dbd439f294ab90fece0e03fe"
+        }
+      }
     },
     {
       "version": "0.4.9",
