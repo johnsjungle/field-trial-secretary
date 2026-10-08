@@ -200,15 +200,22 @@
                 body: JSON.stringify({ clientResults }),
             });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload.ok) throw new Error(payload.error || `System test request failed (${response.status}).`);
+            if (!response.ok || !payload.ok) {
+                if ([404, 501].includes(response.status)) throw new Error('The running HALO server does not include the Full System Test yet. Exit HALO completely, restart it, and try again.');
+                throw new Error(payload.error || `System test request failed (${response.status}).`);
+            }
             lastReport = payload; renderSummary(payload);
             message.className = `form-message compact ${payload.healthy ? 'success' : 'warning'}`;
             message.textContent = payload.healthy
                 ? `All ${payload.summary.total} checks completed without failures in ${(payload.durationMs / 1000).toFixed(1)} seconds.`
                 : `${payload.summary.failed} of ${payload.summary.total} checks failed. Review the red results before using this build at a trial.`;
         } catch (error) {
+            const detail = String(error?.message || error || 'Unknown error');
+            const restartMessage = /failed to fetch|networkerror|load failed/i.test(detail)
+                ? 'The HALO server did not respond. Exit HALO completely, restart it, and run the test again.'
+                : detail;
             message.className = 'form-message compact warning';
-            message.textContent = `System test could not finish: ${error?.message || error}`;
+            message.textContent = `System test could not finish: ${restartMessage}`;
         } finally {
             button.disabled = false; progress.hidden = true;
         }

@@ -35,6 +35,11 @@ const assert = require('node:assert/strict');
     await page.locator('#systemTestStatusFilter').selectOption('all');
     await page.locator('#systemTestSearch').fill('BIE');
     assert((await page.locator('.system-test-result').count()) >= 1);
+
+    await page.route('**/api/system-test', (route) => route.abort('failed'));
+    await page.locator('#runFullSystemTestButton').click();
+    await page.waitForFunction(() => /restart it/i.test(document.getElementById('systemTestMessage').textContent));
+    assert.match(await page.locator('#systemTestMessage').textContent(), /Exit HALO completely, restart it/i);
     assert.deepEqual(pageErrors, []);
     console.log(`Full System Test browser workflow passed: ${report.results} checks, searchable report, no failures.`);
   } finally {
