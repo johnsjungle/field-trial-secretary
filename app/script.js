@@ -269,12 +269,14 @@ const asfaPremiumBreedAliases = {
     AZ: 'AZ',
     BA: 'BA',
     B: 'BZ',
+    BO: 'BZ',
     BZ: 'BZ',
     C: 'CE',
     CE: 'CE',
     G: 'GH',
     GH: 'GH',
     IB: 'IB',
+    IH: 'IB',
     IW: 'IW',
     IG: 'IG',
     PIO: 'PIO',
@@ -290,9 +292,11 @@ const asfaPremiumBreedAliases = {
     W: 'WH',
     WH: 'WH',
     LCI: 'LCI',
+    PRV: 'PROV',
     PROV: 'PROV',
     PROVISIONAL: 'PROV',
     SGL: 'SINGLES',
+    SNG: 'SINGLES',
     SINGLES: 'SINGLES',
 };
 
@@ -16590,8 +16594,10 @@ function premiumCodeFromImportToken(value) {
         PHARAOHHOUND: 'PH', RHODESIANRIDGEBACK: 'RR', SALUKI: 'SA', SCOTTISHDEERHOUND: 'DH',
         SILKENWINDHOUND: 'SW', SLOUGHI: 'SL', WHIPPET: 'WH',
         ICI: 'LCI', LCL: 'LCI', LC1: 'LCI', JIOL: 'LCI', LCISMALL: 'LCI', LCILARGE: 'LCI',
-        LCISIGHTHOUNDMIX: 'LCI', LCISHMIX: 'LCI', SGL: 'SINGLES', SING: 'SINGLES',
-        SGI: 'SINGLES', PR0V: 'PROV',
+        LCISIGHTHOUNDMIX: 'LCI', LCISHMIX: 'LCI',
+        BO: 'BZ', IH: 'IB', SGL: 'SINGLES', SING: 'SINGLES', SNG: 'SINGLES',
+        SGI: 'SINGLES', PR0V: 'PROV', PRV: 'PROV',
+        CH: 'PROV', GA: 'PROV', MA: 'PROV', POD: 'PROV', PPP: 'PROV',
     };
     const code = aliases[token] || canonicalPremiumBreedCode(token);
     return premiumKnownCodes().includes(code) ? code : '';
@@ -16601,7 +16607,77 @@ function isPremiumAssignmentMark(value) {
     return /^[SX*]$/i.test(`${value || ''}`.trim());
 }
 
+function premiumMarkdownCells(rawLine) {
+    const line = `${rawLine || ''}`.trim();
+    if (!line.includes('|')) {
+        return [];
+    }
+    return line
+        .replace(/^\s*\|/, '')
+        .replace(/\|\s*$/, '')
+        .split('|')
+        .map((cell) => cell.trim());
+}
+
+function isPremiumMarkdownDivider(cells) {
+    return cells.length > 0 && cells.every((cell) => !cell || /^:?-{2,}:?$/.test(cell));
+}
+
+function parsePremiumJudgeMarkdownTable(text) {
+    const rows = String(text || '')
+        .replace(/\r/g, '')
+        .split('\n')
+        .map(premiumMarkdownCells)
+        .filter((cells) => cells.length >= 3);
+    const headerIndex = rows.findIndex((cells) => (
+        cells.some((cell) => clean(cell) === 'DAY')
+        && cells.some((cell) => ['JUDGE', 'NAME'].includes(clean(cell)))
+    ));
+    if (headerIndex < 0) {
+        return null;
+    }
+    const header = rows[headerIndex];
+    const dayIndex = header.findIndex((cell) => clean(cell) === 'DAY');
+    const judgeIndex = header.findIndex((cell) => ['JUDGE', 'NAME'].includes(clean(cell)));
+    const columns = header
+        .map((cell, index) => ({ index, code: index > judgeIndex ? premiumCodeFromImportToken(cell) : '' }))
+        .filter((column) => column.code);
+    if (dayIndex < 0 || judgeIndex < 0 || !columns.length) {
+        return null;
+    }
+
+    const judges = [];
+    const assignmentsByDay = {};
+    rows.slice(headerIndex + 1).forEach((cells) => {
+        if (isPremiumMarkdownDivider(cells)) {
+            return;
+        }
+        const judgeName = `${cells[judgeIndex] || ''}`.trim();
+        if (!judgeName) {
+            return;
+        }
+        const day = normalizePremiumDay(cells[dayIndex]);
+        judges.push(judgeName);
+        assignmentsByDay[day] = assignmentsByDay[day] || {};
+        columns.forEach(({ index, code }) => {
+            const mark = `${cells[index] || ''}`.trim();
+            if (!isPremiumAssignmentMark(mark)) {
+                return;
+            }
+            assignmentsByDay[day][code] = assignmentsByDay[day][code] || [];
+            if (!assignmentsByDay[day][code].some((assignment) => clean(assignment.judge) === clean(judgeName))) {
+                assignmentsByDay[day][code].push({ judge: judgeName, mark: mark.toUpperCase() });
+            }
+        });
+    });
+    return { judges: uniqueNames(judges), assignmentsByDay, warnings: [] };
+}
+
 function parsePremiumJudgeAssignments(text) {
+    const markdown = parsePremiumJudgeMarkdownTable(text);
+    if (markdown) {
+        return markdown;
+    }
     const lines = String(text || '')
         .replace(/\r/g, '')
         .split('\n')
@@ -22614,6 +22690,7 @@ function normalizeImportedClass(value) {
         EXC: 'Excellent',
         PROV: 'Provisional',
         SGL: 'Singles',
+        SNG: 'Singles',
     };
     if (aliases[cleaned]) {
         return aliases[cleaned];

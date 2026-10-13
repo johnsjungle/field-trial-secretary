@@ -43,6 +43,20 @@
             same([normalizeBreedCode('Ibizan Hound'), normalizeBreedCode("Cirneco dell'Etna"), normalizeBreedCode('Galgo Espanol')], ['IB', 'CE', 'GA'], 'Breed aliases did not normalize.');
             return 'Ibizan Hound → IB; Cirneco dell’Etna → CE; Galgo Español → GA';
         }));
+        results.push(check('premium-judge-markdown', 'Judges & Assignments', 'Markdown judge schedules import day, names, and marks', () => {
+            const parsed = parsePremiumJudgeAssignments(`| Day | Name | WH | Bo | SNG | IH | PRV | Ce |
+| -- | -- | -- | -- | --- | -- | --- | -- |
+| Saturday | Mary Ellen | s | s | s | s | s | s |
+| Sunday | Kathy | S | | | | | S |`);
+            same([...parsed.judges].sort(), ['Kathy', 'Mary Ellen'], 'Judge names were not read.');
+            assert(parsed.assignmentsByDay.Saturday.WH[0].judge === 'Mary Ellen', 'Saturday Whippet assignment was lost.');
+            assert(parsed.assignmentsByDay.Saturday.BZ[0].judge === 'Mary Ellen', 'Bo was not mapped to Borzoi.');
+            assert(parsed.assignmentsByDay.Saturday.SINGLES[0].judge === 'Mary Ellen', 'SNG was not mapped to Singles.');
+            assert(parsed.assignmentsByDay.Saturday.IB[0].judge === 'Mary Ellen', 'IH was not mapped to Ibizan Hound.');
+            assert(parsed.assignmentsByDay.Saturday.PROV[0].judge === 'Mary Ellen', 'PRV was not mapped to Provisional.');
+            assert(parsed.assignmentsByDay.Sunday.CE[0].judge === 'Kathy', 'Mixed-case Ce heading was not recognized.');
+            return 'Markdown table, multi-word names, mixed-case marks, and premium aliases retained';
+        }));
         results.push(check('draw-balanced-ten', 'Draws', 'Ten hounds make balanced courses without a single', () => {
             same(courseSizesForEntryCount(10), [3, 3, 2, 2], 'Ten-hound course plan is unbalanced.');
             return '3, 3, 2, 2';
