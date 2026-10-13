@@ -16576,6 +16576,17 @@ function premiumDayNameForTrial(trial) {
     return new Date(`${trial.startsOn}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
 }
 
+function premiumDayNamesForTrial(trial, count = 1) {
+    if (!trial?.startsOn) {
+        return Array.from({ length: count }, () => 'All');
+    }
+    const start = new Date(trial.startsOn + 'T00:00:00');
+    return Array.from({ length: count }, (_, index) => {
+        const date = new Date(start);
+        date.setDate(start.getDate() + index);
+        return date.toLocaleDateString('en-US', { weekday: 'long' });
+    });
+}
 function normalizePremiumDay(value) {
     const match = `${value || ''}`.match(/Saturday|Sunday|Monday|Tuesday|Wednesday|Thursday|Friday/i);
     return match ? `${match[0][0].toUpperCase()}${match[0].slice(1).toLowerCase()}` : 'All';
@@ -16907,7 +16918,7 @@ function groupOcrWordsByY(words) {
 }
 
 function ocrPremiumAssignmentMarks(value) {
-    const token = `${value || ''}`.trim().toUpperCase().replace(/5/g, 'S').replace(/[^SX*]/g, '');
+    const token = `${value || ''}`.trim().toUpperCase().replace(/[5§$]/g, 'S').replace(/[^SX*]/g, '');
     return token && /^[SX*]+$/.test(token) ? token.split('') : [];
 }
 
@@ -16917,13 +16928,265 @@ function premiumOcrHeaderTolerance(codes) {
     return Math.max(30, smallestGap * 0.48);
 }
 
-function parsePremiumJudgeAssignmentsFromOcr(tsv, fallbackText, trial) {
+function premiumEditDistance(left, right) {
+    const a = clean(left);
+    const b = clean(right);
+    const rows = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+    for (let row = 0; row <= a.length; row += 1) {
+        rows[row][0] = row;
+    }
+    for (let column = 0; column <= b.length; column += 1) {
+        rows[0][column] = column;
+    }
+    for (let row = 1; row <= a.length; row += 1) {
+        for (let column = 1; column <= b.length; column += 1) {
+            rows[row][column] = Math.min(
+                rows[row - 1][column] + 1,
+                rows[row][column - 1] + 1,
+                rows[row - 1][column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1)
+            );
+        }
+    }
+    return rows[a.length][b.length];
+}
+
+function premiumOcrCodeLabels(code) {
+    const aliases = {
+        BZ: ['BZ', 'BO'],
+        IB: ['IB', 'IH'],
+        DH: ['DH', 'SD'],
+        LCI: ['LCI'],
+        PROV: ['PROV', 'PRV', 'CH', 'GA', 'MA', 'POD', 'PPP'],
+        SINGLES: ['SINGLES', 'SNG', 'SGL'],
+    };
+    return aliases[code] || [code];
+}
+
+function resolvePremiumOcrHeaderCodes(tokens) {
+    const known = premiumKnownCodes();
+    const used = new Set();
+    const resolved = tokens.map((token) => {
+        const normalized = clean(token).replace(/0/g, 'O');
+        const explicit = normalized === 'O' ? 'PIO' : (normalized === 'PRY' ? 'PROV' : '');
+        let code = explicit || premiumCodeFromImportToken(token);
+        if (code && used.has(code) && normalized === 'A') {
+            code = 'SINGLES';
+        }
+        if (!code || used.has(code)) {
+            return '';
+        }
+        used.add(code);
+        return code;
+    });
+    let unresolved = resolved.map((code, index) => code ? -1 : index).filter((index) => index >= 0);
+    let remaining = known.filter((code) => !used.has(code));
+
+    while (unresolved.length && remaining.length) {
+        if (unresolved.length === 1 && remaining.length === 1) {
+            resolved[unresolved[0]] = remaining[0];
+            break;
+        }
+        const choices = unresolved.flatMap((index) => {
+            const token = clean(tokens[index]).replace(/0/g, 'O');
+            if (!token) {
+                return [];
+            }
+            return remaining.map((code) => {
+                const labels = premiumOcrCodeLabels(code);
+                const distance = Math.min(...labels.map((label) => premiumEditDistance(token, label)));
+                const length = Math.max(token.length, ...labels.map((label) => label.length));
+                return { index, code, score: 1 - distance / Math.max(1, length) };
+            });
+        }).sort((a, b) => b.score - a.score);
+        const best = choices[0];
+        const nextForCell = choices.find((choice) => choice.index === best?.index && choice.code !== best.code);
+        if (!best || best.score < 0.3 || (nextForCell && best.score - nextForCell.score < 0.12)) {
+            break;
+        }
+        resolved[best.index] = best.code;
+        used.add(best.code);
+        unresolved = unresolved.filter((index) => index !== best.index);
+        remaining = remaining.filter((code) => code !== best.code);
+    }
+    return resolved;
+}
+
+function groupDarkLineIndexes(indexes) {
+    const groups = [];
+    indexes.forEach((value) => {
+        const last = groups[groups.length - 1];
+        if (!last || value > last[last.length - 1] + 1) {
+            groups.push([value]);
+        } else {
+            last.push(value);
+        }
+    });
+    return groups.map((group) => group.reduce((sum, value) => sum + value, 0) / group.length);
+}
+
+async function readPremiumJudgeGridHeaders(file, worker, trial, targetWidth, targetHeight) {
+    const bitmap = await createImageBitmap(file);
+    const analysisScale = Math.min(1, 2200 / bitmap.width);
+    const analysisCanvas = document.createElement('canvas');
+    analysisCanvas.width = Math.round(bitmap.width * analysisScale);
+    analysisCanvas.height = Math.round(bitmap.height * analysisScale);
+    const analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
+    analysisContext.drawImage(bitmap, 0, 0, analysisCanvas.width, analysisCanvas.height);
+    bitmap.close?.();
+    const pixels = analysisContext.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
+    const isDark = (x, y) => pixels.data[(y * analysisCanvas.width + x) * 4] < 145;
+    const horizontalIndexes = [];
+    for (let y = 0; y < analysisCanvas.height; y += 1) {
+        let dark = 0;
+        for (let x = 0; x < analysisCanvas.width; x += 1) {
+            if (isDark(x, y)) {
+                dark += 1;
+            }
+        }
+        if (dark > analysisCanvas.width * 0.35) {
+            horizontalIndexes.push(y);
+        }
+    }
+    const horizontalLines = groupDarkLineIndexes(horizontalIndexes);
+    if (horizontalLines.length < 4) {
+        return [];
+    }
+    const gaps = horizontalLines.slice(1).map((line, index) => line - horizontalLines[index]).filter((gap) => gap > 4);
+    const sortedGaps = gaps.slice().sort((a, b) => a - b);
+    const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] || 12;
+    const startIndexes = horizontalLines
+        .map((line, index) => ({ line, index, gap: horizontalLines[index + 1] - line }))
+        .filter((item) => item.index < horizontalLines.length - 3 && item.gap > medianGap * 1.55)
+        .map((item) => item.index);
+    if (!startIndexes.length) {
+        return [];
+    }
+
+    const ocrScale = Math.max(1, Math.min(4, 3600 / analysisCanvas.width));
+    const ocrCanvas = document.createElement('canvas');
+    ocrCanvas.width = Math.round(analysisCanvas.width * ocrScale);
+    ocrCanvas.height = Math.round(analysisCanvas.height * ocrScale);
+    const ocrContext = ocrCanvas.getContext('2d');
+    ocrContext.imageSmoothingEnabled = false;
+    ocrContext.drawImage(analysisCanvas, 0, 0, ocrCanvas.width, ocrCanvas.height);
+    await worker.setParameters({
+        tessedit_pageseg_mode: '10',
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+    });
+    const inferredDays = premiumDayNamesForTrial(trial, startIndexes.length);
+    const headers = [];
+
+    for (let tableIndex = 0; tableIndex < startIndexes.length; tableIndex += 1) {
+        const startIndex = startIndexes[tableIndex];
+        const nextStartIndex = startIndexes[tableIndex + 1] ?? horizontalLines.length;
+        const yStart = horizontalLines[startIndex];
+        const yHeaderBottom = horizontalLines[startIndex + 1];
+        const yEnd = horizontalLines[nextStartIndex - 1];
+        const verticalIndexes = [];
+        for (let x = 0; x < analysisCanvas.width; x += 1) {
+            let dark = 0;
+            for (let y = Math.ceil(yStart); y <= Math.floor(yEnd); y += 1) {
+                if (isDark(x, y)) {
+                    dark += 1;
+                }
+            }
+            if (dark > (yEnd - yStart) * 0.68) {
+                verticalIndexes.push(x);
+            }
+        }
+        const verticalLines = groupDarkLineIndexes(verticalIndexes);
+        if (verticalLines.length < 5) {
+            continue;
+        }
+        const tokens = [];
+        const cells = [];
+        for (let column = 1; column < verticalLines.length - 1; column += 1) {
+            const left = verticalLines[column];
+            const right = verticalLines[column + 1];
+            if (right - left < 8) {
+                continue;
+            }
+            const rectangle = {
+                left: Math.round((left + 2) * ocrScale),
+                top: Math.round((yStart + 1.5) * ocrScale),
+                width: Math.max(1, Math.round((right - left - 4) * ocrScale)),
+                height: Math.max(1, Math.round((yHeaderBottom - yStart - 4) * ocrScale)),
+            };
+            const result = await worker.recognize(ocrCanvas, { rectangle }, { text: true });
+            tokens.push(String(result.data.text || '').replace(/\s+/g, '').trim());
+            cells.push({ x: (left + right) / 2 });
+        }
+        const resolved = resolvePremiumOcrHeaderCodes(tokens);
+        const dataLines = horizontalLines.slice(startIndex + 1, nextStartIndex);
+        const rowMarks = dataLines.slice(0, -1).map((rowTop, rowIndex) => {
+            const rowBottom = dataLines[rowIndex + 1];
+            const words = cells.map((cell, cellIndex) => {
+                const left = verticalLines[cellIndex + 1];
+                const right = verticalLines[cellIndex + 2];
+                let dark = 0;
+                const minX = Math.ceil(left + 3);
+                const maxX = Math.floor(right - 3);
+                const minY = Math.ceil(rowTop + 2);
+                const maxY = Math.floor(rowBottom - 2);
+                for (let y = minY; y <= maxY; y += 1) {
+                    for (let x = minX; x <= maxX; x += 1) {
+                        if (isDark(x, y)) {
+                            dark += 1;
+                        }
+                    }
+                }
+                const area = Math.max(1, (maxX - minX + 1) * (maxY - minY + 1));
+                if (dark <= Math.max(5, area * 0.018) || !resolved[cellIndex]) {
+                    return null;
+                }
+                const x = cell.x * (targetWidth / analysisCanvas.width);
+                const y = ((rowTop + rowBottom) / 2) * (targetHeight / analysisCanvas.height);
+                return { text: 'S', left: x - 2, top: y - 4, width: 4, height: 8 };
+            }).filter(Boolean);
+            return {
+                center: ((rowTop + rowBottom) / 2) * (targetHeight / analysisCanvas.height),
+                words,
+            };
+        }).filter((row) => row.words.length);
+        const codes = cells
+            .map((cell, index) => ({
+                code: resolved[index],
+                x: cell.x * (targetWidth / analysisCanvas.width),
+            }))
+            .filter((item) => item.code);
+        if (codes.length >= Math.min(4, cells.length)) {
+            headers.push({
+                y: yHeaderBottom * (targetHeight / analysisCanvas.height),
+                day: inferredDays[tableIndex] || inferredDays[0] || 'All',
+                codes,
+                inferredDay: true,
+                rowMarks,
+            });
+        }
+    }
+    await worker.setParameters({
+        tessedit_pageseg_mode: '6',
+        tessedit_char_whitelist: '',
+    });
+    return headers;
+}
+
+function closestPremiumOcrJudgeName(name, judges) {
+    const normalized = clean(name);
+    const match = judges
+        .map((candidate) => ({ candidate, distance: premiumEditDistance(normalized, candidate) }))
+        .sort((a, b) => a.distance - b.distance)[0];
+    return match && match.distance <= Math.max(1, Math.floor(normalized.length * 0.12))
+        ? match.candidate
+        : name;
+}
+function parsePremiumJudgeAssignmentsFromOcr(tsv, fallbackText, trial, detectedHeaders = []) {
     const words = parseTesseractTsv(tsv);
     const lines = groupOcrWordsByY(words);
     const assignmentsByDay = {};
     const judges = [];
     const warnings = [];
-    const headers = [];
+    const headers = detectedHeaders.map((header) => ({ ...header, lineIndex: -1 }));
 
     lines.forEach((line, index) => {
         const judgeWord = line.words.find((word) => clean(word.text).replace(/[^A-Z]/g, '') === 'JUDGE');
@@ -16935,6 +17198,9 @@ function parsePremiumJudgeAssignmentsFromOcr(tsv, fallbackText, trial) {
             .map((word) => ({ code: premiumCodeFromImportToken(word.text), x: word.left + word.width / 2 }))
             .filter((item) => item.code);
         if (codes.length < 2) {
+            return;
+        }
+        if (headers.some((header) => Math.abs(header.y - line.center) < Math.max(35, (line.words[0]?.height || 0) * 2))) {
             return;
         }
         const previousDayWord = words
@@ -16953,13 +17219,14 @@ function parsePremiumJudgeAssignmentsFromOcr(tsv, fallbackText, trial) {
         const nextY = headers[headerIndex + 1]?.y || Number.POSITIVE_INFINITY;
         const regionLines = lines.filter((line) => line.center > header.y + 3 && line.center < nextY - 3);
         const headerTolerance = premiumOcrHeaderTolerance(header.codes);
-        const markLines = regionLines.filter((line) => line.words.some((word) => {
+        const ocrMarkLines = regionLines.filter((line) => line.words.some((word) => {
             if (!ocrPremiumAssignmentMarks(word.text).length) {
                 return false;
             }
             const x = word.left + word.width / 2;
             return header.codes.some((item) => Math.abs(item.x - x) < headerTolerance * 1.5);
         }));
+        const markLines = header.rowMarks?.length ? header.rowMarks : ocrMarkLines;
 
         markLines.forEach((markLine, markIndex) => {
             const previousCenter = markLines[markIndex - 1]?.center ?? header.y;
@@ -16975,7 +17242,8 @@ function parsePremiumJudgeAssignmentsFromOcr(tsv, fallbackText, trial) {
                 })
                 .filter((word) => !/^(judge|single|multiple|provisional)$/i.test(word.text))
                 .sort((a, b) => a.top - b.top || a.left - b.left);
-            const judgeName = nameWords.map((word) => word.text).join(' ').replace(/\s+/g, ' ').trim();
+            const rawJudgeName = nameWords.map((word) => word.text).join(' ').replace(/\s+/g, ' ').trim();
+            const judgeName = closestPremiumOcrJudgeName(rawJudgeName, judges);
             if (!judgeName) {
                 return;
             }
@@ -17030,6 +17298,9 @@ function parsePremiumJudgeAssignmentsFromOcr(tsv, fallbackText, trial) {
         return { judges: textParsed.judges || [], assignmentsByDay: {}, warnings };
     }
 
+    if (detectedHeaders.some((header) => header.inferredDay)) {
+        warnings.push('The picture did not show day labels, so its grids were assigned in trial-date order. Confirm each day in the preview.');
+    }
     warnings.push('Image assignments were read by OCR. Confirm every name and checked cell before saving.');
     return { judges: uniqueNames(judges), assignmentsByDay, warnings };
 }
@@ -17157,11 +17428,19 @@ async function readPremiumJudgeImport() {
             showMessage(runPlanMessage, 'Preparing the judge-grid image for offline reading...', 'warning');
             const canvas = await preparePremiumJudgeImageForOcr(premiumJudgeGridImageFile);
             const worker = await premiumOcrWorker();
+            showMessage(runPlanMessage, 'Reading judge-grid headings and assignments...', 'warning');
+            const detectedHeaders = await readPremiumJudgeGridHeaders(
+                premiumJudgeGridImageFile,
+                worker,
+                trial,
+                canvas.width,
+                canvas.height
+            );
             const result = await worker.recognize(canvas, {}, { text: true, tsv: true });
             if (textarea) {
                 textarea.value = result.data.text || '';
             }
-            parsed = parsePremiumJudgeAssignmentsFromOcr(result.data.tsv, result.data.text, trial);
+            parsed = parsePremiumJudgeAssignmentsFromOcr(result.data.tsv, result.data.text, trial, detectedHeaders);
         } else {
             parsed = parsePremiumJudgeAssignments(text);
         }
