@@ -6,6 +6,7 @@ import json
 import sqlite3
 import time
 import traceback
+from copy import deepcopy
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -192,6 +193,180 @@ def _akc_test_fixture() -> dict:
     return trial
 
 
+def build_test_paperwork_trial(association: str, source_trial: dict | None = None) -> dict:
+    """Return a fully populated, isolated trial used only for alignment review."""
+    association = str(association or "ASFA").upper()
+    trial = deepcopy(_trial_fixture(association))
+    source_trial = source_trial if isinstance(source_trial, dict) else {}
+    for key in (
+        "clubName", "trialName", "startsOn", "endsOn", "eventNumber", "siteName",
+        "locationName", "locationAddress", "locationCity", "locationState", "locationPostalCode",
+        "secretaryName", "secretaryEmail", "secretaryPhone", "trialChair", "fieldClerk", "region",
+    ):
+        if source_trial.get(key) not in (None, ""):
+            trial[key] = source_trial[key]
+
+    trial.update({
+        "testTrial": True,
+        "trialName": trial.get("trialName") or f"HALO {association} Filled Paperwork Test",
+        "clubName": trial.get("clubName") or "HALO TEST COURSING CLUB",
+        "eventNumber": trial.get("eventNumber") or f"{association}-TEST-2026-100",
+        "siteName": trial.get("siteName") or "HALO Alignment Test Field",
+        "locationName": trial.get("locationName") or "HALO Alignment Test Field",
+        "locationAddress": trial.get("locationAddress") or "100 Test Course Lane",
+        "locationCity": trial.get("locationCity") or "Sample City",
+        "locationState": trial.get("locationState") or "PA",
+        "locationPostalCode": trial.get("locationPostalCode") or "17000",
+        "secretaryName": trial.get("secretaryName") or "Sample Trial Secretary",
+        "secretaryEmail": trial.get("secretaryEmail") or "secretary@example.test",
+        "secretaryPhone": trial.get("secretaryPhone") or "555-0101",
+        "trialChair": trial.get("trialChair") or "Sample Trial Chair",
+        "fieldClerk": trial.get("fieldClerk") or "Sample Field Clerk",
+        "region": trial.get("region") or "6",
+        "secretaryJudgesChanged": "yes",
+        "secretaryPremiumChanged": "yes",
+        "secretaryOpenVetFirstTimers": "yes",
+        "secretarySinglesFirstTimers": "yes",
+        "secretaryWorkingOffDismissal": "yes",
+        "secretaryChangeOfInfo": "yes",
+        "secretarySpecialBreederCount": "2",
+        "secretarySpecialKennelCount": "2",
+        "secretarySpecialBenchCount": "1",
+        "secretaryLciRegistrationCount": "1",
+        "secretaryLciRegistrationCountManual": True,
+        "secretaryPerCapitaRate": "3.50",
+        "secretaryCheckAmount": "42.00",
+        "secretaryPaypalAmount": "7.00",
+        "secretaryPaypalTransactionId": "TEST-PAYPAL-12345",
+    })
+
+    trial["judges"] = [
+        trial["judges"][0],
+        {
+            "name": "Judge Two", "number": "67890", "address": "200 Sample Avenue",
+            "city": "Example City", "state": "OH", "postalCode": "43000", "phone": "555-0102",
+        },
+    ]
+    trial["runPlan"][0]["judge2"] = "Judge Two"
+    owners = [
+        ("Owner Halo", "101 Hound Road", "Testville", "PA", "17001", "555-0111", "halo.owner@example.test"),
+        ("Owner Comet", "202 Coursing Way", "Exampleton", "OH", "43001", "555-0222", "comet.owner@example.test"),
+    ]
+    for index, entry in enumerate(trial["entries"]):
+        owner, address, city, state, postal, phone, email = owners[index]
+        entry.update({
+            "owner": owner, "ownerAddress": address, "ownerCity": city, "ownerState": state,
+            "ownerPostalCode": postal, "ownerPhone": phone, "ownerEmail": email,
+            "handler": f"Handler {entry['callName']}", "sex": "Dog" if index == 0 else "Bitch",
+            "dob": f"202{index + 1}-0{index + 2}-1{index + 2}", "firstTime": index == 0,
+            "infoChanged": index == 0, "ownerSeparationRequested": index == 1,
+            "breeder": "Sample Hound Breeder", "paid": index == 0,
+        })
+
+    group = trial["preliminaryDraw"]["groups"][0]
+    group["flight"] = "A"
+    group["courses"][0]["hounds"][0].update({"prelimJudge1Score": "38" if association == "AKC" else "78", "prelimJudge2Score": "37" if association == "AKC" else "76", "prelimScore": "75" if association == "AKC" else "154"})
+    group["courses"][0]["hounds"][1].update({"prelimJudge1Score": "36" if association == "AKC" else "75", "prelimJudge2Score": "35" if association == "AKC" else "74", "prelimScore": "71" if association == "AKC" else "149"})
+    group["finalDraw"]["courses"][0]["hounds"][0].update({"finalJudge1Score": "39" if association == "AKC" else "79", "finalJudge2Score": "38" if association == "AKC" else "77", "finalScore": "77" if association == "AKC" else "156", "combinedScore": "152" if association == "AKC" else "310", "placement": "1"})
+    group["finalDraw"]["courses"][0]["hounds"][1].update({"finalJudge1Score": "35" if association == "AKC" else "74", "finalJudge2Score": "34" if association == "AKC" else "73", "finalScore": "69" if association == "AKC" else "147", "combinedScore": "140" if association == "AKC" else "296", "placement": "2"})
+
+    # Fill nearly every draw-order block and enough record rows to exercise
+    # multiple full pages plus a final partial page. Vary text lengths so the
+    # review packet exposes both vertical drift and horizontal clipping.
+    target_regular_entries = 45
+    blanket_colors = ["Yellow", "Pink", "Blue"]
+    for number in range(3, target_regular_entries + 1):
+        call_name = f"Hound{number:02d}" if number % 5 else f"AlignmentHound{number:02d}"
+        registered_name = (
+            f"MBIF DC HALO Alignment Sample Hound Number {number:02d}"
+            if number % 4 == 0
+            else f"HALO Sample Registered Hound {number:02d}"
+        )
+        trial["entries"].append({
+            "id": f"dog-{number}", "houndId": f"hound-dog-{number}", "callName": call_name,
+            "registeredName": registered_name, "registrationNumber": f"HP-TEST-{number:06d}",
+            "breed": "RR", "className": "Open", "owner": f"Sample Owner {number:02d}",
+            "ownerAddress": f"{100 + number} Test Hound Lane", "ownerCity": "Sample City",
+            "ownerState": "PA", "ownerPostalCode": f"17{number:03d}", "ownerPhone": f"555-{number:04d}",
+            "ownerEmail": f"owner{number:02d}@example.test", "handler": f"Handler {number:02d}",
+            "breeder": "HALO Sample Breeder", "sex": "Dog" if number % 2 else "Bitch",
+            "dob": f"2022-{((number - 1) % 12) + 1:02d}-{((number - 1) % 27) + 1:02d}",
+            "rollCallStatus": "present", "firstTime": False, "paid": number % 3 != 0,
+        })
+
+    regular_entries = [entry for entry in trial["entries"] if entry.get("breed") == "RR"]
+    prelim_courses = []
+    final_courses = []
+    for course_index, start in enumerate(range(0, len(regular_entries), 3), 1):
+        course_entries = regular_entries[start:start + 3]
+        prelim_hounds = []
+        final_hounds = []
+        for position, entry in enumerate(course_entries, 1):
+            prelim_one = (38 - ((start + position) % 5)) if association == "AKC" else (79 - ((start + position) % 6))
+            prelim_two = (37 - ((start + position) % 4)) if association == "AKC" else (78 - ((start + position) % 5))
+            final_one = (39 - ((start + position) % 5)) if association == "AKC" else (80 - ((start + position) % 6))
+            final_two = (38 - ((start + position) % 4)) if association == "AKC" else (79 - ((start + position) % 5))
+            prelim_total = prelim_one + prelim_two
+            final_total = final_one + final_two
+            placement = str(start + position) if start + position <= (5 if association == "AKC" else 4) else ""
+            common = {
+                "entryId": entry["id"], "callName": entry["callName"], "registeredName": entry["registeredName"],
+                "registrationNumber": entry["registrationNumber"], "drawPosition": position,
+                "blanketColor": blanket_colors[position - 1],
+            }
+            prelim_hounds.append({
+                **common, "prelimJudge1Score": str(prelim_one), "prelimJudge2Score": str(prelim_two),
+                "prelimScore": str(prelim_total),
+            })
+            final_hounds.append({
+                **common, "finalBlanketColor": blanket_colors[position - 1],
+                "finalJudge1Score": str(final_one), "finalJudge2Score": str(final_two),
+                "finalScore": str(final_total), "combinedScore": str(prelim_total + final_total), "placement": placement,
+            })
+        prelim_courses.append({"id": f"prelim-course-{course_index}", "number": course_index, "hounds": prelim_hounds})
+        final_courses.append({"id": f"final-course-{course_index}", "number": course_index, "hounds": final_hounds})
+    group["courses"] = prelim_courses
+    group["finalDraw"] = {"courses": final_courses}
+    trial["runPlan"][0]["entryCount"] = len(regular_entries)
+
+    if association == "AKC":
+        trial["akcTests"] = deepcopy(_akc_test_fixture()["akcTests"])
+    else:
+        lci_entries = [
+            {
+                "id": "lci-1", "houndId": "hound-lci-1", "callName": "Swift", "registeredName": "Swift Sample Companion",
+                "registrationNumber": "LCI-TEST-1", "breed": "LCI Small", "className": "Open", "owner": "LCI Sample Owner",
+                "ownerAddress": "303 LCI Trail", "ownerCity": "Sample City", "ownerState": "PA", "ownerPostalCode": "17002",
+                "ownerPhone": "555-0333", "ownerEmail": "lci.owner@example.test", "handler": "LCI Sample Handler", "sex": "Bitch",
+                "dob": "2023-03-13", "firstTime": True, "infoChanged": True, "rollCallStatus": "present", "paid": True,
+            },
+            {
+                "id": "lci-2", "houndId": "hound-lci-2", "callName": "Dash", "registeredName": "Dash Sample Companion",
+                "registrationNumber": "LCI-TEST-2", "breed": "LCI Small", "className": "Veteran", "owner": "Second LCI Owner",
+                "ownerAddress": "404 Test Field Road", "ownerCity": "Example City", "ownerState": "OH", "ownerPostalCode": "43002",
+                "ownerPhone": "555-0444", "ownerEmail": "dash.owner@example.test", "handler": "Second LCI Handler", "sex": "Dog",
+                "dob": "2020-04-14", "firstTime": False, "rollCallStatus": "present", "paid": False,
+            },
+        ]
+        trial["entries"].extend(lci_entries)
+        trial["runPlan"].append({
+            "breed": "LCI Small", "judge1": "Judge One", "judge2": "Judge Two",
+            "fieldId": "field-1", "rollCallLaneId": "lane-1", "runOrder": 2,
+        })
+        trial["preliminaryDraw"]["groups"].append({
+            "id": "asfa-lci-small-open", "breed": "LCI Small", "stake": "Open", "flight": "A", "fieldId": "field-1",
+            "courses": [{"id": "lci-prelim-1", "number": 1, "hounds": [
+                {"entryId": "lci-1", "callName": "Swift", "registeredName": "Swift Sample Companion", "registrationNumber": "LCI-TEST-1", "blanketColor": "Yellow", "prelimJudge1Score": "77", "prelimJudge2Score": "76", "prelimScore": "153"},
+                {"entryId": "lci-2", "callName": "Dash", "registeredName": "Dash Sample Companion", "registrationNumber": "LCI-TEST-2", "blanketColor": "Pink", "prelimJudge1Score": "75", "prelimJudge2Score": "74", "prelimScore": "149"},
+            ]}],
+            "finalDraw": {"courses": [{"id": "lci-final-1", "number": 1, "hounds": [
+                {"entryId": "lci-1", "callName": "Swift", "finalBlanketColor": "Yellow", "finalJudge1Score": "78", "finalJudge2Score": "77", "finalScore": "155", "combinedScore": "308", "placement": "1"},
+                {"entryId": "lci-2", "callName": "Dash", "finalBlanketColor": "Pink", "finalJudge1Score": "74", "finalJudge2Score": "73", "finalScore": "147", "combinedScore": "296", "placement": "2"},
+            ]}]},
+        })
+    return trial
+
+
 def _bie_fixture() -> dict:
     def hound(entry_id: str, name: str, color: str) -> dict:
         return {
@@ -356,6 +531,8 @@ def run_server_system_tests(context: dict, client_results: list[dict] | None = N
     _check_result(results, "pdf-akc-runoff", "Runoffs", "AKC tie runoff sheets name the placements", lambda: _pdf_detail(context["generate_runoff_judge_sheets_pdf"](akc_runoff, akc_runoff_group, akc_runoff_key), "1-2 TIE"))
     _check_result(results, "pdf-asfa-record", "Scoring & Records", "ASFA record sheet generates", lambda: _pdf_detail(context["generate_asfa_record_sheet_pdf"](asfa), "Halo"))
     _check_result(results, "pdf-akc-record", "Scoring & Records", "AKC record sheet prints placement and event number", lambda: _akc_record_check(context, akc))
+    _check_result(results, "pdf-asfa-test-paperwork", "Official Forms", "ASFA filled alignment-review packet generates", lambda: _pdf_detail(context["generate_test_paperwork_pdf"]({"association": "ASFA"}), "SAMPLE DATA FOR ALIGNMENT REVIEW"))
+    _check_result(results, "pdf-akc-test-paperwork", "Official Forms", "AKC filled alignment-review packet generates", lambda: _pdf_detail(context["generate_test_paperwork_pdf"]({"association": "AKC"}), "SAMPLE DATA FOR ALIGNMENT REVIEW"))
     _check_result(results, "rules-akc-minimum", "Scoring & Records", "AKC one-judge qualifying minimum is 50", lambda: _akc_minimum_check(context, akc))
     _check_result(results, "rules-outcomes", "Scoring & Records", "Non-scoring outcomes have record-sheet labels", lambda: _outcome_check(context))
     _check_result(results, "pdf-asfa-secretary", "Final Paperwork", "ASFA secretary report generates", lambda: _pdf_detail(context["generate_asfa_secretary_report_pdf"](asfa), "HALO System Test Club"))
@@ -492,8 +669,11 @@ def _update_index_check(app_dir: Path) -> str:
     current = next((row for row in versions if row.get("version") == version.get("version")), None)
     if not current:
         raise AssertionError("Installed version is missing from the bundled update catalog.")
-    if current.get("status") != "available":
-        raise AssertionError("Installed version is not marked available.")
+    status = current.get("status")
+    if status == "pending":
+        return f"v{version.get('version')} release build is pending publication"
+    if status != "available":
+        raise AssertionError("Installed version is not marked available or pending publication.")
     updates = current.get("updates") or {}
     missing = [key for key in ("windows", "appleSilicon", "intel", "linuxAppImage") if not (updates.get(key) or {}).get("sha256")]
     if missing:

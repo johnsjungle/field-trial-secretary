@@ -3913,6 +3913,9 @@ button.danger-button {
 }
 
 .roll-call-print-controls { align-items: end; }
+.run-plan-all-breeds-option { margin-top: 10px; }
+.roll-call-payment-option { align-self: end; margin: 0; }
+.roll-call-print-table .payment-column { white-space: nowrap; width: 72px; }
 .roll-call-sheet-group { margin-top: 16px; }
 .roll-call-sheet-group h3 { color: var(--accent-dark); font-size: 17px; margin: 0; }
 .roll-call-group-trial-title { color: var(--muted); margin: 3px 0 0; }

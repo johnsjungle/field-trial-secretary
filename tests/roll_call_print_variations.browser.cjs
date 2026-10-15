@@ -5,6 +5,14 @@ const assert = require('node:assert/strict');
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/version') return route.fulfill({ json: { ok: true, appVersion: { version: 'test' } } });
+    if (path === '/api/database-setup-status') return route.fulfill({ json: { ok: true, ready: true } });
+    if (path === '/api/state') return route.fulfill({ json: { ok: true, state: null } });
+    if (path === '/api/status') return route.fulfill({ json: { ok: true, runtime: {} } });
+    return route.fulfill({ json: { ok: true } });
+  });
   await page.goto('http://127.0.0.1:8765/', { waitUntil: 'networkidle' });
   await page.locator('#startupSplash').waitFor({ state: 'hidden', timeout: 10000 });
   await page.locator('.tab-button[data-tab-target="runplan"]').click();
@@ -20,9 +28,9 @@ const assert = require('node:assert/strict');
         { breed: 'IB', fieldId: 'field-2', rollCallLaneId: 'lane-2', runOrder: 2 },
       ],
       entries: [
-        { id: '1', callName: 'Axel', registeredName: 'Alpha Hound', registrationNumber: 'R1', owner: 'Owner A', breed: 'RR', className: 'Open', entryNumber: '1' },
-        { id: '2', callName: 'Bella', registeredName: 'Beta Hound', registrationNumber: 'W1', owner: 'Owner B', breed: 'WH', className: 'Veteran', entryNumber: '2' },
-        { id: '3', callName: 'Cedar', registeredName: 'Cedar Hound', registrationNumber: 'I1', owner: 'Owner C', breed: 'IB', className: 'Open', entryNumber: '3' },
+        { id: '1', callName: 'Axel', registeredName: 'Alpha Hound', registrationNumber: 'R1', owner: 'Owner A', breed: 'RR', className: 'Open', entryNumber: '1', paid: true },
+        { id: '2', callName: 'Bella', registeredName: 'Beta Hound', registrationNumber: 'W1', owner: 'Owner B', breed: 'WH', className: 'Veteran', entryNumber: '2', paid: false },
+        { id: '3', callName: 'Cedar', registeredName: 'Cedar Hound', registrationNumber: 'I1', owner: 'Owner C', breed: 'IB', className: 'Open', entryNumber: '3', paid: true },
       ],
     };
     const original = JSON.stringify(trial);
@@ -38,13 +46,19 @@ const assert = require('node:assert/strict');
     const fieldLaneTitles = [...document.querySelectorAll('.roll-call-sheet-group h3')].map(h => h.textContent);
     grouping.value = 'all'; format.value = 'detailed'; renderRollCallSheet(trial);
     const detailedHeaders = [...document.querySelectorAll('.roll-call-sheet-group th')].map(th => th.textContent);
+    const paymentDefaultHidden = !detailedHeaders.includes('Payment');
+    document.getElementById('rollCallShowPayment').checked = true;
+    renderRollCallSheet(trial);
+    const paymentHeaders = [...document.querySelectorAll('.roll-call-sheet-group th')].map(th => th.textContent);
+    const paymentText = document.querySelector('.roll-call-sheet-group').textContent;
+    document.getElementById('rollCallShowPayment').checked = false;
     format.value = 'quick'; renderRollCallSheet(trial);
     const quickHeaders = [...document.querySelectorAll('.roll-call-sheet-group th')].map(th => th.textContent);
     grouping.value = 'selectedField'; document.getElementById('printFieldSelect').value = 'field-2'; format.value = 'checkIn'; renderRollCallSheet(trial);
     const selectedText = document.querySelector('.roll-call-sheet-group').textContent;
     const drawFieldTitle = groupTitleWithField(trial, { breed: 'RR', stake: 'Open' });
     const singleFieldTitle = groupTitleWithField({ ...trial, eventFields: [{ id: 'field-1', name: 'North Field' }] }, { breed: 'RR', stake: 'Open' });
-    return { lane, fieldTitles, fieldLaneTitles, detailedHeaders, quickHeaders, selectedText, drawFieldTitle, singleFieldTitle, unchanged: JSON.stringify(trial) === original };
+    return { lane, fieldTitles, fieldLaneTitles, detailedHeaders, paymentDefaultHidden, paymentHeaders, paymentText, quickHeaders, selectedText, drawFieldTitle, singleFieldTitle, unchanged: JSON.stringify(trial) === original };
   });
 
   assert.equal(result.lane.length, 2);
@@ -58,6 +72,10 @@ const assert = require('node:assert/strict');
   assert.ok(result.detailedHeaders.includes('Registered Name'));
   assert.ok(result.detailedHeaders.includes('Registration No.'));
   assert.ok(result.detailedHeaders.includes('Owner / Handler'));
+  assert.equal(result.paymentDefaultHidden, true);
+  assert.ok(result.paymentHeaders.includes('Payment'));
+  assert.match(result.paymentText, /Paid/);
+  assert.match(result.paymentText, /Unpaid/);
   assert.ok(!result.quickHeaders.includes('Class'));
   assert.doesNotMatch(result.selectedText, /Axel/);
   assert.match(result.selectedText, /Bella/);

@@ -2,6 +2,15 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.5.0",
+      "date": "2026-10-15",
+      "channel": "stable",
+      "status": "pending",
+      "summary": "Adds broader trial preparation tools, filled paperwork previews, and stronger backup and regression testing.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.0",
+      "downloads": {}
+    },
+    {
       "version": "0.4.10",
       "date": "2026-10-07",
       "channel": "beta",

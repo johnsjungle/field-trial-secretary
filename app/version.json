@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.4.10",
-  "releaseDate": "2026-10-07",
-  "channel": "beta",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.4.10",
+  "version": "0.5.0",
+  "releaseDate": "2026-10-15",
+  "channel": "stable",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.0",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Fixes AKC placement and event-number printing and ensures AKC and ASFA record sheets document every non-scoring status."
+  "notes": "Adds broader trial preparation tools, filled paperwork previews, and stronger backup and regression testing."
 }

@@ -42,14 +42,10 @@ const buttonHelpText = {
     exportDataBackupButton: 'Exports a JSON copy of the trial data for an extra portable backup. SQLite backup is preferred when server mode is available.',
     refreshSQLiteBackupsButton: 'Reloads the SQLite backup list from the backups folder.',
     restoreSQLiteBackupButton: 'Restores the selected SQLite backup after making a safety copy of the current database.',
+    restoreSQLiteFileButton: 'Restores a HALO SQLite database selected from this computer after making a safety copy of the current database.',
     restoreBrowserBackupButton: 'Restores the latest protected browser safety backup. Use only if SQLite data is missing or unavailable.',
     importDataBackupButton: 'Imports a JSON data backup and replaces the current browser/app data after confirmation.',
-    createTransferPackageButton: 'Builds one installer zip for a new computer, including the app, current SQLite database, and a blank starter database.',
-    createProgramUpdatePackageButton: 'Builds a smaller update zip for a computer that already has HALO installed. It leaves that computer’s database alone.',
-    restoreTransferAppFilesButton: 'Restores program files and templates from a transfer package without replacing the current SQLite database.',
-    refreshPortableStatusButton: 'Checks whether the portable executable package is current.',
-    buildPortablePackageButton: 'Rebuilds the portable executable only. Most users should use Create Transfer Installer or Create Program Update instead.',
-    restartServerButton: 'Restarts the local app server. Use after restoring app files or rebuilding portable packages.',
+    restartServerButton: 'Restarts the local HALO server if the application stops responding or a local service needs to reload.',
     exitAppButton: 'Saves the current data, stops the local app server, and tells you when it is safe to close the browser tab.',
     exitAppToolsButton: 'Saves the current data, stops the local app server, and tells you when it is safe to close the browser tab.',
 };
@@ -2306,6 +2302,50 @@ async function restoreSQLiteBackup() {
     }
 }
 
+async function restoreSQLiteFile(file) {
+    if (!file) {
+        return;
+    }
+    if (!sqliteModeAvailable) {
+        showMessage(storageSafetyMessage, 'SQLite restore requires server mode. Start HALO normally and try again.', 'warning');
+        return;
+    }
+    const restore = await showTrialConfirm({
+        title: 'Restore SQLite File',
+        eyebrow: 'Replace All Current Data',
+        message: `Restore ${file.name} (${formatBytes(file.size)})? HALO will verify the file and create a safety backup of the current database before replacing it.`,
+        primaryText: 'Restore Database',
+    });
+    if (!restore) {
+        return;
+    }
+    try {
+        await saveToSQLite();
+        showMessage(storageSafetyMessage, `Checking and restoring ${file.name}...`, 'warning');
+        const payload = await apiRequest('/api/database-restore-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file,
+        });
+        if (!payload.state) {
+            throw new Error('The restored database did not contain readable HALO data.');
+        }
+        applyBackupSnapshot(payload.state, { queueServerSave: false });
+        lastSQLiteSaveAt = payload.state.savedToSQLiteAt || new Date().toISOString();
+        setSaveStatus('saved', lastSQLiteSaveAt);
+        sqliteBackupListLoaded = false;
+        undoStatusLoaded = false;
+        await writeBrowserSafetyBackup();
+        await refreshSQLiteBackupList();
+        await refreshUndoStatus().catch(() => {});
+        render();
+        const safetyCopy = payload.preRestoreBackup ? ` Safety backup: ${payload.preRestoreBackup}` : '';
+        showMessage(storageSafetyMessage, `Restored ${file.name}.${safetyCopy}`, 'success');
+    } catch (error) {
+        showMessage(storageSafetyMessage, `SQLite file restore failed: ${error.message}`, 'warning');
+    }
+}
+
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -2753,9 +2793,11 @@ function readForm() {
     data.splitStakeOverrides = existing?.splitStakeOverrides || {};
     data.splitStakeOverrideHistory = existing?.splitStakeOverrideHistory || [];
     data.premiumJudgeAssignments = existing && existing.premiumJudgeAssignments ? existing.premiumJudgeAssignments : null;
+    data.runPlanIncludeAllBreeds = Boolean(document.getElementById('runPlanIncludeAllBreeds')?.checked);
     data.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
     data.rollCallGrouping = document.getElementById('rollCallGrouping')?.value || 'selectedField';
     data.rollCallFormat = document.getElementById('rollCallFormat')?.value || 'checkIn';
+    data.rollCallShowPayment = Boolean(document.getElementById('rollCallShowPayment')?.checked);
     data.archivedAt = existing && existing.archivedAt ? existing.archivedAt : '';
     data.archivePackageName = existing && existing.archivePackageName ? existing.archivePackageName : '';
     data.archivePackagePath = existing && existing.archivePackagePath ? existing.archivePackagePath : '';
@@ -2808,7 +2850,14 @@ function writeForm(trial) {
     }
     if (document.getElementById('rollCallFormat')) {
         document.getElementById('rollCallFormat').value = trial && trial.rollCallFormat ? trial.rollCallFormat : 'checkIn';
-    }    writeCheckedValues('documentOptions', trial ? trial.documentsReady : []);
+    }
+    if (document.getElementById('runPlanIncludeAllBreeds')) {
+        document.getElementById('runPlanIncludeAllBreeds').checked = Boolean(trial && trial.runPlanIncludeAllBreeds);
+    }
+    if (document.getElementById('rollCallShowPayment')) {
+        document.getElementById('rollCallShowPayment').checked = Boolean(trial && trial.rollCallShowPayment);
+    }
+    writeCheckedValues('documentOptions', trial ? trial.documentsReady : []);
     renderClassOptions(trial);
     renderRosterTables(trial || {});
     renderAkcTests(trial || {});
@@ -3122,11 +3171,6 @@ function renderAdminTools() {
     }
     if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !sqliteBackupListLoaded) {
         refreshSQLiteBackupList();
-    }
-    if (sqliteModeAvailable && currentTab === 'admin' && currentAdminPage === 'Tools' && !portableStatusLoaded) {
-        refreshPortableStatus();
-    } else {
-        renderPortableStatus(portableStatusPayload);
     }
 }
 
@@ -13846,6 +13890,34 @@ async function openTrialPdf(endpoint, payload, messageElement, successMessage, f
     }
 }
 
+async function previewTestPaperwork() {
+    const trial = getSelectedTrial();
+    if (!trial) {
+        showMessage(officialFormsMessage, 'Select a trial before previewing test paperwork.', 'warning');
+        return;
+    }
+    const association = rulesForTrial(trial).association;
+    await openTrialPdf(
+        '/api/test-paperwork',
+        {
+            trial,
+            layouts: {
+                asfaRecord: getAsfaRecordLayout(),
+                akcRecord: getAkcRecordLayout(),
+                asfaEntry: getAsfaEntryLayout(),
+                asfaLciEntry: getAsfaLciEntryLayout(),
+                asfaDraw: getAsfaDrawLayout(),
+                akcDraw: getAkcDrawLayout(),
+                asfaJudge: getAsfaJudgeLayout(),
+                asfaSecretary: getAsfaSecretaryLayout(),
+            },
+        },
+        officialFormsMessage,
+        `${association} filled test paperwork opened. Review every sample field and alignment before trial day.`,
+        `${association} test paperwork could not be created.`
+    );
+}
+
 async function previewAsfaRecordAlignment() {
     const message = officialFormsMessage;
     const trial = readForm();
@@ -16447,7 +16519,7 @@ function renderEntryTrialTargets() {
 function buildRunPlanFromEntries() {
     const trial = readForm();
     const entries = trial.entries || [];
-    if (entries.length === 0) {
+    if (entries.length === 0 && !trial.runPlanIncludeAllBreeds) {
         showMessage(runPlanMessage, 'Enter hounds before building a run plan.', 'warning');
         return;
     }
@@ -16456,17 +16528,50 @@ function buildRunPlanFromEntries() {
     trial.runPlanEntriesFingerprint = entrySetupFingerprint(trial.entries || []);
 
     upsertTrial(trial);
-    showMessage(runPlanMessage, `Built ${trial.runPlan.length} worker sheet row${trial.runPlan.length === 1 ? '' : 's'} from entries.`, 'success');
+    const sourceLabel = trial.runPlanIncludeAllBreeds ? 'all eligible breeds' : 'entries';
+    showMessage(runPlanMessage, `Built ${trial.runPlan.length} worker sheet row${trial.runPlan.length === 1 ? '' : 's'} from ${sourceLabel}.`, 'success');
     render();
+}
+
+function allEligibleRunPlanGroups(trial) {
+    const profile = rulesForTrial(trial);
+    let breeds = [...profile.eligibleBreedCodes];
+    if (trial.trialType === 'specialty' && trial.specialtyBreed) {
+        const specialtyCode = clean(trial.specialtyBreed);
+        breeds = breeds.filter((breed) => clean(breed) === specialtyCode);
+        if (!breeds.length) breeds = [trial.specialtyBreed];
+    }
+    const groups = breeds.map((breed) => ({ key: runPlanKey(breed), breed, entries: [] }));
+    if (trial.singlesOffered) groups.push({ key: runPlanKey('Singles'), breed: 'Singles', entries: [] });
+    if (profile.lciAllowed && trial.lciOffered) {
+        lciDivisions.forEach((breed) => groups.push({ key: runPlanKey(breed), breed, entries: [] }));
+    }
+    return groups;
 }
 
 function buildRunPlanRowsForTrial(trial) {
     const existing = new Map((trial.runPlan || []).map((row) => [runPlanKey(row.breed), row]));
-    const rows = groupEntriesForRunPlan(trial.entries || []).map((group, index) => ({
+    const entryGroups = groupEntriesForRunPlan(trial.entries || []);
+    const groups = new Map(entryGroups.map((group) => [group.key, group]));
+    if (trial.runPlanIncludeAllBreeds) {
+        allEligibleRunPlanGroups(trial).forEach((group) => {
+            if (!groups.has(group.key)) groups.set(group.key, group);
+        });
+    }
+    const orderedGroups = Array.from(groups.values()).sort((a, b) => {
+        const existingA = Number(existing.get(a.key)?.runOrder || 0);
+        const existingB = Number(existing.get(b.key)?.runOrder || 0);
+        if (existingA && existingB && existingA !== existingB) return existingA - existingB;
+        if (existingA !== existingB) return existingA ? -1 : 1;
+        return a.breed.localeCompare(b.breed, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    const highestExistingOrder = Math.max(0, ...(trial.runPlan || []).map((row) => Number(row.runOrder) || 0));
+    let nextNewOrder = highestExistingOrder + 1;
+    const rows = orderedGroups.map((group) => ({
         id: existing.get(group.key)?.id || crypto.randomUUID(),
         breed: group.breed,
         entryCount: group.entries.length,
-        runOrder: existing.get(group.key)?.runOrder || index + 1,
+        runOrder: existing.get(group.key)?.runOrder || nextNewOrder++,
         judge1: existing.get(group.key)?.judge1 || '',
         judge2: existing.get(group.key)?.judge2 || '',
         lureOperator: existing.get(group.key)?.lureOperator || '',
@@ -17496,7 +17601,7 @@ function applyPremiumJudgeAssignmentsToRunPlan(trial, rows) {
 }
 
 function refreshRunPlanFromPremiumIfLoaded(trial) {
-    if (!trial || !trial.premiumJudgeAssignments || !(trial.entries || []).length) {
+    if (!trial || !trial.premiumJudgeAssignments || (!(trial.entries || []).length && !trial.runPlanIncludeAllBreeds)) {
         return trial;
     }
     return {
@@ -17545,7 +17650,7 @@ function applySavedPremiumJudgeAssignments() {
         showMessage(runPlanMessage, 'Save a premium judge matrix before applying it.', 'warning');
         return;
     }
-    if (!(trial.entries || []).length) {
+    if (!(trial.entries || []).length && !trial.runPlanIncludeAllBreeds) {
         showMessage(runPlanMessage, 'Premium matrix is saved. It will apply automatically once entries are added.', 'warning');
         return;
     }
@@ -17838,7 +17943,9 @@ function renderRunPlan(trial) {
         const empty = document.createElement('tr');
         const cell = document.createElement('td');
         cell.colSpan = visibleColumnCount;
-        cell.textContent = 'Build from entries after hounds are entered.';
+        cell.textContent = trial.runPlanIncludeAllBreeds
+            ? 'Click Update Hound Entries to add every eligible breed.'
+            : 'Build from entries after hounds are entered.';
         empty.appendChild(cell);
         body.appendChild(empty);
         return;
@@ -17963,7 +18070,7 @@ function renderSelectedRunPlanLabel(rows = []) {
 
 function textCell(value) {
     const td = document.createElement('td');
-    td.textContent = value || '';
+    td.textContent = value ?? '';
     return td;
 }
 
@@ -18297,7 +18404,8 @@ function runPlanRowsForPrint(trial) {
     const fields = eventFieldsForTrial(trial);
     const selectedField = selectedPrintField(trial);
     return sortedRunPlanRows(trial.runPlan || [], fields)
-        .filter((row) => fields.length <= 1 || row.fieldId === selectedField.id);
+        .filter((row) => fields.length <= 1 || row.fieldId === selectedField.id)
+        .filter((row) => entriesForRunGroupBreed(trial, row.breed).length > 0);
 }
 
 function entriesForPrintField(trial) {
@@ -18492,7 +18600,8 @@ function renderJudgesMap(trial) {
 function judgesMapRows(trial, selectedFieldId = '') {
     const fields = eventFieldsForTrial(trial);
     const runRows = sortedRunPlanRows(trial.runPlan || [], fields)
-        .filter((row) => !selectedFieldId || fields.length <= 1 || row.fieldId === selectedFieldId);
+        .filter((row) => !selectedFieldId || fields.length <= 1 || row.fieldId === selectedFieldId)
+        .filter((row) => entriesForRunGroupBreed(trial, row.breed).length > 0);
     return runRows.flatMap((runRow) => {
         const base = {
             fieldName: operationalGroupName(fields, runRow.fieldId, fields[0].name),
@@ -18637,6 +18746,8 @@ function rollCallColumns(trial, group, format) {
     if (format === 'detailed') columns.push({ label: 'Owner / Handler', value: (entry) => entry.owner || entry.handler || '' });
     if (group.showField) columns.push({ label: 'Field', value: (entry) => rollCallAssignmentForEntry(trial, entry).field.name });
     if (group.showLane) columns.push({ label: 'Lane', value: (entry) => rollCallAssignmentForEntry(trial, entry).lane.name });
+    const showPayment = document.getElementById('rollCallShowPayment')?.checked ?? Boolean(trial.rollCallShowPayment);
+    if (showPayment) columns.push({ label: 'Payment', className: 'payment-column', value: (entry) => entry.paid ? 'Paid' : 'Unpaid' });
     columns.push({ label: 'Notes', value: (entry) => entryNeedsDocuments(entry) ? 'Documentation needed' : '' });
     return columns;
 }
@@ -18749,7 +18860,8 @@ function renderRollCallSheet(trial) {
         const groupingLabel = groupingSelect?.selectedOptions[0]?.textContent || 'Selected field only';
         const sortLabel = document.getElementById('rollCallSort')?.selectedOptions[0]?.textContent || '';
         const formatLabel = document.getElementById('rollCallFormat')?.selectedOptions[0]?.textContent || '';
-        summary.textContent = `Preview: ${groupingLabel}. ${sortLabel}. ${formatLabel}.`;
+        const paymentLabel = document.getElementById('rollCallShowPayment')?.checked ? 'Paid/unpaid shown.' : 'Paid/unpaid hidden.';
+        summary.textContent = `Preview: ${groupingLabel}. ${sortLabel}. ${formatLabel}. ${paymentLabel}`;
     }
 }
 function renderDrawSheet(trial) {
@@ -25178,6 +25290,15 @@ document.addEventListener('change', (event) => {
 });
 document.getElementById('copyTrialButton').addEventListener('click', copyCurrentTrialSetup);
 document.getElementById('buildRunPlanButton').addEventListener('click', buildRunPlanFromEntries);
+document.getElementById('runPlanIncludeAllBreeds')?.addEventListener('change', (event) => {
+    const trial = getSelectedTrial();
+    if (!trial || trial.archivedAt) return;
+    trial.runPlanIncludeAllBreeds = Boolean(event.target.checked);
+    trial.updatedAt = new Date().toISOString();
+    upsertTrial(trial);
+    saveTrials();
+    renderRunPlan(trial);
+});
 document.getElementById('readPremiumJudgesButton')?.addEventListener('click', () => {
     readPremiumJudgeImport().catch((error) => showMessage(runPlanMessage, `Judge-grid import failed: ${error.message}`, 'warning'));
 });
@@ -25209,13 +25330,14 @@ document.getElementById('printFieldSelect')?.addEventListener('change', () => {
     const trial = getSelectedTrial();
     if (trial) renderPrintableSheets(trial);
 });
-['rollCallGrouping', 'rollCallSort', 'rollCallFormat'].forEach((controlId) => {
+['rollCallGrouping', 'rollCallSort', 'rollCallFormat', 'rollCallShowPayment'].forEach((controlId) => {
     document.getElementById(controlId)?.addEventListener('change', () => {
         const trial = getSelectedTrial() || readForm();
         if (!trial.archivedAt) {
             trial.rollCallGrouping = document.getElementById('rollCallGrouping')?.value || 'selectedField';
             trial.rollCallSort = document.getElementById('rollCallSort')?.value || 'breedClass';
             trial.rollCallFormat = document.getElementById('rollCallFormat')?.value || 'checkIn';
+            trial.rollCallShowPayment = Boolean(document.getElementById('rollCallShowPayment')?.checked);
             trial.updatedAt = new Date().toISOString();
             upsertTrial(trial);
             saveTrials();
@@ -25331,17 +25453,13 @@ document.getElementById('undoLastActionButton')?.addEventListener('click', undoL
 document.getElementById('refreshUndoStatusButton')?.addEventListener('click', () => refreshUndoStatus(true));
 document.getElementById('saveBackupRetentionButton')?.addEventListener('click', saveBackupRetention);
 document.getElementById('restoreSQLiteBackupButton')?.addEventListener('click', restoreSQLiteBackup);
-sqliteBackupSelect?.addEventListener('change', updateSQLiteBackupDetails);
-document.getElementById('refreshSQLiteBackupsButton')?.addEventListener('click', () => refreshSQLiteBackupList());
-document.getElementById('buildPortablePackageButton')?.addEventListener('click', buildPortablePackage);
-document.getElementById('refreshPortableStatusButton')?.addEventListener('click', () => refreshPortableStatus(true));
-document.getElementById('createTransferPackageButton')?.addEventListener('click', createTransferPackage);
-document.getElementById('createProgramUpdatePackageButton')?.addEventListener('click', createProgramUpdatePackage);
-document.getElementById('restoreTransferAppFilesButton')?.addEventListener('click', () => document.getElementById('restoreTransferAppFilesInput')?.click());
-document.getElementById('restoreTransferAppFilesInput')?.addEventListener('change', (event) => {
-    restoreTransferAppFiles(event.target.files?.[0] || null);
+document.getElementById('restoreSQLiteFileButton')?.addEventListener('click', () => document.getElementById('restoreSQLiteFileInput')?.click());
+document.getElementById('restoreSQLiteFileInput')?.addEventListener('change', (event) => {
+    restoreSQLiteFile(event.target.files?.[0] || null);
     event.target.value = '';
 });
+sqliteBackupSelect?.addEventListener('change', updateSQLiteBackupDetails);
+document.getElementById('refreshSQLiteBackupsButton')?.addEventListener('click', () => refreshSQLiteBackupList());
 document.getElementById('restartServerButton')?.addEventListener('click', restartAppServer);
 document.getElementById('exitAppButton')?.addEventListener('click', exitAppServer);
 document.getElementById('exitAppToolsButton')?.addEventListener('click', exitAppServer);
@@ -25354,6 +25472,7 @@ document.getElementById('importDataBackupFile').addEventListener('change', (even
 });
 document.getElementById('officialFormsAssociation').addEventListener('change', () => renderOfficialForms(getSelectedTrial()));
 document.getElementById('previewAsfaRecordAlignmentButton').addEventListener('click', previewAsfaRecordAlignment);
+document.getElementById('previewTestPaperworkButton')?.addEventListener('click', previewTestPaperwork);
 document.getElementById('resetAsfaRecordAlignmentButton').addEventListener('click', resetAsfaRecordAlignment);
 document.getElementById('previewAkcRecordAlignmentButton')?.addEventListener('click', previewAkcRecordAlignment);
 document.getElementById('resetAkcRecordAlignmentButton')?.addEventListener('click', resetAkcRecordAlignment);

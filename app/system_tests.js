@@ -24,7 +24,7 @@
     function collectClientSystemChecks() {
         const results = [];
         results.push(check('browser-controls', 'Application', 'Full System Test controls are installed', () => {
-            ['runFullSystemTestButton', 'systemTestSummary', 'systemTestResults', 'systemTestSearch', 'systemTestStatusFilter'].forEach((id) => assert(document.getElementById(id), `Missing #${id}.`));
+            ['runFullSystemTestButton', 'systemTestSummary', 'systemTestResults', 'systemTestSearch', 'systemTestStatusFilter', 'previewTestPaperworkButton'].forEach((id) => assert(document.getElementById(id), `Missing #${id}.`));
             return 'All Admin Tools controls found';
         }));
         results.push(check('rules-associations', 'Association Rules', 'ASFA and AKC scoring profiles remain distinct', () => {
@@ -123,6 +123,40 @@
             assert(!importedHoundNeedsReview({ selected: true, imported: false, firstTime: true, match: null, houndMatchReviewed: false }), 'First-time entry was incorrectly flagged.');
             assert(importedHoundEditDistance('HP123456', 'HP123457') === 1, 'One-character registration typo was not recognized.');
             return 'Unknown existing entry flagged; first-time entry exempt; one-character typo detected';
+        }));
+        results.push(check('run-plan-all-breeds', 'Judges & Assignments', 'All-breeds setup includes empty eligible breeds and preserves assignments', () => {
+            const trial = {
+                association: 'ASFA', trialType: 'all_breed', singlesOffered: true, lciOffered: true,
+                runPlanIncludeAllBreeds: true,
+                eventFields: [{ id: 'field', name: 'Field 1' }], rollCallLanes: [{ id: 'lane', name: 'Lane 1' }],
+                entries: [{ id: 'entry', breed: 'RR', className: 'Open' }],
+                runPlan: [{ id: 'rr', breed: 'RR', runOrder: 1, judge1: 'Judge One', fieldId: 'field', rollCallLaneId: 'lane' }],
+            };
+            const rows = buildRunPlanRowsForTrial(trial);
+            const rr = rows.find((row) => row.breed === 'RR');
+            assert(rows.length === 26, `Expected 26 ASFA running groups, received ${rows.length}.`);
+            assert(rr?.entryCount === 1 && rr?.judge1 === 'Judge One', 'Entered breed count or judge assignment was lost.');
+            assert(rows.some((row) => row.breed === 'WH' && row.entryCount === 0), 'Empty eligible breed was not included.');
+            assert(rows.some((row) => row.breed === 'Singles') && rows.some((row) => row.breed === 'LCI Small'), 'Offered Singles or LCI groups were not included.');
+            const printable = runPlanRowsForPrint({ ...trial, runPlan: rows });
+            const judgeMap = judgesMapRows({ ...trial, runPlan: rows });
+            assert(printable.length === 1 && printable[0].breed === 'RR', 'Empty breeds leaked onto the worker sheet.');
+            assert(judgeMap.length === 1 && judgeMap[0].breed === 'RR', 'Empty breeds leaked onto the judges map.');
+            return '26 setup groups; only entered RR prints; existing judge retained';
+        }));
+        results.push(check('roll-call-payment', 'Roll Call', 'Paid or unpaid status is an optional print column', () => {
+            const control = document.getElementById('rollCallShowPayment');
+            assert(control, 'Missing paid/unpaid roll-call option.');
+            const previous = control.checked;
+            const trial = { rollCallShowPayment: false };
+            const group = { showField: false, showLane: false };
+            control.checked = false;
+            assert(!rollCallColumns(trial, group, 'checkIn').some((column) => column.label === 'Payment'), 'Payment column was shown while disabled.');
+            control.checked = true;
+            const payment = rollCallColumns(trial, group, 'checkIn').find((column) => column.label === 'Payment');
+            assert(payment?.value({ paid: true }) === 'Paid' && payment?.value({ paid: false }) === 'Unpaid', 'Payment labels were incorrect.');
+            control.checked = previous;
+            return 'Hidden by default; Paid and Unpaid labels print when selected';
         }));
         results.push(check('admin-recovery-controls', 'Backup, Archive & Recovery', 'Backup, archive, undo, and upload controls are installed', () => {
             ['createSQLiteBackupButton', 'undoLastActionButton', 'restoreSQLiteBackupButton', 'createFinalArchiveButton', 'entryLciRegistrationFile'].forEach((id) => assert(document.getElementById(id), `Missing #${id}.`));

@@ -1233,9 +1233,14 @@
                         <button type="button" class="secondary small" id="buildRunPlanButton" data-help="Adds any late entries to the trial">Update Hound Entries</button>
                     </div>
                     <div class="form-message compact" id="runPlanMessage"></div>
+                    <label class="switch run-plan-all-breeds-option">
+                        <input id="runPlanIncludeAllBreeds" type="checkbox">
+                        <span>Set up all eligible breeds, including breeds with no entries</span>
+                    </label>
+                    <p class="field-note">When selected, Update Hound Entries creates a running-order row for every eligible breed so judges and workers can be assigned before late entries arrive.</p>
                     <details class="inline-tool-panel">
                         <summary>Import Premium Judge Assignments</summary>
-                        <p class="field-note">Paste a judge table or load a clear picture of the Judges & Assignments grid. Review and correct the matrix before saving. Only breeds, LCI divisions, Provisional, or Singles groups with entries are applied to the running order.</p>
+                        <p class="field-note">Paste a judge table or load a clear picture of the Judges & Assignments grid. Review and correct the matrix before saving. Assignments apply to entered groups, or to every eligible group when the all-breeds option is selected.</p>
                         <p class="field-note" id="premiumJudgeAssignmentsStatus">No premium judge matrix loaded.</p>
                         <textarea id="premiumJudgeAssignmentsText" rows="7" placeholder="Paste a tab-delimited or Markdown table here. Include day names, judge names, breed headers, and S/X/* marks. You may also paste an image directly into this box."></textarea>
                         <div class="button-row">
@@ -1316,6 +1321,10 @@
                             <option value="quick">Quick check-in</option>
                             <option value="detailed">Detailed identification (best in landscape)</option>
                         </select></label>
+                        <label class="switch roll-call-payment-option">
+                            <input id="rollCallShowPayment" type="checkbox">
+                            <span>Show paid / unpaid</span>
+                        </label>
                     </div>
                     <p class="field-note no-print" id="rollCallPrintChoiceSummary"></p>
                     <div class="print-area sheet-preview" id="workerSheetPrint">
@@ -1572,15 +1581,19 @@
                             <h2>Official Forms</h2>
                             <p>Source catalog for judge sheets, posted score sheets, draw sheets, and secretary reports.</p>
                         </div>
-                        <label class="compact-control">
-                            Association
-                            <select id="officialFormsAssociation">
-                                <option value="all">All</option>
-                                <option value="ASFA">ASFA</option>
-                                <option value="AKC">AKC</option>
-                            </select>
-                        </label>
+                        <div class="button-row">
+                            <button type="button" class="secondary small" id="previewTestPaperworkButton">Preview Filled Test Paperwork</button>
+                            <label class="compact-control">
+                                Association
+                                <select id="officialFormsAssociation">
+                                    <option value="all">All</option>
+                                    <option value="ASFA">ASFA</option>
+                                    <option value="AKC">AKC</option>
+                                </select>
+                            </label>
+                        </div>
                     </div>
+                    <p class="field-note">The test packet uses the selected trial's association and current alignment settings. It fills every applicable form with clearly marked sample data and does not change the trial.</p>
                     <div class="form-message compact" id="officialFormsMessage"></div>
                     <div class="table-wrap">
                         <table>
@@ -1906,8 +1919,8 @@
 
                 <section class="form-section" data-tab="admin" data-admin-page="Tools">
                     <div class="section-heading">
-                        <h2>Backup & Transfer</h2>
-                        <p>Protect trial data, restore from backups, and build packages for another computer.</p>
+                        <h2>Back Up & Restore</h2>
+                        <p>Protect HALO data, undo a recent change, or restore a complete database.</p>
                     </div>
                     <div class="backup-tool-grid">
                         <div class="backup-tool-card primary">
@@ -1938,7 +1951,7 @@
                         </div>
                         <div class="backup-tool-card">
                             <h3>Restore Data</h3>
-                            <p>Use only when data needs recovered. SQLite restore replaces the current database after making a safety copy.</p>
+                            <p>Restore one of HALO's saved backups or choose a HALO SQLite database received from another computer. The current database is copied to safety before it is replaced.</p>
                             <div class="grid two backup-restore-grid compact">
                                 <label>
                                     SQLite backup to restore
@@ -1951,41 +1964,16 @@
                             </div>
                             <div class="button-row">
                                 <button type="button" class="secondary small danger-button" id="restoreSQLiteBackupButton">Restore SQLite Backup</button>
+                                <button type="button" class="secondary small danger-button" id="restoreSQLiteFileButton">Restore SQLite File</button>
                                 <button type="button" class="secondary small" id="restoreBrowserBackupButton">Restore Browser Backup</button>
                                 <button type="button" class="secondary small" id="importDataBackupButton">Import JSON Data Backup</button>
                             </div>
-                        </div>
-
-                        <div class="backup-tool-card">
-                            <h3>Move To A New Computer</h3>
-                            <p>Build one installer zip that includes the app, current SQLite database, and a blank starter database.</p>
-                            <div class="button-row">
-                                <button type="button" class="secondary small" id="createTransferPackageButton">Create Transfer Installer</button>
-                            </div>
-                        </div>
-
-                        <div class="backup-tool-card">
-                            <h3>Update Existing Install</h3>
-                            <p>Build a smaller update zip for a computer that already has HALO installed. It updates app files and leaves that computer's SQLite database alone.</p>
-                            <div class="button-row">
-                                <button type="button" class="secondary small" id="createProgramUpdatePackageButton">Create Program Update</button>
-                                <button type="button" class="secondary small danger-button" id="restoreTransferAppFilesButton">Restore App Files</button>
-                            </div>
-                        </div>
-
-                        <div class="backup-tool-card">
-                            <h3>Portable Build Status</h3>
-                            <p>Advanced tools for rebuilding the portable executable and checking whether the bundled app is current.</p>
-                            <div class="backup-restore-note portable-status-note" id="portablePackageStatus">Portable package status will appear here in server mode.</div>
-                            <div class="button-row">
-                                <button type="button" class="secondary small" id="refreshPortableStatusButton">Refresh Portable Status</button>
-                                <button type="button" class="secondary small" id="buildPortablePackageButton">Build Portable EXE</button>
-                            </div>
+                            <div class="backup-restore-note warning">Restoring replaces all current trials, hounds, judges, workers, settings, and stored documents. Do not combine SQLite files manually; duplicates and document links must be resolved by a dedicated merge tool.</div>
                         </div>
 
                         <div class="backup-tool-card">
                             <h3>Browser & Server Tools</h3>
-                            <p>Restart after app-file restores, or exit cleanly when trial work is done.</p>
+                            <p>Restart the local app server or exit cleanly when trial work is done.</p>
                             <div class="button-row">
                                 <button type="button" class="secondary small" id="restartServerButton">Restart App Server</button>
                                 <button type="button" class="secondary small danger-button" id="exitAppToolsButton">Exit Application</button>
@@ -1994,7 +1982,7 @@
                     </div>
                     <div class="form-message compact" id="storageSafetyMessage"></div>
                     <input id="importDataBackupFile" type="file" accept="application/json,.json" hidden>
-                    <input id="restoreTransferAppFilesInput" type="file" accept="application/zip,.zip" hidden>
+                    <input id="restoreSQLiteFileInput" type="file" accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3,application/octet-stream" hidden>
                     <div class="section-heading table-heading">
                         <h2>Archive Trial</h2>
                         <p>Final trial archiving is under Trial Wrap Up. Use this shortcut to open the archive controls for the selected trial.</p>
