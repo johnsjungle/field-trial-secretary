@@ -58,7 +58,12 @@ const assert = require('node:assert/strict');
     const selectedText = document.querySelector('.roll-call-sheet-group').textContent;
     const drawFieldTitle = groupTitleWithField(trial, { breed: 'RR', stake: 'Open' });
     const singleFieldTitle = groupTitleWithField({ ...trial, eventFields: [{ id: 'field-1', name: 'North Field' }] }, { breed: 'RR', stake: 'Open' });
-    return { lane, fieldTitles, fieldLaneTitles, detailedHeaders, paymentDefaultHidden, paymentHeaders, paymentText, quickHeaders, selectedText, drawFieldTitle, singleFieldTitle, unchanged: JSON.stringify(trial) === original };
+    const akcSpecialtyOrder = sortDrawGroupsForPrint([
+      { breed: 'RR', stake: 'Veteran' },
+      { breed: 'RR', stake: 'Specials' },
+      { breed: 'RR', stake: 'Open' },
+    ], { association: 'AKC', runPlan: [{ breed: 'RR', runOrder: 1 }] }).map(group => group.stake);
+    return { lane, fieldTitles, fieldLaneTitles, detailedHeaders, paymentDefaultHidden, paymentHeaders, paymentText, quickHeaders, selectedText, drawFieldTitle, singleFieldTitle, akcSpecialtyOrder, unchanged: JSON.stringify(trial) === original };
   });
 
   assert.equal(result.lane.length, 2);
@@ -82,6 +87,7 @@ const assert = require('node:assert/strict');
   assert.match(result.selectedText, /Cedar/);
   assert.match(result.drawFieldTitle, /Field: North Field/);
   assert.doesNotMatch(result.singleFieldTitle, /Field:/);
+  assert.deepEqual(result.akcSpecialtyOrder, ['Open', 'Specials', 'Veteran']);
   assert.equal(result.unchanged, true, 'rendering must not mutate trial data');
   assert.deepEqual(errors, []);
 

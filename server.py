@@ -1750,11 +1750,33 @@ def draw_groups_for_print(trial: dict) -> list[dict]:
         clean_text(row.get("breed")): int(row.get("runOrder") or 999)
         for row in trial.get("runPlan") or []
     }
-    stake_order = ["OPEN", "FIELDCHAMPION", "FCH", "VETERAN", "SINGLES", "LCI"]
+    association = clean_text(trial.get("association"))
+    stake_order = (
+        {
+            "OPEN": 0,
+            "SPECIAL": 1,
+            "SPECIALS": 1,
+            "FIELDCHAMPION": 1,
+            "FCH": 1,
+            "FC": 1,
+            "VETERAN": 2,
+        }
+        if association == "AKC"
+        else {
+            "OPEN": 0,
+            "EXCELLENT": 1,
+            "FIELDCHAMPION": 1,
+            "FCH": 1,
+            "FC": 1,
+            "VETERAN": 2,
+            "SINGLES": 3,
+            "LCI": 4,
+        }
+    )
 
     def sort_key(group: dict) -> tuple:
         stake = clean_text(group.get("stake"))
-        stake_index = stake_order.index(stake) if stake in stake_order else 999
+        stake_index = stake_order.get(stake, 999)
         return (
             run_order.get(clean_text(group.get("breed")), 999),
             str(group.get("breed") or ""),

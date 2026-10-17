@@ -18974,7 +18974,26 @@ function sortDrawGroupsForPrint(groups, trial) {
         fieldOrder: fieldOrder.get(row.fieldId) ?? 999,
         runOrder: Number(row.runOrder || 999),
     }]));
-    const stakeOrder = ['Open', 'Excellent', 'Field Champion', 'FCH', 'Veteran', 'Singles', 'LCI'];
+    const stakeOrder = clean(trial?.association) === 'AKC'
+        ? new Map([
+            ['OPEN', 0],
+            ['SPECIAL', 1],
+            ['SPECIALS', 1],
+            ['FIELDCHAMPION', 1],
+            ['FCH', 1],
+            ['FC', 1],
+            ['VETERAN', 2],
+        ])
+        : new Map([
+            ['OPEN', 0],
+            ['EXCELLENT', 1],
+            ['FIELDCHAMPION', 1],
+            ['FCH', 1],
+            ['FC', 1],
+            ['VETERAN', 2],
+            ['SINGLES', 3],
+            ['LCI', 4],
+        ]);
 
     return [...groups].sort((a, b) => {
         const assignmentA = assignmentByBreed.get(clean(a.breed)) || { fieldOrder: 999, runOrder: 999 };
@@ -18984,10 +19003,8 @@ function sortDrawGroupsForPrint(groups, trial) {
 
         const breedCompare = String(a.breed || '').localeCompare(String(b.breed || ''), undefined, { numeric: true, sensitivity: 'base' });
         if (breedCompare !== 0) return breedCompare;
-        const stakeA = stakeOrder.findIndex((stake) => clean(stake) === clean(a.stake));
-        const stakeB = stakeOrder.findIndex((stake) => clean(stake) === clean(b.stake));
-        const normalizedA = stakeA === -1 ? 999 : stakeA;
-        const normalizedB = stakeB === -1 ? 999 : stakeB;
+        const normalizedA = stakeOrder.get(clean(a.stake)) ?? 999;
+        const normalizedB = stakeOrder.get(clean(b.stake)) ?? 999;
         if (normalizedA !== normalizedB) return normalizedA - normalizedB;
         return String(a.stake || '').localeCompare(String(b.stake || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
