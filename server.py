@@ -2650,7 +2650,8 @@ def build_akc_scoresheet_breed_overlay(
             rects,
             _akc_scoresheet_field(row_number, 2),
             akc_scoresheet_placement(row.get("placement")),
-            9,
+            11,
+            horizontal_align="center",
         )
     draw_field_label(pdf, field_name_for_breed(trial, group.get("breed")), 780, 600, right=True, font_size=8)
     breed_key = akc_scoresheet_breed_key(group.get("breed"))
@@ -2665,7 +2666,7 @@ def build_akc_scoresheet_breed_overlay(
     pdf.setFillColorRGB(0.75, 0, 0)
     pdf.setFont("Helvetica", 8)
     pdf.drawString(390, y_from_top(566), safe_text(trial.get("secretaryName") or "", 30))
-    pdf.drawString(670, y_from_top(565), safe_text(trial.get("trialChair") or trial.get("chairName") or "", 24))
+    pdf.drawString(690, y_from_top(565), safe_text(trial.get("trialChair") or trial.get("chairName") or "", 24))
     pdf.showPage()
     pdf.save()
     return buffer.getvalue()
@@ -2761,7 +2762,14 @@ def _pdf_widget_rects(template_path: Path) -> dict[str, tuple[float, float, floa
     return result
 
 
-def _draw_text_in_pdf_rect(pdf: canvas.Canvas, rects: dict, field_name: str, value: object, maximum_size: float = 10) -> None:
+def _draw_text_in_pdf_rect(
+    pdf: canvas.Canvas,
+    rects: dict,
+    field_name: str,
+    value: object,
+    maximum_size: float = 10,
+    horizontal_align: str = "left",
+) -> None:
     text = " ".join(str(value or "").split())
     rect = rects.get(field_name)
     if not text or not rect:
@@ -2775,7 +2783,10 @@ def _draw_text_in_pdf_rect(pdf: canvas.Canvas, rects: dict, field_name: str, val
     baseline = bottom + max(1.2, ((top - bottom) - size) / 2 + 1)
     pdf.setFont("Helvetica", size)
     pdf.setFillColorRGB(0, 0, 0)
-    pdf.drawString(left + 1.5, baseline, text)
+    if horizontal_align == "center":
+        pdf.drawCentredString((left + right) / 2, baseline, text)
+    else:
+        pdf.drawString(left + 1.5, baseline, text)
 
 
 def _build_akc_test_overlay(trial: dict, judge_name: str, records: list[dict]) -> bytes:

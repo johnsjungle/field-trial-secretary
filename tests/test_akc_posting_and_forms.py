@@ -49,6 +49,24 @@ class AkcPostingAndFormsTests(unittest.TestCase):
         self.assertIn("Secretary Sample", text)
         self.assertIn("Chair Sample", text)
 
+    def test_akc_record_overlay_centers_larger_placement_and_offsets_chair_name(self):
+        group = {"breed": "RR", "stake": "Open"}
+        page = PdfReader(io.BytesIO(server.build_akc_scoresheet_breed_overlay(
+            group,
+            self.trial(),
+            [{"placement": "4"}],
+        ))).pages[0]
+        positioned_text = []
+        page.extract_text(visitor_text=lambda text, _cm, tm, _font, size: positioned_text.append(
+            (text.strip(), float(tm[4]), float(tm[5]), float(size))
+        ))
+
+        placement = next(item for item in positioned_text if item[0] == "4")
+        chairman = next(item for item in positioned_text if item[0] == "Chair Sample")
+        self.assertGreater(placement[1], 60)
+        self.assertEqual(placement[3], 11)
+        self.assertGreaterEqual(chairman[1], 690)
+
     def test_akc_record_rows_keep_pending_tie_placement(self):
         trial = self.trial()
         trial["entries"] = [
