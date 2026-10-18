@@ -5,12 +5,36 @@
       "version": "0.5.2",
       "date": "2026-10-18",
       "channel": "stable",
-      "status": "pending",
+      "status": "available",
       "summary": "Fixes runoff paperwork after withdrawals and adds post-preliminary finals status without losing scores.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.2",
-      "downloads": {},
+      "downloads": {
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/Field-Trial-Secretary-0.5.2-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/Field-Trial-Secretary-0.5.2-macOS-x86_64.dmg",
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/Field-Trial-Secretary-0.5.2-portable-20261018-182243.zip",
+        "linuxAppImage": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/HALO-0.5.2-x86_64.AppImage",
+        "linuxDeb": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/HALO-0.5.2-Ubuntu-amd64.deb"
+      },
       "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.2/README.md",
-      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.2/RELEASE_NOTES.md"
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.2/RELEASE_NOTES.md",
+      "updates": {
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/Field-Trial-Secretary-0.5.2-macOS-arm64.dmg",
+          "sha256": "6dba413ca74d5575a23e622730dbe85817c1b8073a9ac9b85440cbc12454f2b2"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/Field-Trial-Secretary-0.5.2-macOS-x86_64.dmg",
+          "sha256": "a9055afdec1ae233f8728da6122f930204c2c017fad947adf2e83830b2a1ab72"
+        },
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/Field-Trial-Secretary-0.5.2-portable-20261018-182243.zip",
+          "sha256": "0fa451d5aaf495d173eaa728fd638efc6ae9eb71512857e762f9283d330cf2ab"
+        },
+        "linuxAppImage": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.2/HALO-0.5.2-x86_64.AppImage",
+          "sha256": "8b3f7887972f4da30b16f14bdfaabd08b6cd218aaefa7345a247c1be328d3b78"
+        }
+      }
     },
     {
       "version": "0.5.1",
