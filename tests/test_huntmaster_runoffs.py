@@ -11,6 +11,36 @@ def pdf_text(data: bytes) -> str:
 
 
 class HuntmasterRunoffTests(unittest.TestCase):
+    def test_runoff_judge_courses_exclude_forfeits_and_keep_manual_blankets(self):
+        trial = {
+            "runPlan": [{"breed": "RR", "judge1": "Judge One"}],
+            "preliminaryDraw": {
+                "groups": [{
+                    "id": "rr-open",
+                    "breed": "RR",
+                    "stake": "Open",
+                    "runoffs": [{
+                        "key": "1-2TIE-300",
+                        "label": "1-2 Tie",
+                        "courses": [{
+                            "number": 1,
+                            "hounds": [
+                                {"entryId": "open", "drawPosition": 1, "tieBreakBlanketColor": "Yellow"},
+                                {"entryId": "forfeit", "drawPosition": 2, "tieBreakBlanketColor": "Pink", "tieBreakOutcome": "forfeit"},
+                                {"entryId": "vet", "drawPosition": 3, "tieBreakBlanketColor": "Blue", "manuallyMoved": True},
+                            ],
+                        }],
+                    }],
+                }],
+            },
+        }
+
+        courses = server.flatten_runoff_judge_courses(trial, "rr-open", "1-2TIE-300")
+
+        self.assertEqual(len(courses), 1)
+        self.assertEqual([hound["entryId"] for hound in courses[0]["hounds"]], ["open", "vet"])
+        self.assertEqual(courses[0]["hounds"][1]["blanketColor"], "Blue")
+
     def test_bob_runoff_uses_bob_instead_of_mixed_stake(self):
         group = {
             "breed": "1. RR",

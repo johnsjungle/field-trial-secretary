@@ -7,8 +7,25 @@ const start = source.indexOf('function runoffPrintTrial(');
 const end = source.indexOf('function judgesForRunoffItem(', start);
 assert.ok(start >= 0 && end > start, 'runoffPrintTrial source block should exist');
 
-const northRunoff = { courses: [{ number: 1, hounds: [] }] };
-const southRunoff = { courses: [{ number: 1, hounds: [] }] };
+const northRunoff = {
+    courses: [{
+        number: 1,
+        hounds: [
+            { entryId: 'rr-open', callName: 'Open', tieBreakBlanketColor: 'Yellow', tieBreakCode: '1Y' },
+            { entryId: 'rr-forfeit', callName: 'Forfeit', tieBreakBlanketColor: 'Pink', tieBreakCode: '1P', tieBreakOutcome: 'forfeit' },
+            { entryId: 'rr-vet', callName: 'Vet', tieBreakBlanketColor: 'Blue', tieBreakCode: '1B', manuallyMoved: true },
+        ],
+    }],
+};
+const southRunoff = {
+    courses: [{
+        number: 1,
+        hounds: [
+            { entryId: 'wh-one', callName: 'One', tieBreakBlanketColor: 'Yellow', tieBreakCode: '1Y' },
+            { entryId: 'wh-two', callName: 'Two', tieBreakBlanketColor: 'Pink', tieBreakCode: '1P' },
+        ],
+    }],
+};
 const items = [
     {
         id: 'north-runoff',
@@ -62,4 +79,8 @@ assert.deepEqual(
     'synthetic runoff run plan should retain each breed field assignment',
 );
 assert.equal(result.preliminaryDraw.groups.length, 2);
-console.log('Runoff print trial retains field assignments for separated draw and judge packets.');
+const northHounds = result.preliminaryDraw.groups[0].courses[0].hounds;
+assert.deepEqual(Array.from(northHounds, (hound) => hound.entryId), ['rr-open', 'rr-vet']);
+assert.equal(northHounds[1].blanketColor, 'Blue', 'manual runoff blanket changes must reach printed paperwork');
+assert.ok(!northHounds.some((hound) => hound.entryId === 'rr-forfeit'), 'forfeited hounds must not reach printed runoff paperwork');
+console.log('Runoff print trial retains field assignments and current manual draw while excluding non-running hounds.');

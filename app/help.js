@@ -45,7 +45,8 @@ const topicRows=[
 ['Run Group Test Plan','Shows test groups, courses, and assignments.','Useful for uncommon group sizes|Compare it with printable sheets'],
 ['Delete Test Trials','Removes intentional test trials.','Live trials should not appear here|Back up before broad cleanup'],
 ['Recover Deleted Trials','Restores a recently deleted trial.','Safer than restoring the whole database|Verify identity and date first'],
-['Backup & Transfer','Backs up, undoes, restores, and moves the program.','SQLite backup is preferred|Program Update preserves data; Transfer Installer is for a new computer'],
+['Full System Test','Runs HALO’s built-in functional and paperwork checks.','Run it before a live event or after an update|Search the results for a feature or failed check'],
+['Back Up & Restore','Creates SQLite or JSON backups and restores saved data.','Create a SQLite backup before broad corrections|A supplied SQLite database can be selected for restore'],
 ['Trial Readiness Checklist','Checks whether a trial is ready for trial day.','Run it before printing|Recheck after entry changes'],
 ['Updates & Versions','Checks for updates and shows the installed version.','Updates are separate from trial data|Offline use continues after installation']
 ];
@@ -95,7 +96,8 @@ const stepRows=[
 ['Run Group Test Plan','Select a test trial|Review groups and duties|Compare with sheets'],
 ['Delete Test Trials','Review marked tests|Select records|Delete and verify'],
 ['Recover Deleted Trials','Find the trial|Verify identity|Restore and select it'],
-['Backup & Transfer','Create a backup|Choose undo, restore, or transfer|Verify the result'],
+['Full System Test','Run all checks|Review any warning or failure|Search or copy the report'],
+['Back Up & Restore','Create a backup|Choose the correct restore source|Verify the active trial after restoring'],
 ['Trial Readiness Checklist','Select a trial|Review warnings|Open each linked area to correct it'],
 ['Updates & Versions','Check online|Review the offered version|Install and restart as directed']
 ];
@@ -118,8 +120,8 @@ const problemRows=[
 ['A previous BIE round has an error','Expand the saved round and choose Reopen This Round for Correction. Correct the score or winner, then advance again; later dependent rounds are rebuilt.','scoring','BIF / BIE','BIF / BIE','bie previous round error correction reopen score winner'],
 ['A PDF has old or unexpected information','Verify the active trial, refresh, and generate a new packet. Inspect every page.','wrapup','ASFA Record Packet','ASFA Record Packet','pdf print cached stale wrong dog packet'],
 ['Text does not align on a form','Preview it in Official Forms, make a small adjustment, and preview again.','admin','Official Forms','Paperwork','pdf alignment shifted margin'],
-['I accidentally changed or deleted something','Use Undo for the latest action, or Recover Deleted Trials for one trial. Back up before a broad restore.','admin','Backup & Transfer','Tools','undo mistake deleted recover'],
-['I need to move to another computer','Use Transfer Installer for a new computer. Use Program Update only when already installed.','admin','Backup & Transfer','Tools','move transfer laptop data'],
+['I accidentally changed or deleted something','Use Undo for the latest action, or Recover Deleted Trials for one trial. Back up before a broad restore.','admin','Back Up & Restore','Tools','undo mistake deleted recover'],
+['I need to restore a database someone gave me','Open Back Up & Restore, choose the supplied SQLite database, and verify the active trial after HALO restarts.','admin','Back Up & Restore','Tools','restore sqlite database file data'],
 ['The update is not showing','Open Updates & Versions while online, check again, and verify the installed version.','admin','Updates & Versions','Updates & Versions','update github release'],
 ['A finished trial is read-only','Archived trials are locked. Unlock only for a documented correction.','wrapup','Archive Trial','Archive Trial','archive edit locked'],
 ['I want to practice safely','Create an Admin Test Trial and use the score tools to practice the workflow.','admin','Admin Test Data','Tools','practice tutorial sample demo']

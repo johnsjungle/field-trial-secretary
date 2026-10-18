@@ -103,6 +103,19 @@ class RecordSheetOutcomeTests(unittest.TestCase):
         self.assertEqual(rows[0]["callName"], "LameDog")
         self.assertEqual(rows[0]["prelimScore"], "LAME")
 
+    def test_post_prelim_lame_preserves_prelim_score_and_prints_final_outcome(self):
+        trial = self.trial()
+        group = trial["preliminaryDraw"]["groups"][0]
+        hound = group["courses"][0]["hounds"][0]
+        hound["postPrelimOutcome"] = "lame"
+        group["finalDraw"] = {"courses": []}
+
+        row = server.asfa_record_rows(trial, group)[0]
+
+        self.assertEqual(row["prelimScore"], "75")
+        self.assertEqual(row["finalScore"], "LAME")
+        self.assertEqual(row["finalOutcome"], "lame")
+
     def test_every_supported_status_has_printable_record_text(self):
         scoring_outcomes = {
             "lame": "LAME",

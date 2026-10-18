@@ -4902,7 +4902,12 @@ def bif_results_from_rows(rows: list[dict]) -> dict[str, str]:
 
 
 def final_outcome_by_entry(group: dict) -> dict[str, str]:
-    outcomes: dict[str, str] = {}
+    outcomes: dict[str, str] = {
+        str(hound.get("entryId") or ""): str(hound.get("postPrelimOutcome") or "")
+        for course in group.get("courses") or []
+        for hound in course.get("hounds") or []
+        if hound.get("entryId") and hound.get("postPrelimOutcome")
+    }
     final_draw = group.get("finalDraw") or {}
     for course in final_draw.get("courses") or []:
         for hound in course.get("hounds") or []:
@@ -5770,7 +5775,16 @@ def flatten_runoff_judge_courses(trial: dict, group_id: str, runoff_key: str) ->
             return []
         courses = []
         for course in runoff.get("courses") or []:
-            hounds = sorted(course.get("hounds") or [], key=lambda hound: int(hound.get("drawPosition") or 0))
+            hounds = sorted(
+                [
+                    hound for hound in course.get("hounds") or []
+                    if not str(hound.get("tieBreakOutcome") or "").strip()
+                    and not str(hound.get("bobOutcome") or "").strip()
+                ],
+                key=lambda hound: int(hound.get("drawPosition") or 0),
+            )
+            if len(hounds) < 2:
+                continue
             normalized_hounds = [
                 {
                     **hound,
@@ -6827,7 +6841,7 @@ def specialty_score(trial: dict, entry: dict) -> dict:
         final = next((h for c in (group.get("finalDraw") or {}).get("courses") or [] for h in c.get("hounds") or [] if h.get("entryId") == entry.get("id")), {})
         result["prelim"] = number(prelim.get("prelimScore"))
         result["final"] = number(final.get("finalScore"))
-        outcome = prelim.get("prelimOutcome") or final.get("finalOutcome")
+        outcome = prelim.get("prelimOutcome") or prelim.get("postPrelimOutcome") or final.get("finalOutcome")
         if outcome:
             result["status"] = str(outcome).replace("_", " ").title()
         elif result["prelim"] is not None and result["final"] is not None:
