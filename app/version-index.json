@@ -2,6 +2,18 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.5.5",
+      "date": "2026-10-21",
+      "channel": "stable",
+      "status": "pending",
+      "summary": "Adds optional mixed-breed Kennel and Breeder pairs, enabled by default for International Invitational trials.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.5",
+      "downloads": {},
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.5/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.5/RELEASE_NOTES.md",
+      "updates": {}
+    },
+    {
       "version": "0.5.4",
       "date": "2026-10-20",
       "channel": "stable",

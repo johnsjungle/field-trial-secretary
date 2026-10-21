@@ -1,5 +1,5 @@
 /* Specialty links are trial-entry metadata; they never change draw separation. */
-function specialtyPairEntries(entries, kind, entryId, partnerId, allowReassign = false) {
+function specialtyPairEntries(entries, kind, entryId, partnerId, allowReassign = false, allowMixedBreeds = false) {
     if (!['Kennel', 'Breeder'].includes(kind)) throw new Error('Unknown specialty stake.');
     const flag = 'additional' + kind;
     const key = 'specialty' + kind + 'PartnerId';
@@ -7,10 +7,10 @@ function specialtyPairEntries(entries, kind, entryId, partnerId, allowReassign =
     const entry = entries.find(e => e.id === entryId);
     const partner = partnerId ? entries.find(e => e.id === partnerId) : null;
     if (!entry || !entry[flag]) throw new Error('Mark this entry for the specialty stake first.');
-    if (partnerId && (!partner || !partner[flag] || partner.id === entry.id || normalizeBreedCode(partner.breed) !== normalizeBreedCode(entry.breed)
+    if (partnerId && (!partner || !partner[flag] || partner.id === entry.id || (!allowMixedBreeds && normalizeBreedCode(partner.breed) !== normalizeBreedCode(entry.breed))
         || (entry.houndId && entry.houndId === partner.houndId)
         || (entry.registrationNumber && String(entry.registrationNumber).replace(/\W/g, '').toUpperCase() === String(partner.registrationNumber || '').replace(/\W/g, '').toUpperCase()))) {
-        throw new Error('Choose a different hound of the same breed entered in this specialty stake.');
+        throw new Error(`Choose a different hound${allowMixedBreeds ? '' : ' of the same breed'} entered in this specialty stake.`);
     }
     if (!allowReassign && partner && partner[key] && partner[key] !== entryId && entries.some(e => e.id === partner[key] && e[flag] && e[key] === partner.id)) {
         throw new Error('That hound already has a partner. Unpair it first.');
@@ -28,6 +28,11 @@ function renderSpecialtyEntries(trial) {
     if (!container) return;
     container.replaceChildren();
     const entries = trial?.entries || [];
+    const allowMixedBreeds = Object.prototype.hasOwnProperty.call(trial || {}, 'specialtyAllowMixedBreedPairs')
+        ? Boolean(trial.specialtyAllowMixedBreedPairs)
+        : trial?.trialType === 'invitational';
+    const mixedBreedControl = document.getElementById('specialtyAllowMixedBreedPairs');
+    if (mixedBreedControl) mixedBreedControl.disabled = Boolean(trial?.archivedAt);
     const enabled = entries.some(e => e.additionalKennel || e.additionalBreeder || e.additionalBench);
     document.getElementById('specialtyEntriesPanel').hidden = !enabled || currentTab !== 'entries';
     document.getElementById('printSpecialtyResultsButton').hidden = !enabled;
@@ -38,7 +43,7 @@ function renderSpecialtyEntries(trial) {
         const heading = document.createElement('h3'); heading.textContent = kind + ' pairs'; container.append(heading);
         const guidance = document.createElement('p');
         guidance.className = 'field-note specialty-pair-guidance';
-        guidance.textContent = 'All same-breed hounds marked for this stake are available. A hound already in a pair is labeled and can be reassigned after confirmation.';
+        guidance.textContent = `${allowMixedBreeds ? 'All hounds' : 'All same-breed hounds'} marked for this stake are available. A hound already in a pair is labeled and can be reassigned after confirmation.`;
         container.append(guidance);
         const wrap = document.createElement('div'); wrap.className = 'table-wrap';
         const table = document.createElement('table');
@@ -51,7 +56,7 @@ function renderSpecialtyEntries(trial) {
             select.add(new Option('Choose partner', ''));
             for (const other of eligible) {
                 if (other.id === entry.id) continue;
-                try { specialtyPairEntries(entries, kind, entry.id, other.id, true); }
+                try { specialtyPairEntries(entries, kind, entry.id, other.id, true, allowMixedBreeds); }
                 catch { continue; }
                 const otherPartner = entries.find(candidate => candidate.id === other[key] && candidate[key] === other.id && candidate[flag]);
                 const pairedLabel = otherPartner && otherPartner.id !== entry.id
@@ -73,7 +78,10 @@ function renderSpecialtyEntries(trial) {
                         renderSpecialtyEntries(current);
                         return;
                     }
-                    current.entries=specialtyPairEntries(currentEntries, kind, entry.id, select.value, Boolean(replacingPair)); upsertTrial(current); saveTrials(); renderSpecialtyEntries(current); showMessage(document.getElementById('specialtyMessage'), replacingPair ? 'Specialty pair reassigned. Previous partners are now unpaired.' : 'Specialty pair saved.', 'success');
+                    const currentAllowsMixed = Object.prototype.hasOwnProperty.call(current, 'specialtyAllowMixedBreedPairs')
+                        ? Boolean(current.specialtyAllowMixedBreedPairs)
+                        : current.trialType === 'invitational';
+                    current.entries=specialtyPairEntries(currentEntries, kind, entry.id, select.value, Boolean(replacingPair), currentAllowsMixed); upsertTrial(current); saveTrials(); renderSpecialtyEntries(current); showMessage(document.getElementById('specialtyMessage'), replacingPair ? 'Specialty pair reassigned. Previous partners are now unpaired.' : 'Specialty pair saved.', 'success');
                 }
                 catch(error) {showMessage(document.getElementById('specialtyMessage'), error.message, 'warning'); renderSpecialtyEntries(current);}
             });

@@ -29,6 +29,10 @@ class SpecialtyTests(unittest.TestCase):
     def test_invalid_pair_and_removed_flags(self):
         for change in ({"breed":"WH"},{"additionalBreeder":False},{"specialtyBreederPartnerId":"3"},{"houndId":"hound-1"}):
             t=fixture();t["entries"][1].update(change);self.assertIsNone(server.specialty_records(t,"Breeder")[0]["total"])
+    def test_mixed_breed_pairs_when_enabled(self):
+        t=fixture();t["specialtyAllowMixedBreedPairs"]=True;t["entries"][1]["breed"]="WH"
+        rows=server.specialty_records(t,"Breeder")
+        self.assertEqual(rows[0]["breed"],"Rhodesian Ridgeback / Whippet");self.assertEqual(rows[0]["total"],620);self.assertEqual(rows[0]["rankGroup"],"All breeds");self.assertEqual([row["rank"] for row in rows[:2]],["T1","T1"])
     def test_independent_stakes_and_trial_scope(self):
         t=fixture();t["entries"][0]["specialtyKennelPartnerId"]="";self.assertIsNone(server.specialty_records(t,"Kennel")[0]["total"]);self.assertEqual(server.specialty_records(t,"Breeder")[0]["total"],620)
         self.assertEqual(len(server.specialty_records(t,"Bench")),5)

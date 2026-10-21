@@ -7002,6 +7002,7 @@ def specialty_records(trial: dict, kind: str) -> list[dict]:
     partner_key = "specialty" + kind + "PartnerId"
     name_key = "specialty" + kind + "Name"
     entries = [e for e in trial.get("entries") or [] if entry_flag(e, flag)]
+    allow_mixed_breeds = bool(trial.get("specialtyAllowMixedBreedPairs")) if "specialtyAllowMixedBreedPairs" in trial else trial.get("trialType") == "invitational"
     by_id = {str(e.get("id")): e for e in entries}
     seen = set()
     records = []
@@ -7014,7 +7015,8 @@ def specialty_records(trial: dict, kind: str) -> list[dict]:
         if kind != "Bench":
             partner = by_id.get(str(entry.get(partner_key) or ""))
             same_hound = partner and ((entry.get("houndId") and entry.get("houndId") == partner.get("houndId")) or (entry.get("registrationNumber") and clean_text(entry.get("registrationNumber")) == clean_text(partner.get("registrationNumber"))))
-            if partner and partner is not entry and not same_hound and str(partner.get(partner_key)) == entry_id and catalog_breed_label(partner.get("breed")) == catalog_breed_label(entry.get("breed")):
+            same_breed = catalog_breed_label(partner.get("breed")) == catalog_breed_label(entry.get("breed")) if partner else False
+            if partner and partner is not entry and not same_hound and str(partner.get(partner_key)) == entry_id and (allow_mixed_breeds or same_breed):
                 members.append(partner)
             else:
                 issue = "Needs a valid partner"
@@ -7022,13 +7024,16 @@ def specialty_records(trial: dict, kind: str) -> list[dict]:
         scores = [specialty_score(trial, e) for e in members]
         total = sum(s["total"] for s in scores) if not issue and all(s["total"] is not None for s in scores) else None
         names = list(dict.fromkeys(catalog_clean_text(e.get(name_key) or e.get("breeder" if kind == "Breeder" else "owner")) for e in members))
-        records.append({"members": members, "scores": scores, "name": "; ".join(n for n in names if n), "breed": catalog_breed_label(entry.get("breed")), "total": total, "status": issue or ("Complete" if total is not None else "; ".join(dict.fromkeys(s["status"] for s in scores if s["total"] is None)))})
+        member_breeds = list(dict.fromkeys(catalog_breed_label(member.get("breed")) for member in members))
+        breed_label = " / ".join(member_breeds)
+        rank_group = "All breeds" if allow_mixed_breeds and kind != "Bench" else breed_label
+        records.append({"members": members, "scores": scores, "name": "; ".join(n for n in names if n), "breed": breed_label, "rankGroup": rank_group, "total": total, "status": issue or ("Complete" if total is not None else "; ".join(dict.fromkeys(s["status"] for s in scores if s["total"] is None)))})
     for i, record in enumerate(records, 1):
         record["number"] = i
         record["rank"] = ""
-    # Compete within a breed, across the regular stakes and split flights.
-    for breed in {r["breed"] for r in records}:
-        ranked = sorted([r for r in records if r["breed"] == breed and r["total"] is not None], key=lambda r: -r["total"])
+    # Standard awards compete by breed. The explicit mixed-breed option combines Kennel/Breeder pairs.
+    for rank_group in {r["rankGroup"] for r in records}:
+        ranked = sorted([r for r in records if r["rankGroup"] == rank_group and r["total"] is not None], key=lambda r: -r["total"])
         for record in ranked:
             position = 1 + sum(r["total"] > record["total"] for r in ranked)
             tied = sum(r["total"] == record["total"] for r in ranked) > 1
@@ -7052,7 +7057,7 @@ def generate_specialty_pdf(trials: list[dict], results: bool = False) -> bytes:
         document.ensure(80)
         line(catalog_clean_text(trial.get("trialName") or trial.get("clubName")) + " | " + catalog_trial_label(trial), True, 11)
         if results:
-            line("Totals use preliminary and final scores only. Rankings are by breed; ties remain tied. Incomplete entries are not ranked. Rankings are provisional while scores or partners are missing.", size=8)
+            line("Totals use preliminary and final scores only. Kennel and Breeder rankings combine all pairs when mixed-breed pairing is enabled; otherwise rankings are by breed. Ties remain tied. Incomplete entries are not ranked.", size=8)
         for kind in ("Bench", "Breeder", "Kennel"):
             records = specialty_records(trial, kind)
             if not records:

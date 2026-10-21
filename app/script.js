@@ -936,6 +936,7 @@ const fields = [
     'endsOn',
     'trialType',
     'specialtyBreed',
+    'specialtyAllowMixedBreedPairs',
     'region',
     'singlesOffered',
     'lciOffered',
@@ -2824,6 +2825,8 @@ function writeForm(trial) {
                 ? trial.secretaryAnswerOverrides
                 : {};
             value = overrides[field] || secretarySuggestedAnswers(trial || {})[field] || 'no';
+        } else if (field === 'specialtyAllowMixedBreedPairs' && trial && !Object.prototype.hasOwnProperty.call(trial, field)) {
+            value = trial.trialType === 'invitational';
         } else if (field === 'secretaryPerCapitaRate') {
             const numericRate = Number(value || 3.5);
             value = Number.isFinite(numericRate) ? numericRate.toFixed(2) : '3.50';
@@ -25384,6 +25387,27 @@ function formatDateRange(start, end) {
 form.addEventListener('submit', (event) => {
     event.preventDefault();
     saveCurrentTrial();
+});
+
+document.getElementById('trialType')?.addEventListener('change', (event) => {
+    const selected = getSelectedTrial();
+    const control = document.getElementById('specialtyAllowMixedBreedPairs');
+    if (control && (!selected || !Object.prototype.hasOwnProperty.call(selected, 'specialtyAllowMixedBreedPairs'))) {
+        control.checked = event.target.value === 'invitational';
+    }
+});
+
+document.getElementById('specialtyAllowMixedBreedPairs')?.addEventListener('change', () => {
+    const current = readForm();
+    if (current.archivedAt) return;
+    if (getSelectedTrial()) {
+        upsertTrial(current);
+        saveTrials();
+    }
+    renderSpecialtyEntries(current);
+    showMessage(document.getElementById('specialtyMessage'), current.specialtyAllowMixedBreedPairs
+        ? 'Mixed-breed Kennel and Breeder pairs are allowed for this trial.'
+        : 'Kennel and Breeder partners must be the same breed for this trial.', 'success');
 });
 
 newTrialButton.addEventListener('click', startNewTrial);
