@@ -1295,7 +1295,8 @@
                         </div>
                         <div class="button-row">
                             <button type="button" class="secondary small report-button" id="printWorkerSheetButton">Print Worker Sheet</button>
-                            <button type="button" class="secondary small report-button" id="printJudgesMapButton">Judges Map</button>
+                            <button type="button" class="secondary small report-button" id="printJudgesMapButton">Prelim Judges Map</button>
+                            <button type="button" class="secondary small report-button" id="printFinalsJudgesMapButton">Finals Judges Map</button>
                             <button type="button" class="secondary small report-button" id="printRollCallButton">Print Roll Call</button>
                         </div>
                     </div>
@@ -1340,7 +1341,7 @@
                         </div>
                     </div>
                     <div class="print-area sheet-preview" id="judgesMapPrint">
-                        <h2>Judges Map</h2>
+                        <h2>Preliminary Judges Map</h2>
                         <p id="judgesMapTitle"></p>
                         <div class="table-wrap">
                             <table>
@@ -1350,11 +1351,22 @@
                                         <th>Breed</th>
                                         <th>Stake</th>
                                         <th>Entries</th>
-                                        <th>Courses</th>
+                                        <th>Runs</th>
+                                        <th>Course Sizes</th>
                                         <th>Judges</th>
                                     </tr>
                                 </thead>
                                 <tbody id="judgesMapTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="print-area sheet-preview" id="finalsJudgesMapPrint">
+                        <h2>Finals Judges Map</h2>
+                        <p id="finalsJudgesMapTitle"></p>
+                        <div class="table-wrap">
+                            <table>
+                                <thead id="finalsJudgesMapHead"></thead>
+                                <tbody id="finalsJudgesMapTable"></tbody>
                             </table>
                         </div>
                     </div>
@@ -1736,8 +1748,8 @@
                 <section class="form-section" data-tab="admin" data-admin-page="Reports">
                     <div class="section-heading with-action">
                         <div>
-                            <h2>Catalog Reports</h2>
-                            <p>Select one or more trials, then build either the entries catalog or the completed-results catalog.</p>
+                            <h2>Trial Reports</h2>
+                            <p>Select one or more trials, then build catalogs or a combined owner list.</p>
                         </div>
                         <div class="catalog-selection-count" id="catalogSelectionCount">0 trials selected</div>
                     </div>
@@ -1783,6 +1795,19 @@
                     <article class="catalog-report-card">
                         <div><h3>Specialty Stakes Catalog</h3><p>Lists individual Dual Champion entries marked Bench and numbered Breeder and Kennel pairs with breeder or owner names.</p></div>
                         <button type="button" class="secondary report-button" id="buildSpecialtyCatalogButton">Build Specialty Stakes Catalog</button>
+                    </article>
+                    <article class="catalog-report-card owner-report-card">
+                        <div>
+                            <span class="catalog-report-eyebrow">Trial planning</span>
+                            <h3>Owner List</h3>
+                            <p>Lists each owner once across the selected trials, with their hounds, contact information, and the name spellings HALO grouped together.</p>
+                        </div>
+                        <label class="owner-match-control">Owner-name match
+                            <span><strong id="ownerMatchThresholdValue">90%</strong> similar or closer</span>
+                            <input id="ownerMatchThreshold" type="range" min="70" max="100" step="1" value="90">
+                            <small>100% groups only names that match after punctuation, capitalization, and word order are normalized. Lower values allow spelling differences.</small>
+                        </label>
+                        <button type="button" class="secondary report-button" id="buildOwnerReportButton">Build Owner List</button>
                     </article>
                     <div class="form-message compact" id="catalogReportMessage"></div>
                 </section>

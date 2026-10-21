@@ -158,6 +158,40 @@
             control.checked = previous;
             return 'Hidden by default; Paid and Unpaid labels print when selected';
         }));
+        results.push(check('finals-judges-map', 'Judges & Assignments', 'Finals map uses actual courses after hound removals', () => {
+            const trial = {
+                eventFields: [{ id: 'one', name: 'Field 1' }],
+                runPlan: [{ breed: 'RR', runOrder: 1, fieldId: 'one', judge1: 'Judge One', judge2: 'Judge Two' }],
+                preliminaryDraw: { groups: [{
+                    breed: 'RR', stake: 'Open', flight: 'A',
+                    finalDraw: { courses: [
+                        { number: 1, hounds: [{ entryId: 'a' }, { entryId: 'b' }, { entryId: 'c', finalOutcome: 'excused' }] },
+                        { number: 2, hounds: [{ entryId: 'd' }, { entryId: 'e' }] },
+                    ] },
+                }] },
+            };
+            const rows = finalsJudgesMapRows(trial);
+            assert(rows.length === 1, 'Finals group was missing from the map.');
+            assert(rows[0].entryCount === 4 && rows[0].courseBreakdown === '1(2) 2(2)', 'Finals map did not use the actual eligible hounds by course.');
+            assert(rows[0].judges === 'Judge One / Judge Two', 'Finals judges were not retained.');
+            const splitRows = judgesMapRows({
+                ...trial,
+                entries: Array.from({ length: 6 }, (_, index) => ({ id: String(index), breed: 'RR', className: 'Open' })),
+                preliminaryDraw: { groups: [
+                    { breed: 'RR', stake: 'Open', flight: 'A', courses: [{ number: 1, hounds: [{ entryId: 'a' }, { entryId: 'b' }, { entryId: 'c' }] }] },
+                    { breed: 'RR', stake: 'Open', flight: 'B', courses: [{ number: 1, hounds: [{ entryId: 'd' }, { entryId: 'e' }, { entryId: 'f' }] }] },
+                ] },
+            });
+            assert(splitRows.length === 2 && splitRows.map((row) => row.stake).join(',') === 'Open A,Open B', 'Preliminary split flights were merged on the judges map.');
+            assert(document.getElementById('printFinalsJudgesMapButton'), 'Finals Judges Map print button is missing.');
+            return 'Prelim split flights retained; excused final hound removed; actual courses and judges retained';
+        }));
+        results.push(check('owner-report-controls', 'Reports', 'Owner list supports selected trials and adjustable name matching', () => {
+            const threshold = document.getElementById('ownerMatchThreshold');
+            assert(document.getElementById('buildOwnerReportButton'), 'Build Owner List button is missing.');
+            assert(threshold && threshold.min === '70' && threshold.max === '100' && threshold.value === '90', 'Owner matching control is missing or incorrectly configured.');
+            return 'Owner report button found; similarity control spans 70% through exact 100%';
+        }));
         results.push(check('admin-recovery-controls', 'Backup, Archive & Recovery', 'Backup, archive, undo, and upload controls are installed', () => {
             ['createSQLiteBackupButton', 'undoLastActionButton', 'restoreSQLiteBackupButton', 'createFinalArchiveButton', 'entryLciRegistrationFile'].forEach((id) => assert(document.getElementById(id), `Missing #${id}.`));
             return 'Backup, undo, restore, archive, and document upload controls found';

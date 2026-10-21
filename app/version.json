@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.5.2",
-  "releaseDate": "2026-10-18",
+  "version": "0.5.3",
+  "releaseDate": "2026-10-20",
   "channel": "stable",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.2",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.3",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Fixes runoff paperwork after withdrawals and adds post-preliminary finals status without losing scores."
+  "notes": "Adds a multi-trial owner list and accurate preliminary and finals judges maps built from saved draws."
 }

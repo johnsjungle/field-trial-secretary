@@ -18,6 +18,7 @@ const buttonHelpText = {
     printDrawSheetButton: 'Creates the official posted draw order sheet for the current preliminary draw.',
     printJudgeSheetsButton: 'Creates preliminary judge sheets for the courses and judges assigned in the run plan.',
     printJudgesMapButton: 'Prints a breed and stake map showing course breakdowns and judge assignments in running order.',
+    printFinalsJudgesMapButton: 'Prints the actual finals courses and judge assignments after scratches, excusals, and other post-preliminary removals.',
     printRollCallButton: 'Prints the current roll-call preview. Choose all dogs, separate lanes, separate fields, or field-and-lane sheets before printing.',
     runFullSystemTestButton: 'Runs the maintained browser, rules, database, official-form, report, BIF/BIE, and update checks with isolated sample data. It does not change your trials.',
     createAdminTestTrialButton: 'Creates a realistic test trial with hounds, judges, workers, and a starter run plan.',
@@ -26,6 +27,7 @@ const buttonHelpText = {
     removeAdminTestRecordsButton: 'Removes generated test hounds, judges, and workers from the reusable databases without deleting any trials.',
     buildCatalogEntriesButton: 'Builds a detailed catalog of the selected trials, grouped by breed and stake, with hound, pedigree, breeder, owner, and contact information.',
     buildCatalogFinalButton: "Builds a combined final catalog showing each selected trial's placement, BOB/BIF award, or recorded outcome for every hound.",
+    buildOwnerReportButton: 'Builds one combined owner list for the selected trials. The similarity setting controls when spelling variations are grouped as one owner.',
     redrawAllRunoffsButton: 'Draws current tie and BOB runoffs. Replacing an existing draw requires confirmation because posted course assignments, blanket colors, and scores can change.',
     printRunoffDrawSheetButton: 'Prints the runoff running order sheet after colors have been drawn.',
     printAllRunoffJudgeSheetsButton: 'Prints judge sheets for the current runoff order after colors have been drawn.',
@@ -18554,6 +18556,7 @@ function renderPrintableSheets(trial) {
     renderPrintFieldControl(trial);
     renderWorkerSheet(trial);
     renderJudgesMap(trial);
+    renderFinalsJudgesMap(trial);
     renderRollCallSheet(trial);
     renderDrawSheet(trial);
 }
@@ -18760,8 +18763,8 @@ function renderJudgesMap(trial) {
         head.innerHTML = '';
         const header = document.createElement('tr');
         const labels = showField
-            ? ['Field', 'Order', 'Breed', 'Stake', 'Entries', 'Courses', 'Judges']
-            : ['Order', 'Breed', 'Stake', 'Entries', 'Courses', 'Judges'];
+            ? ['Field', 'Order', 'Breed', 'Stake', 'Entries', 'Runs', 'Course Sizes', 'Judges']
+            : ['Order', 'Breed', 'Stake', 'Entries', 'Runs', 'Course Sizes', 'Judges'];
         labels.forEach((label) => {
             const th = document.createElement('th');
             th.textContent = label;
@@ -18774,7 +18777,7 @@ function renderJudgesMap(trial) {
     if (rows.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = showField ? 7 : 6;
+        td.colSpan = showField ? 8 : 7;
         td.textContent = 'No judge map rows yet.';
         tr.appendChild(td);
         body.appendChild(tr);
@@ -18784,8 +18787,8 @@ function renderJudgesMap(trial) {
     rows.forEach((row) => {
         const tr = document.createElement('tr');
         const values = showField
-            ? [row.fieldName, row.runOrder, row.breed, row.stake, row.entryCount, row.courseBreakdown, row.judges]
-            : [row.runOrder, row.breed, row.stake, row.entryCount, row.courseBreakdown, row.judges];
+            ? [row.fieldName, row.runOrder, row.breed, row.stake, row.entryCount, row.runCount, row.courseBreakdown, row.judges]
+            : [row.runOrder, row.breed, row.stake, row.entryCount, row.runCount, row.courseBreakdown, row.judges];
         values.forEach((value) => tr.appendChild(textCell(value)));
         body.appendChild(tr);
     });
@@ -18795,6 +18798,36 @@ function judgesMapRows(trial, selectedFieldId = '') {
     const runRows = sortedRunPlanRows(trial.runPlan || [], fields)
         .filter((row) => !selectedFieldId || fields.length <= 1 || row.fieldId === selectedFieldId)
         .filter((row) => entriesForRunGroupBreed(trial, row.breed).length > 0);
+    const drawGroups = (((trial || {}).preliminaryDraw || {}).groups || []);
+    if (drawGroups.length > 0) {
+        const runRowForBreed = (breed) => runRows.find((row) => clean(row.breed) === clean(breed));
+        return drawGroups
+            .map((group, groupIndex) => {
+                const runRow = runRowForBreed(group.breed);
+                if (!runRow) return null;
+                const courses = (group.courses || []).filter((course) => (course.hounds || []).length > 0);
+                if (courses.length === 0) return null;
+                const entryCount = courses.reduce((total, course) => total + (course.hounds || []).length, 0);
+                return {
+                    fieldName: operationalGroupName(fields, runRow.fieldId, fields[0].name),
+                    runOrder: runRow.runOrder,
+                    breed: displayBreedCode(group.breed),
+                    stake: displayJudgeMapStake(group.stake) + (group.flight ? ` ${group.flight}` : ''),
+                    entryCount,
+                    runCount: courses.length,
+                    courseBreakdown: courses.map((course, index) => `${course.number || index + 1}(${(course.hounds || []).length})`).join(' '),
+                    judges: [runRow.judge1, runRow.judge2].filter(Boolean).join(' / '),
+                    stakeOrder: stakeSortOrder(group.stake),
+                    flightOrder: String(group.flight || ''),
+                    groupIndex,
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => Number(a.runOrder || 9999) - Number(b.runOrder || 9999)
+                || a.stakeOrder - b.stakeOrder
+                || a.flightOrder.localeCompare(b.flightOrder, undefined, { numeric: true, sensitivity: 'base' })
+                || a.groupIndex - b.groupIndex);
+    }
     return runRows.flatMap((runRow) => {
         const base = {
             fieldName: operationalGroupName(fields, runRow.fieldId, fields[0].name),
@@ -18809,6 +18842,7 @@ function judgesMapRows(trial, selectedFieldId = '') {
                 ...base,
                 stake: 'Mixed (' + mixedEligibility.stakes.map(displayJudgeMapStake).join('/') + ')',
                 entryCount: entries.length,
+                runCount: courseSizesForEntryCount(entries.length, false).length,
                 courseBreakdown: formatJudgeMapCourseBreakdown(entries.length, false),
             }];
         }
@@ -18825,16 +18859,88 @@ function judgesMapRows(trial, selectedFieldId = '') {
                 ...base,
                 stake: displayJudgeMapStake(stakeRow.stake),
                 entryCount: stakeRow.entries.length,
+                runCount: courseSizesForEntryCount(stakeRow.entries.length, isQuasiBreedClass(runRow.breed) || isQuasiBreedClass(stakeRow.stake)).length,
                 courseBreakdown: formatJudgeMapCourseBreakdown(stakeRow.entries.length, isQuasiBreedClass(runRow.breed) || isQuasiBreedClass(stakeRow.stake)),
             }));
     });
+}
+
+function renderFinalsJudgesMap(trial) {
+    const title = document.getElementById('finalsJudgesMapTitle');
+    const head = document.getElementById('finalsJudgesMapHead');
+    const body = document.getElementById('finalsJudgesMapTable');
+    if (!title || !head || !body) return;
+    title.textContent = trialTitle(trial) + printFieldTitle(trial) + ' | Actual finals draw';
+    head.innerHTML = '';
+    body.innerHTML = '';
+    const header = document.createElement('tr');
+    ['Order', 'Breed', 'Stake', 'Finalists', 'Runs', 'Course Sizes', 'Judges'].forEach((label) => {
+        const th = document.createElement('th');
+        th.textContent = label;
+        header.appendChild(th);
+    });
+    head.appendChild(header);
+    const rows = finalsJudgesMapRows(trial, selectedPrintField(trial).id);
+    if (rows.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 7;
+        cell.textContent = 'No finals draws are ready for this field.';
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+    }
+    rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        [row.runOrder, row.breed, row.stake, row.entryCount, row.runCount, row.courseBreakdown, row.judges]
+            .forEach((value) => tr.appendChild(textCell(value)));
+        body.appendChild(tr);
+    });
+}
+
+function finalsJudgesMapRows(trial, selectedFieldId = '') {
+    const fields = eventFieldsForTrial(trial);
+    const runRows = sortedRunPlanRows(trial.runPlan || [], fields);
+    const runRowForBreed = (breed) => runRows.find((row) => clean(row.breed) === clean(breed));
+    return (((trial || {}).preliminaryDraw || {}).groups || [])
+        .map((group, groupIndex) => {
+            const runRow = runRowForBreed(group.breed);
+            const fieldId = runRow?.fieldId || fields[0].id;
+            if (selectedFieldId && fields.length > 1 && fieldId !== selectedFieldId) return null;
+            const courses = ((((group || {}).finalDraw || {}).courses) || [])
+                .map((course) => ({
+                    ...course,
+                    hounds: (course.hounds || []).filter((hound) => !hound.postPrelimOutcome && !hound.finalOutcome),
+                }))
+                .filter((course) => course.hounds.length > 0);
+            if (courses.length === 0) return null;
+            const entryCount = courses.reduce((total, course) => total + course.hounds.length, 0);
+            return {
+                fieldName: operationalGroupName(fields, fieldId, fields[0].name),
+                runOrder: runRow?.runOrder || '',
+                breed: displayBreedCode(group.breed),
+                stake: displayJudgeMapStake(group.stake) + (group.flight ? ` ${group.flight}` : ''),
+                entryCount,
+                runCount: courses.length,
+                courseBreakdown: courses.map((course, index) => `${course.number || index + 1}(${course.hounds.length})`).join(' '),
+                judges: [runRow?.judge1, runRow?.judge2].filter(Boolean).join(' / '),
+                stakeOrder: stakeSortOrder(group.stake),
+                flightOrder: String(group.flight || ''),
+                groupIndex,
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => Number(a.runOrder || 9999) - Number(b.runOrder || 9999)
+            || a.stakeOrder - b.stakeOrder
+            || a.flightOrder.localeCompare(b.flightOrder, undefined, { numeric: true, sensitivity: 'base' })
+            || a.groupIndex - b.groupIndex);
 }
 function stakeSortOrder(stake) {
     const normalized = clean(stake);
     if (normalized === 'OPEN' || normalized === 'SINGLES') {
         return 1;
     }
-    if (normalized === 'FIELDCHAMPION' || normalized === 'FCH' || normalized === 'EXCELLENT') {
+    if (normalized === 'FIELDCHAMPION' || normalized === 'FCH' || normalized === 'EXCELLENT' || normalized === 'SPECIAL' || normalized === 'SPECIALS') {
         return 2;
     }
     if (normalized === 'VETERAN') {
@@ -25053,7 +25159,7 @@ function updateCatalogSelectionSummary() {
     if (summary) {
         summary.textContent = `${count} trial${count === 1 ? '' : 's'} selected | ${entryCount} entr${entryCount === 1 ? 'y' : 'ies'}`;
     }
-    ['buildCatalogEntriesButton', 'buildCatalogFinalButton'].forEach((id) => {
+    ['buildCatalogEntriesButton', 'buildCatalogFinalButton', 'buildOwnerReportButton'].forEach((id) => {
         const button = document.getElementById(id);
         if (button) button.disabled = count === 0;
     });
@@ -25169,6 +25275,37 @@ async function buildCatalogReport(reportType) {
         `${isFinal ? 'Catalog Final' : 'Catalog Entries'} PDF created from ${chosenTrials.length} trial${chosenTrials.length === 1 ? '' : 's'}.`,
         `${isFinal ? 'Catalog Final' : 'Catalog Entries'} could not be created.`,
     );
+}
+
+async function buildOwnerReport() {
+    const message = document.getElementById('catalogReportMessage');
+    const chosenTrials = selectedCatalogTrials();
+    if (chosenTrials.length === 0) {
+        showMessage(message, 'Select at least one trial for the owner list.', 'warning');
+        return;
+    }
+    const entryCount = chosenTrials.reduce((total, trial) => total + (trial.entries || []).length, 0);
+    if (entryCount === 0) {
+        showMessage(message, 'The selected trials do not have any hound entries yet.', 'warning');
+        return;
+    }
+    const threshold = Math.max(70, Math.min(100, Number(document.getElementById('ownerMatchThreshold')?.value) || 90));
+    await openTrialPdf(
+        '/api/owner-report',
+        {
+            trialIds: chosenTrials.map((trial) => String(trial.id || '')).filter(Boolean),
+            ownerMatchThreshold: threshold,
+        },
+        message,
+        `Owner list PDF created from ${chosenTrials.length} trial${chosenTrials.length === 1 ? '' : 's'} using ${threshold}% name matching.`,
+        'Owner list could not be created.',
+    );
+}
+
+function updateOwnerMatchThresholdLabel() {
+    const control = document.getElementById('ownerMatchThreshold');
+    const label = document.getElementById('ownerMatchThresholdValue');
+    if (control && label) label.textContent = `${control.value}%`;
 }
 function renderAdminPages() {
     if (currentAdminPage === "Updates & Versions") initializeVersionBrowser();
@@ -25562,6 +25699,7 @@ window.addEventListener('scroll', updateReturnTopButton, { passive: true });
 window.addEventListener('resize', updateReturnTopButton);
 document.getElementById('printWorkerSheetButton').addEventListener('click', () => printSectionAndMark('workerSheetPrint', 'workerSheet'));
 document.getElementById('printJudgesMapButton')?.addEventListener('click', () => printSection('judgesMapPrint'));
+document.getElementById('printFinalsJudgesMapButton')?.addEventListener('click', () => printSection('finalsJudgesMapPrint'));
 document.getElementById('printRollCallButton').addEventListener('click', () => printSectionAndMark('rollCallPrint', 'rollCallSheet'));
 document.getElementById('markSeparationReviewedButton')?.addEventListener('click', markOwnerSeparationReviewed);
 document.getElementById('printDrawSheetButton').addEventListener('click', printDrawSheet);
@@ -25656,6 +25794,9 @@ document.getElementById('selectCatalogWeekendButton')?.addEventListener('click',
 document.getElementById('clearCatalogTrialsButton')?.addEventListener('click', clearCatalogTrials);
 document.getElementById('buildCatalogEntriesButton')?.addEventListener('click', () => buildCatalogReport('entries'));
 document.getElementById('buildCatalogFinalButton')?.addEventListener('click', () => buildCatalogReport('final'));
+document.getElementById('buildOwnerReportButton')?.addEventListener('click', buildOwnerReport);
+document.getElementById('ownerMatchThreshold')?.addEventListener('input', updateOwnerMatchThresholdLabel);
+updateOwnerMatchThresholdLabel();
 document.getElementById('deleteSelectedTrialButton').addEventListener('click', deleteSelectedAdminTrial);
 document.getElementById('restoreBrowserBackupButton').addEventListener('click', restoreBrowserSafetyBackup);
 document.getElementById('createSQLiteBackupButton').addEventListener('click', createSQLiteBackup);

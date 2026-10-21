@@ -2466,7 +2466,8 @@ tbody tr.row-flash td {
 }
 
 #workerSheetPrint,
-#judgesMapPrint {
+#judgesMapPrint,
+#finalsJudgesMapPrint {
     page: worker-sheet-landscape;
 }
 
@@ -2783,6 +2784,33 @@ tbody tr.row-flash td {
     width: 100%;
 }
 
+.owner-report-card {
+    margin-top: 12px;
+}
+
+.owner-match-control {
+    background: #f3f7f6;
+    border: 1px solid #cadbd5;
+    display: grid;
+    gap: 7px;
+    padding: 11px 12px;
+}
+
+.owner-match-control span {
+    color: var(--accent-dark);
+    font-size: 13px;
+}
+
+.owner-match-control input[type="range"] {
+    margin: 0;
+    width: 100%;
+}
+
+.owner-match-control small {
+    color: var(--muted);
+    line-height: 1.35;
+}
+
 @media (max-width: 760px) {
     .catalog-report-grid {
         grid-template-columns: 1fr;
@@ -2813,6 +2841,7 @@ tbody tr.row-flash td {
 
     body[data-print-section="workerSheetPrint"] .form-section:has(#workerSheetPrint),
     body[data-print-section="judgesMapPrint"] .form-section:has(#judgesMapPrint),
+    body[data-print-section="finalsJudgesMapPrint"] .form-section:has(#finalsJudgesMapPrint),
     body[data-print-section="rollCallPrint"] .form-section:has(#rollCallPrint),
     body[data-print-section="bieRunningIntentPrint"] .form-section:has(#bieRunningIntentPrint),
     body[data-print-section="drawSheetPrint"] .form-section:has(#drawSheetPrint),
@@ -2837,6 +2866,7 @@ tbody tr.row-flash td {
 
     body[data-print-section="workerSheetPrint"] #workerSheetPrint,
     body[data-print-section="judgesMapPrint"] #judgesMapPrint,
+    body[data-print-section="finalsJudgesMapPrint"] #finalsJudgesMapPrint,
     body[data-print-section="rollCallPrint"] #rollCallPrint,
     body[data-print-section="bieRunningIntentPrint"] #bieRunningIntentPrint,
     body[data-print-section="drawSheetPrint"] #drawSheetPrint,
@@ -2852,6 +2882,7 @@ tbody tr.row-flash td {
 
     body[data-print-section="workerSheetPrint"] .form-section:has(#workerSheetPrint) > :not(#workerSheetPrint),
     body[data-print-section="judgesMapPrint"] .form-section:has(#judgesMapPrint) > :not(#judgesMapPrint),
+    body[data-print-section="finalsJudgesMapPrint"] .form-section:has(#finalsJudgesMapPrint) > :not(#finalsJudgesMapPrint),
     body[data-print-section="rollCallPrint"] .form-section:has(#rollCallPrint) > :not(#rollCallPrint),
     body[data-print-section="bieRunningIntentPrint"] .form-section:has(#bieRunningIntentPrint) > :not(#bieRunningIntentPrint) {
         display: none !important;
@@ -2868,7 +2899,8 @@ tbody tr.row-flash td {
     }
 
     #workerSheetPrint,
-    #judgesMapPrint {
+    #judgesMapPrint,
+    #finalsJudgesMapPrint {
         max-height: 7.25in;
         overflow: hidden;
     }
@@ -2943,25 +2975,30 @@ tbody tr.row-flash td {
     }
 
     #workerSheetPrint,
-    #judgesMapPrint {
+    #judgesMapPrint,
+    #finalsJudgesMapPrint {
         font-size: 10px;
     }
 
     #workerSheetPrint h2,
-    #judgesMapPrint h2 {
+    #judgesMapPrint h2,
+    #finalsJudgesMapPrint h2 {
         font-size: 16px;
         margin-bottom: 2px;
     }
 
     #workerSheetPrint p,
-    #judgesMapPrint p {
+    #judgesMapPrint p,
+    #finalsJudgesMapPrint p {
         margin-bottom: 6px;
     }
 
     #workerSheetPrint th,
     #workerSheetPrint td,
     #judgesMapPrint th,
-    #judgesMapPrint td {
+    #judgesMapPrint td,
+    #finalsJudgesMapPrint th,
+    #finalsJudgesMapPrint td {
         padding: 4px 5px;
         line-height: 1.1;
     }

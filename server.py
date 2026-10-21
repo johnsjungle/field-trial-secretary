@@ -29,6 +29,7 @@ import webbrowser
 import zipfile
 import zlib
 from datetime import datetime
+from difflib import SequenceMatcher
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import socket
@@ -6813,6 +6814,151 @@ def generate_catalog_final_pdf(trials: list[dict]) -> bytes:
     return document.finish()
 
 
+def normalize_owner_name(value: object) -> str:
+    text = catalog_clean_text(value).casefold().replace("&", " and ").replace("+", " and ")
+    text = re.sub(r"\band\b", " ", text)
+    return " ".join(re.findall(r"[a-z0-9]+", text))
+
+
+def owner_name_similarity(first: object, second: object) -> int:
+    left = normalize_owner_name(first)
+    right = normalize_owner_name(second)
+    if not left or not right:
+        return 0
+    if left == right:
+        return 100
+    ordered_ratio = SequenceMatcher(None, left, right).ratio()
+    token_ratio = SequenceMatcher(None, " ".join(sorted(left.split())), " ".join(sorted(right.split()))).ratio()
+    return round(max(ordered_ratio, token_ratio) * 100)
+
+
+def owner_report_records(trials: list[dict], threshold: int = 90) -> dict:
+    threshold = max(70, min(100, int(threshold)))
+    rows = []
+    missing = []
+    for trial_index, trial in enumerate(trials):
+        trial_key = str(trial.get("id") or f"trial-{trial_index}")
+        trial_label = catalog_trial_label(trial)
+        for entry in trial.get("entries") or []:
+            source = entry_form_source(trial, entry)
+            owner = catalog_clean_text(source.get("owner"))
+            row = {"trialKey": trial_key, "trialLabel": trial_label, "entry": entry, "source": source, "owner": owner}
+            (rows if owner else missing).append(row)
+    rows.sort(key=lambda row: (normalize_owner_name(row["owner"]), catalog_hound_identity(row["source"])))
+    groups = []
+    for row in rows:
+        group = next((candidate for candidate in groups if any(
+            owner_name_similarity(row["owner"], alias) >= threshold for alias in candidate["aliases"]
+        )), None)
+        if group is None:
+            group = {
+                "aliases": {}, "hounds": {}, "trials": {}, "emails": set(), "phones": set(),
+                "locations": set(), "entryCount": 0,
+            }
+            groups.append(group)
+        group["aliases"][row["owner"]] = group["aliases"].get(row["owner"], 0) + 1
+        group["entryCount"] += 1
+        group["trials"][row["trialKey"]] = row["trialLabel"]
+        source = row["source"]
+        hound_key = catalog_hound_identity(source)
+        hound = group["hounds"].setdefault(hound_key, {
+            "callName": catalog_clean_text(source.get("callName") or source.get("registeredName") or "Unnamed hound"),
+            "registeredName": catalog_clean_text(source.get("registeredName")),
+            "registrationNumber": catalog_clean_text(source.get("registrationNumber")),
+            "trials": {},
+        })
+        hound["trials"][row["trialKey"]] = row["trialLabel"]
+        email = catalog_clean_text(source.get("ownerEmail"))
+        phone = catalog_clean_text(source.get("ownerPhone"))
+        location = ", ".join(part for part in (
+            catalog_clean_text(source.get("ownerCity")), catalog_clean_text(source.get("ownerState")), catalog_clean_text(source.get("ownerCountry")),
+        ) if part)
+        if email:
+            group["emails"].add(email)
+        if phone:
+            group["phones"].add(phone)
+        if location:
+            group["locations"].add(location)
+    for group in groups:
+        aliases = sorted(group["aliases"], key=lambda alias: (-group["aliases"][alias], -len(alias), alias.casefold()))
+        group["name"] = aliases[0]
+        group["aliases"] = aliases
+        group["hounds"] = sorted(group["hounds"].values(), key=lambda hound: (hound["callName"].casefold(), hound["registeredName"].casefold()))
+        group["trials"] = list(group["trials"].values())
+        group["emails"] = sorted(group["emails"], key=str.casefold)
+        group["phones"] = sorted(group["phones"])
+        group["locations"] = sorted(group["locations"], key=str.casefold)
+    groups.sort(key=lambda group: normalize_owner_name(group["name"]))
+    return {"owners": groups, "missingEntries": missing, "threshold": threshold}
+
+
+def generate_owner_report_pdf(trials: list[dict], threshold: int = 90) -> bytes:
+    if not trials:
+        raise ValueError("Select at least one trial for the Owner List.")
+    report = owner_report_records(trials, threshold)
+    if not report["owners"] and not report["missingEntries"]:
+        raise ValueError("The selected trials do not contain any hound entries.")
+    document = CatalogPdfCanvas("TRIAL OWNER LIST", trials)
+    max_width = letter[0] - 86
+
+    def draw_lines(text: object, font="Helvetica", size=8.2, indent=0):
+        lines = catalog_wrap_lines(text, font, size, max_width - indent)
+        for line in lines:
+            document.ensure(size + 5)
+            document.pdf.setFillColorRGB(0.12, 0.14, 0.14)
+            document.pdf.setFont(font, size)
+            document.pdf.drawString(43 + indent, document.y, line)
+            document.y -= size + 4
+
+    owner_count = len(report["owners"])
+    hound_count = sum(len(group["hounds"]) for group in report["owners"])
+    draw_lines(
+        f"{owner_count} unique owner{'s' if owner_count != 1 else ''} | {hound_count} unique hound{'s' if hound_count != 1 else ''} | "
+        f"{sum(group['entryCount'] for group in report['owners'])} entries | Owner-name match: {report['threshold']}%",
+        "Helvetica-Bold", 9.2,
+    )
+    draw_lines("Review Matched spellings when using less than 100%; HALO groups names whose normalized spelling meets the selected similarity.", "Helvetica-Oblique", 7.8)
+    document.y -= 5
+    for group in report["owners"]:
+        document.ensure(65)
+        document.pdf.setFillColorRGB(0.02, 0.29, 0.30)
+        document.pdf.setFont("Helvetica-Bold", 10.5)
+        document.pdf.drawString(43, document.y, group["name"])
+        document.y -= 14
+        draw_lines(
+            f"{len(group['hounds'])} hound{'s' if len(group['hounds']) != 1 else ''} | {group['entryCount']} entr{'ies' if group['entryCount'] != 1 else 'y'} | "
+            f"{len(group['trials'])} trial{'s' if len(group['trials']) != 1 else ''}",
+            "Helvetica-Bold", 8.2,
+        )
+        contact = " | ".join(group["emails"] + group["phones"] + group["locations"])
+        if contact:
+            draw_lines(contact, "Helvetica", 7.8)
+        if len(group["aliases"]) > 1:
+            draw_lines("Matched spellings: " + "; ".join(group["aliases"]), "Helvetica-Oblique", 7.7)
+        for hound in group["hounds"]:
+            identity = hound["callName"]
+            if hound["registeredName"] and clean_text(hound["registeredName"]) != clean_text(hound["callName"]):
+                identity += f" - {hound['registeredName']}"
+            if hound["registrationNumber"]:
+                identity += f" ({hound['registrationNumber']})"
+            draw_lines(f"- {identity} | {', '.join(hound['trials'].values())}", "Helvetica", 7.8, 10)
+        document.y -= 7
+        document.pdf.setStrokeColorRGB(0.86, 0.88, 0.88)
+        document.pdf.setLineWidth(0.35)
+        document.pdf.line(43, document.y + 3, letter[0] - 43, document.y + 3)
+    if report["missingEntries"]:
+        document.section = ""
+        document.draw_section("Owner Name Missing")
+        for row in report["missingEntries"]:
+            source = row["source"]
+            draw_lines(
+                f"{source.get('callName') or source.get('registeredName') or 'Unnamed hound'}"
+                f" ({source.get('registrationNumber') or 'no registration'}) | {row['trialLabel']}",
+                "Helvetica", 8.2,
+            )
+    return document.finish()
+
+
 def catalog_report_filename(kind: str, trials: list[dict]) -> str:
     dates = sorted(catalog_clean_text(trial.get("startsOn") or trial.get("endsOn"))[:10] for trial in trials if trial.get("startsOn") or trial.get("endsOn"))
     suffix = dates[0] if len(dates) == 1 else f"{dates[0]}-to-{dates[-1]}" if dates else datetime.now().strftime("%Y-%m-%d")
@@ -6955,7 +7101,7 @@ def handle_test_paperwork_post(handler, parsed) -> bool:
 
 
 def handle_catalog_report_post(handler, parsed) -> bool:
-    if parsed.path not in {"/api/catalog-entries", "/api/catalog-final", "/api/specialty-catalog", "/api/specialty-results"}:
+    if parsed.path not in {"/api/catalog-entries", "/api/catalog-final", "/api/specialty-catalog", "/api/specialty-results", "/api/owner-report"}:
         return False
     length = int(handler.headers.get("Content-Length", "0"))
     raw = handler.rfile.read(length)
@@ -6985,7 +7131,11 @@ def handle_catalog_report_post(handler, parsed) -> bool:
         handler.send_json({"ok": False, "error": "Select at least one saved trial for the catalog."}, HTTPStatus.BAD_REQUEST)
         return True
     try:
-        if parsed.path in {"/api/specialty-catalog", "/api/specialty-results"}:
+        if parsed.path == "/api/owner-report":
+            threshold = max(70, min(100, int(payload.get("ownerMatchThreshold", 90))))
+            body = generate_owner_report_pdf(trials, threshold)
+            filename = catalog_report_filename("owners", trials)
+        elif parsed.path in {"/api/specialty-catalog", "/api/specialty-results"}:
             body = generate_specialty_pdf(trials, results=parsed.path == "/api/specialty-results")
             filename = catalog_report_filename("specialty-results" if parsed.path.endswith("results") else "specialty-entries", trials)
         elif parsed.path == "/api/catalog-final":
