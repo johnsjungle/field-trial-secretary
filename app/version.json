@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "releaseDate": "2026-10-20",
   "channel": "stable",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.3",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.4",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Adds a multi-trial owner list and accurate preliminary and finals judges maps built from saved draws."
+  "notes": "Allows Breeder and Kennel specialty pairs to be reassigned directly while preserving valid-pair safeguards."
 }

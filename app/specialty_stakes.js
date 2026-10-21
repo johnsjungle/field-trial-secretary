@@ -1,5 +1,5 @@
 /* Specialty links are trial-entry metadata; they never change draw separation. */
-function specialtyPairEntries(entries, kind, entryId, partnerId) {
+function specialtyPairEntries(entries, kind, entryId, partnerId, allowReassign = false) {
     if (!['Kennel', 'Breeder'].includes(kind)) throw new Error('Unknown specialty stake.');
     const flag = 'additional' + kind;
     const key = 'specialty' + kind + 'PartnerId';
@@ -12,7 +12,7 @@ function specialtyPairEntries(entries, kind, entryId, partnerId) {
         || (entry.registrationNumber && String(entry.registrationNumber).replace(/\W/g, '').toUpperCase() === String(partner.registrationNumber || '').replace(/\W/g, '').toUpperCase()))) {
         throw new Error('Choose a different hound of the same breed entered in this specialty stake.');
     }
-    if (partner && partner[key] && partner[key] !== entryId && entries.some(e => e.id === partner[key] && e[flag] && e[key] === partner.id)) {
+    if (!allowReassign && partner && partner[key] && partner[key] !== entryId && entries.some(e => e.id === partner[key] && e[flag] && e[key] === partner.id)) {
         throw new Error('That hound already has a partner. Unpair it first.');
     }
     return entries.map(e => {
@@ -36,6 +36,10 @@ function renderSpecialtyEntries(trial) {
         const eligible = entries.filter(e => e[flag]).sort((a,b) => String(a.callName || '').localeCompare(String(b.callName || '')));
         if (!eligible.length) continue;
         const heading = document.createElement('h3'); heading.textContent = kind + ' pairs'; container.append(heading);
+        const guidance = document.createElement('p');
+        guidance.className = 'field-note specialty-pair-guidance';
+        guidance.textContent = 'All same-breed hounds marked for this stake are available. A hound already in a pair is labeled and can be reassigned after confirmation.';
+        container.append(guidance);
         const wrap = document.createElement('div'); wrap.className = 'table-wrap';
         const table = document.createElement('table');
         const head = document.createElement('thead'); const hr = document.createElement('tr');
@@ -47,16 +51,30 @@ function renderSpecialtyEntries(trial) {
             select.add(new Option('Choose partner', ''));
             for (const other of eligible) {
                 if (other.id === entry.id) continue;
-                try { specialtyPairEntries(entries, kind, entry.id, other.id); }
+                try { specialtyPairEntries(entries, kind, entry.id, other.id, true); }
                 catch { continue; }
-                select.add(new Option(`${other.callName || other.registeredName} - ${other.className || ''}`, other.id));
+                const otherPartner = entries.find(candidate => candidate.id === other[key] && candidate[key] === other.id && candidate[flag]);
+                const pairedLabel = otherPartner && otherPartner.id !== entry.id
+                    ? ` (paired with ${otherPartner.callName || otherPartner.registeredName || 'another hound'})`
+                    : '';
+                select.add(new Option(`${other.callName || other.registeredName} - ${other.className || ''}${pairedLabel}`, other.id));
             }
             select.value=entry[key] || '';
             if (select.selectedIndex < 0) {select.value=''; select.title='Previous partner is unavailable. Choose a valid partner.';}
             select.disabled=Boolean(trial.archivedAt);
             select.addEventListener('change', () => {
                 const current=readForm(); if (current.archivedAt) return;
-                try {current.entries=specialtyPairEntries(current.entries || [], kind, entry.id, select.value); upsertTrial(current); saveTrials(); renderSpecialtyEntries(current); showMessage(document.getElementById('specialtyMessage'), 'Specialty pair saved.', 'success');}
+                try {
+                    const currentEntries = current.entries || [];
+                    const selected = currentEntries.find(candidate => candidate.id === select.value);
+                    const selectedPartner = selected && currentEntries.find(candidate => candidate.id === selected[key] && candidate[key] === selected.id && candidate[flag]);
+                    const replacingPair = selectedPartner && selectedPartner.id !== entry.id;
+                    if (replacingPair && !confirm(`${selected.callName || selected.registeredName || 'This hound'} is currently paired with ${selectedPartner.callName || selectedPartner.registeredName || 'another hound'} for ${kind}. Reassign it to ${entry.callName || entry.registeredName || 'this hound'}? The two previous partners will become unpaired.`)) {
+                        renderSpecialtyEntries(current);
+                        return;
+                    }
+                    current.entries=specialtyPairEntries(currentEntries, kind, entry.id, select.value, Boolean(replacingPair)); upsertTrial(current); saveTrials(); renderSpecialtyEntries(current); showMessage(document.getElementById('specialtyMessage'), replacingPair ? 'Specialty pair reassigned. Previous partners are now unpaired.' : 'Specialty pair saved.', 'success');
+                }
                 catch(error) {showMessage(document.getElementById('specialtyMessage'), error.message, 'warning'); renderSpecialtyEntries(current);}
             });
             cell.append(select); row.append(cell);
