@@ -2,6 +2,18 @@
   "schemaVersion": 1,
   "versions": [
     {
+      "version": "0.5.6",
+      "date": "2026-10-25",
+      "channel": "stable",
+      "status": "pending",
+      "summary": "Adds safe finals-stake corrections after prelims and fixes Windows startup when HALO is already running or browser files are cached.",
+      "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.6",
+      "downloads": {},
+      "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.6/README.md",
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.6/RELEASE_NOTES.md",
+      "updates": {}
+    },
+    {
       "version": "0.5.5",
       "date": "2026-10-21",
       "channel": "stable",

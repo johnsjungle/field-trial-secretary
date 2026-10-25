@@ -4092,8 +4092,50 @@ def record_groups_with_unavailable_entries(
     return augmented
 
 
+def record_groups_with_corrected_stakes(groups: list[dict]) -> list[dict]:
+    """Present prelim scores under a manually corrected finals stake without altering the saved prelim draw."""
+    corrected = copy.deepcopy(groups)
+    moves: list[tuple[dict, dict, str]] = []
+    for source in corrected:
+        if source.get("finalsOnly"):
+            continue
+        for course in source.get("courses") or []:
+            kept = []
+            for hound in course.get("hounds") or []:
+                target_stake = str(hound.get("finalsStake") or "").strip()
+                if target_stake and clean_text(target_stake) != clean_text(source.get("stake")):
+                    moves.append((source, {**course, "hounds": [{**hound, "stake": target_stake}]}, target_stake))
+                else:
+                    kept.append(hound)
+            course["hounds"] = kept
+
+    for source, moved_course, target_stake in moves:
+        target = next((group for group in corrected
+            if clean_text(group.get("breed")) == clean_text(source.get("breed"))
+            and clean_text(group.get("stake")) == clean_text(target_stake)), None)
+        if target is None:
+            target = {
+                **copy.deepcopy(source),
+                "id": f"{source.get('id') or 'group'}::corrected::{clean_text(target_stake)}",
+                "stake": target_stake,
+                "flight": "",
+                "courses": [],
+                "finalDraw": None,
+                "finalsOnly": True,
+            }
+            corrected.append(target)
+        course = next((item for item in target.get("courses") or []
+            if str(item.get("number") or "") == str(moved_course.get("number") or "")), None)
+        if course is None:
+            course = {**moved_course, "hounds": []}
+            target.setdefault("courses", []).append(course)
+        course.setdefault("hounds", []).extend(moved_course.get("hounds") or [])
+
+    return corrected
+
+
 def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "", combine_mixed_posting: bool = False) -> list[dict]:
-    groups = draw_groups_for_print(trial)
+    groups = record_groups_with_corrected_stakes(draw_groups_for_print(trial))
     if group_id:
         groups = [group for group in groups if str(group.get("id") or "") == str(group_id)]
     elif breed:

@@ -159,6 +159,18 @@ $startVbs = Join-Path $packageRoot "Start HALO.vbs"
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 appFolder = fso.GetParentFolderName(WScript.ScriptFullName)
+appUrl = "http://127.0.0.1:8765/"
+On Error Resume Next
+Set request = CreateObject("WinHttp.WinHttpRequest.5.1")
+request.SetTimeouts 2000, 2000, 2000, 2000
+request.Open "GET", appUrl, False
+request.Send
+If Err.Number = 0 And request.Status = 200 Then
+    shell.Run appUrl & "?launch=" & Timer, 1, False
+    WScript.Quit 0
+End If
+Err.Clear
+On Error GoTo 0
 shell.CurrentDirectory = appFolder
 command = """" & appFolder & "\FieldTrialSecretary.exe" & """" & " --host 127.0.0.1 --port 8765 --open-browser"
 shell.Run command, 0, False
