@@ -675,10 +675,15 @@ def _update_index_check(app_dir: Path) -> str:
     if status != "available":
         raise AssertionError("Installed version is not marked available or pending publication.")
     updates = current.get("updates") or {}
-    missing = [key for key in ("windows", "appleSilicon", "intel", "linuxAppImage") if not (updates.get(key) or {}).get("sha256")]
+    downloads = current.get("downloads") or {}
+    supported = ("windows", "appleSilicon", "intel", "linuxAppImage")
+    published = [key for key in supported if downloads.get(key)]
+    if not published:
+        raise AssertionError("No automatic update package is published for this version.")
+    missing = [key for key in published if not (updates.get(key) or {}).get("sha256")]
     if missing:
         raise AssertionError("Missing update checksums: " + ", ".join(missing))
-    return f"v{version.get('version')} is available for four updater platforms"
+    return f"v{version.get('version')} is available for {len(published)} updater platform{'s' if len(published) != 1 else ''}"
 
 
 def _akc_record_check(context: dict, trial: dict) -> str:

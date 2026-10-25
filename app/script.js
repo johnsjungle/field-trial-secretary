@@ -9076,6 +9076,56 @@ function appendScoreJumpNav(container, items, label = 'Quick scroll') {
     container.appendChild(nav);
 }
 
+function resultsGroupsWithCorrectedStakes(trial, sourceGroups) {
+    const groups = structuredClone(sourceGroups || []);
+    const entriesById = new Map((trial.entries || []).map((entry) => [entry.id, entry]));
+    const moves = [];
+
+    groups.forEach((source) => {
+        if (source.finalsOnly) return;
+        (source.courses || []).forEach((course) => {
+            const kept = [];
+            (course.hounds || []).forEach((hound) => {
+                const entry = entriesById.get(hound.entryId) || {};
+                const targetStake = finalsStakeForHound(source, hound, entry);
+                if (targetStake && clean(targetStake) !== clean(source.stake)) {
+                    moves.push({ source, course, hound: { ...hound, stake: targetStake }, targetStake });
+                } else {
+                    kept.push(hound);
+                }
+            });
+            course.hounds = kept;
+        });
+    });
+
+    moves.forEach(({ source, course, hound, targetStake }) => {
+        let target = groups.find((group) => (
+            clean(group.breed) === clean(source.breed)
+            && clean(group.stake) === clean(targetStake)
+        ));
+        if (!target) {
+            target = {
+                ...structuredClone(source),
+                id: `${source.id || 'group'}::corrected-results::${clean(targetStake)}`,
+                stake: targetStake,
+                flight: '',
+                courses: [],
+                finalDraw: null,
+                finalsOnly: true,
+            };
+            groups.push(target);
+        }
+        let targetCourse = (target.courses || []).find((item) => String(item.number || '') === String(course.number || ''));
+        if (!targetCourse) {
+            targetCourse = { ...course, hounds: [] };
+            target.courses = [...(target.courses || []), targetCourse];
+        }
+        targetCourse.hounds.push(hound);
+    });
+
+    return groups;
+}
+
 function renderMainResultsBook(trial) {
     const container = document.getElementById('mainResultsBook');
     if (!container) {
@@ -9103,7 +9153,8 @@ function renderMainResultsBook(trial) {
     container.appendChild(summary);
 
     const entriesById = new Map((trial.entries || []).map((entry) => [entry.id, entry]));
-    const groups = visibleScoreGroups(draw, trial, 'main');
+    const resultsDraw = { ...draw, groups: resultsGroupsWithCorrectedStakes(trial, draw.groups) };
+    const groups = visibleScoreGroups(resultsDraw, trial, 'main');
     appendScoreJumpNav(container, groups.map((group) => ({
         id: scoringGroupAnchor('main', group),
         label: groupTitle(group),
@@ -9478,7 +9529,7 @@ function groupNeedsFinalDraw(group) {
 }
 
 function finalsStakeForHound(group, hound, entry = {}) {
-    return hound.finalsStake || hound.stake || group.stake || entry.className || '';
+    return hound.finalsStake || entry.className || hound.stake || group.stake || '';
 }
 
 function finalsStakeOptionsForHound(trial, group) {
@@ -11816,7 +11867,7 @@ function normalizeFinalPlacementState(trial) {
         ...trial.preliminaryDraw,
         groups: trial.preliminaryDraw.groups.map((group) => (
             group.finalDraw && Array.isArray(group.finalDraw.courses)
-                ? recomputeFinalPlacements(group)
+                ? recomputeFinalPlacements(group, trial)
                 : group
         )),
     };
@@ -15850,7 +15901,7 @@ function tieBreakResolutionIsCurrent(rows) {
     return !latestFinalScore || (latestTieBreakScore && latestTieBreakScore >= latestFinalScore);
 }
 
-function recomputeFinalPlacements(group) {
+function recomputeFinalPlacements(group, trial = readForm()) {
     if (!group.finalDraw || !Array.isArray(group.finalDraw.courses)) {
         return group;
     }
@@ -15858,11 +15909,14 @@ function recomputeFinalPlacements(group) {
     const finalRows = finalsRowsForGroup(group);
     const incomplete = finalRows.some((row) => !hasScoreValue(row.hound.finalScore) && !row.hound.finalOutcome);
     const prelimByEntry = new Map();
-    groupScoreRows(group).forEach((row) => {
-        const prelimScore = Number(row.score);
-        if (hasScoreValue(row.score) && !row.outcome && Number.isFinite(prelimScore)) {
-            prelimByEntry.set(row.hound.entryId, prelimScore);
-        }
+    const sourceGroups = ((((trial || {}).preliminaryDraw || {}).groups) || []);
+    (sourceGroups.length ? sourceGroups : [group]).forEach((sourceGroup) => {
+        groupScoreRows(sourceGroup).forEach((row) => {
+            const prelimScore = Number(row.score);
+            if (hasScoreValue(row.score) && !row.outcome && Number.isFinite(prelimScore)) {
+                prelimByEntry.set(row.hound.entryId, prelimScore);
+            }
+        });
     });
 
     const finals = incomplete ? [] : finalRows
@@ -15876,7 +15930,7 @@ function recomputeFinalPlacements(group) {
         .sort((a, b) => b.total - a.total);
 
     const placementByEntry = new Map();
-    const qualifyingMinimum = placementQualifyingMinimum(judgeCountForGroup(readForm(), group));
+    const qualifyingMinimum = placementQualifyingMinimum(judgeCountForGroup(trial, group));
     finalPlacementPartitions(finals, group).forEach((partition) => {
         assignFinalPlacementLabels(partition, placementByEntry, qualifyingMinimum);
     });

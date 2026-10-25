@@ -4092,9 +4092,13 @@ def record_groups_with_unavailable_entries(
     return augmented
 
 
-def record_groups_with_corrected_stakes(groups: list[dict]) -> list[dict]:
+def record_groups_with_corrected_stakes(trial: dict, groups: list[dict]) -> list[dict]:
     """Present prelim scores under a manually corrected finals stake without altering the saved prelim draw."""
     corrected = copy.deepcopy(groups)
+    entries_by_id = {
+        str(entry.get("id") or ""): entry
+        for entry in trial.get("entries") or []
+    }
     moves: list[tuple[dict, dict, str]] = []
     for source in corrected:
         if source.get("finalsOnly"):
@@ -4102,7 +4106,8 @@ def record_groups_with_corrected_stakes(groups: list[dict]) -> list[dict]:
         for course in source.get("courses") or []:
             kept = []
             for hound in course.get("hounds") or []:
-                target_stake = str(hound.get("finalsStake") or "").strip()
+                entry = entries_by_id.get(str(hound.get("entryId") or "")) or {}
+                target_stake = str(hound.get("finalsStake") or entry.get("className") or "").strip()
                 if target_stake and clean_text(target_stake) != clean_text(source.get("stake")):
                     moves.append((source, {**course, "hounds": [{**hound, "stake": target_stake}]}, target_stake))
                 else:
@@ -4135,7 +4140,7 @@ def record_groups_with_corrected_stakes(groups: list[dict]) -> list[dict]:
 
 
 def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "", combine_mixed_posting: bool = False) -> list[dict]:
-    groups = record_groups_with_corrected_stakes(draw_groups_for_print(trial))
+    groups = record_groups_with_corrected_stakes(trial, draw_groups_for_print(trial))
     if group_id:
         groups = [group for group in groups if str(group.get("id") or "") == str(group_id)]
     elif breed:

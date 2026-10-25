@@ -7,6 +7,86 @@ assert.match(source, /Finals Stake/);
 assert.match(source, /buckets\.get\(key\)\.hounds\.push/);
 assert.doesNotMatch(source, /isLciBreed\(/, 'finals stake controls must use HALO\'s existing LCI helper');
 
+const stakeStart = source.indexOf('function finalsStakeForHound(');
+const stakeEnd = source.indexOf('function finalsStakeOptionsForHound(', stakeStart);
+const stakeContext = vm.createContext({});
+vm.runInContext(source.slice(stakeStart, stakeEnd), stakeContext);
+assert.equal(
+    stakeContext.finalsStakeForHound({ stake: 'Open' }, { stake: 'Open' }, { className: 'Veteran' }),
+    'Veteran',
+    'an entry corrected before the explicit finalsStake marker existed should use its current stake',
+);
+assert.equal(
+    stakeContext.finalsStakeForHound({ stake: 'Open' }, { stake: 'Open', finalsStake: 'Specials' }, { className: 'Veteran' }),
+    'Specials',
+    'an explicit finals stake correction should remain authoritative',
+);
+
+const resultsStart = source.indexOf('function resultsGroupsWithCorrectedStakes(');
+const resultsEnd = source.indexOf('function renderMainResultsBook(', resultsStart);
+const resultsContext = vm.createContext({
+    structuredClone,
+    clean: (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]+/g, ''),
+    finalsStakeForHound: (group, hound, entry = {}) => hound.finalsStake || entry.className || hound.stake || group.stake || '',
+});
+vm.runInContext(source.slice(resultsStart, resultsEnd), resultsContext);
+const correctedResults = resultsContext.resultsGroupsWithCorrectedStakes({
+    entries: [{ id: 'roger', className: 'Veteran' }],
+}, [{
+    id: 'ah-open', breed: 'AH', stake: 'Open',
+    courses: [{ number: 1, hounds: [{ entryId: 'roger', prelimScore: '152' }, { entryId: 'juju', prelimScore: '145' }] }],
+}, {
+    id: 'ah-veteran', breed: 'AH', stake: 'Veteran', courses: [],
+    finalDraw: { courses: [{ number: 4, hounds: [{ entryId: 'roger', finalScore: '148' }] }] },
+}]);
+const correctedOpen = correctedResults.find((group) => group.id === 'ah-open');
+const correctedVeteran = correctedResults.find((group) => group.id === 'ah-veteran');
+assert.deepEqual(Array.from(correctedOpen.courses[0].hounds, (hound) => hound.entryId), ['juju']);
+assert.deepEqual(Array.from(correctedVeteran.courses[0].hounds, (hound) => hound.entryId), ['roger']);
+assert.equal(correctedVeteran.courses[0].hounds[0].prelimScore, '152');
+assert.equal(correctedVeteran.finalDraw.courses[0].hounds[0].finalScore, '148');
+
+const placementStart = source.indexOf('function recomputeFinalPlacements(');
+const placementEnd = source.indexOf('function finalPlacementPartitions(', placementStart);
+const placementContext = vm.createContext({
+    readForm: () => ({}),
+    finalsRowsForGroup: (group) => (group.finalDraw.courses || []).flatMap((course) => (
+        (course.hounds || []).map((hound) => ({ course, hound }))
+    )),
+    groupScoreRows: (group) => (group.courses || []).flatMap((course) => (
+        (course.hounds || []).map((hound) => ({ course, hound, score: hound.prelimScore, outcome: hound.prelimOutcome }))
+    )),
+    hasScoreValue: (value) => String(value ?? '').trim() !== '',
+    finalPlacementPartitions: (rows) => [rows],
+    placementQualifyingMinimum: () => 0,
+    judgeCountForGroup: () => 2,
+    assignFinalPlacementLabels: (rows, placements) => rows.forEach((row, index) => placements.set(row.entryId, String(index + 1))),
+    resolveCompletedTieBreaks: () => {},
+});
+vm.runInContext(source.slice(placementStart, placementEnd), placementContext);
+const placementTrial = {
+    preliminaryDraw: { groups: [{
+        id: 'ah-open', stake: 'Open',
+        courses: [{ number: 1, hounds: [{ entryId: 'roger', prelimScore: '152', finalsStake: 'Veteran' }] }],
+    }, {
+        id: 'ah-veteran', stake: 'Veteran',
+        courses: [{ number: 1, hounds: [{ entryId: 'flower', prelimScore: '155' }] }],
+    }] },
+};
+const placementGroup = {
+    id: 'ah-veteran', stake: 'Veteran', courses: placementTrial.preliminaryDraw.groups[1].courses,
+    finalDraw: { courses: [{ number: 1, hounds: [
+        { entryId: 'roger', finalScore: '148' },
+        { entryId: 'flower', finalScore: '151' },
+    ] }] },
+};
+const recomputed = placementContext.recomputeFinalPlacements(placementGroup, placementTrial);
+const recomputedById = new Map(recomputed.finalDraw.courses[0].hounds.map((hound) => [hound.entryId, hound]));
+assert.equal(recomputedById.get('roger').combinedScore, '300');
+assert.equal(recomputedById.get('roger').placement, '2');
+assert.equal(recomputedById.get('flower').combinedScore, '306');
+assert.equal(recomputedById.get('flower').placement, '1');
+
 const start = source.indexOf('async function updateFinalsStake(');
 const end = source.indexOf('function updatePrelimScore(', start);
 assert.ok(start >= 0 && end > start, 'finals stake correction helper should exist');
