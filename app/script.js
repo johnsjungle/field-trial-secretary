@@ -3789,6 +3789,71 @@ function entriesChangedAfterPreliminaryDraw(trial) {
     return Boolean(trial && trial.preliminaryDraw && trial.preliminaryDraw.entriesFingerprint && entryDrawFingerprint(trial.entries || []) !== trial.preliminaryDraw.entriesFingerprint);
 }
 
+function trialEntrySyncIssues(trial) {
+    if (!trial || trial.archivedAt) return [];
+    const groups = trial.preliminaryDraw?.groups || [];
+    if (!groups.length) return [];
+    const prelimByEntry = new Map();
+    const finalsByEntry = new Map();
+    groups.forEach((group) => {
+        (group.courses || []).forEach((course) => (course.hounds || []).forEach((hound) => {
+            prelimByEntry.set(hound.entryId, { group, hound });
+        }));
+        (group.finalDraw?.courses || []).forEach((course) => (course.hounds || []).forEach((hound) => {
+            finalsByEntry.set(hound.entryId, { group, hound });
+        }));
+    });
+    const stakeKey = (value) => {
+        const key = clean(value);
+        return ['FCH', 'FIELDCHAMPION', 'SPECIAL', 'SPECIALS'].includes(key) ? 'CHAMPION' : key;
+    };
+    const issues = [];
+    (trial.entries || []).forEach((entry) => {
+        const prelim = prelimByEntry.get(entry.id);
+        const name = entry.callName || entry.registeredName || entry.registrationNumber || 'Unnamed hound';
+        if (!prelim) {
+            if (!entry.rollCallStatus || ['present', 'not_checked'].includes(entry.rollCallStatus)) {
+                issues.push(`${name}: missing from the preliminary draw${entry.rollCallStatus === 'present' ? '' : '; finish roll call'}.`);
+            }
+            return;
+        }
+        const final = finalsByEntry.get(entry.id);
+        const current = final || prelim;
+        const expectedBreed = runGroupBreedForEntry(entry);
+        const expectedStake = runGroupStakeForEntry(entry);
+        const actualStake = (!final && isPreliminaryDrawLocked(trial) && current.hound.finalsStake)
+            || current.hound.stake || current.group.stake;
+        if (clean(expectedBreed) !== clean(current.group.breed)
+            || stakeKey(expectedStake) !== stakeKey(actualStake)) {
+            issues.push(`${name}: entry is ${expectedBreed} ${expectedStake}, but the draw is ${current.group.breed} ${actualStake}.`);
+        }
+    });
+    return issues;
+}
+
+function trialEntrySyncWarning(trial) {
+    if (!trial || trial.archivedAt) return null;
+    const issues = trialEntrySyncIssues(trial);
+    const runPlanStale = entriesChangedAfterRunPlan(trial);
+    if (!issues.length && !runPlanStale) return null;
+    const scored = isPreliminaryDrawLocked(trial);
+    const detail = [
+        runPlanStale ? 'Entries changed since Update Hound Entries was last used.' : '',
+        ...issues.slice(0, 5),
+        issues.length > 5 ? `${issues.length - 5} more hounds need review.` : '',
+        scored
+            ? 'Scoring has started. Do not rebuild prelims. Refresh Running Order & Assignments with Update Hound Entries if needed. Use Finals Stake in Prelim Scoring for stake corrections before finals are scored. Review late entries or completed finals separately.'
+            : 'Review entries, click Update Hound Entries in Running Order & Assignments, then build or rebuild prelims after roll call. Update Hound Entries alone does not update an existing draw.',
+    ].filter(Boolean).join(' ');
+    return {
+        id: 'entry-draw-sync', label: 'Entries need review', status: 'attention', entrySyncWarning: true,
+        tab: scored ? 'scoring' : 'runplan',
+        ...(scored ? { scoringPage: 'Prelim Scoring' } : {}),
+        sectionTitle: scored ? 'Prelim Scoring' : 'Running Order & Assignments',
+        action: scored ? 'Review Scoring' : 'Review Hound Entries', detail,
+    };
+}
+
 function entriesChangedAfterPrinted(trial, key) {
     const printedFingerprint = trial && trial.printStatusFingerprints && trial.printStatusFingerprints[key];
     return Boolean(printedFingerprint && entrySetupFingerprint((trial || {}).entries || []) !== printedFingerprint);
@@ -3972,6 +4037,8 @@ function trialGuideSteps(trial) {
         ...step,
         status: hasTrial ? step.status : (step.id === 'trial-set' ? 'ready' : 'blocked'),
     }));
+    const entryWarning = trialEntrySyncWarning(trial);
+    if (entryWarning) normalizedSteps.unshift(entryWarning);
     if (hasTrial && normalizedSteps.every((step) => step.status === 'done')) {
         return [...normalizedSteps, ...trialWrapUpGuideSteps(trial)];
     }
@@ -4100,7 +4167,10 @@ function renderTrialGuide(trial) {
     const steps = trialGuideSteps(trial);
     const doneCount = steps.filter((step) => step.status === 'done').length;
     const next = nextTrialGuideStep(steps);
-    trialGuideSummary.textContent = trial ? `${doneCount} of ${steps.length} complete` : 'No trial selected';
+    const entryWarning = steps.find((step) => step.entrySyncWarning);
+    document.getElementById('trialGuideCard')?.classList.toggle('entry-sync-warning', Boolean(entryWarning));
+    trialGuideNext.classList.toggle('entry-sync-warning', Boolean(entryWarning));
+    trialGuideSummary.textContent = entryWarning ? 'Warning: entries need review' : (trial ? `${doneCount} of ${steps.length} complete` : 'No trial selected');
     trialGuideNext.innerHTML = '';
     trialGuideList.innerHTML = '';
 
@@ -4113,7 +4183,9 @@ function renderTrialGuide(trial) {
     }
 
     const nextText = document.createElement('span');
-    nextText.innerHTML = `<strong>${next ? next.label : 'Trial Complete'}</strong> ${next ? next.detail : 'All guide items are complete.'}`;
+    const nextTitle = document.createElement('strong');
+    nextTitle.textContent = next ? next.label : 'Trial Complete';
+    nextText.append(nextTitle, document.createTextNode(` ${next ? next.detail : 'All guide items are complete.'}`));
     trialGuideNext.appendChild(nextText);
     if (next) {
         const button = document.createElement('button');
@@ -4126,7 +4198,7 @@ function renderTrialGuide(trial) {
 
     steps.forEach((step) => {
         const item = document.createElement('li');
-        item.className = `guide-step ${step.status}`;
+        item.className = `guide-step ${step.status}${step.entrySyncWarning ? ' entry-sync-warning' : ''}`;
         const button = document.createElement('button');
         button.type = 'button';
         button.dataset.help = step.detail;
@@ -4137,7 +4209,7 @@ function renderTrialGuide(trial) {
         text.textContent = step.label;
         const status = document.createElement('span');
         status.className = 'guide-step-status';
-        status.textContent = step.status === 'done' ? 'Done' : (step.status === 'blocked' ? 'Blocked' : 'Next');
+        status.textContent = step.entrySyncWarning ? 'Warning' : (step.status === 'done' ? 'Done' : (step.status === 'blocked' ? 'Blocked' : 'Next'));
         button.append(dot, text, status);
         item.appendChild(button);
         trialGuideList.appendChild(item);
@@ -7495,8 +7567,24 @@ function showPreliminaryDrawLockedMessage(scope = 'draw') {
     showMessage(rollCallMessage, text, 'warning');
 }
 
-function buildPreliminaryDraw() {
+async function buildPreliminaryDraw() {
     const trial = readForm();
+    const entryWarning = trialEntrySyncWarning(trial);
+    if (entryWarning) {
+        const mustReview = isPreliminaryDrawLocked(trial) || entriesChangedAfterRunPlan(trial);
+        const proceed = await showTrialConfirm({
+            title: 'Entries and Draw Need Review',
+            eyebrow: 'Check before building prelims',
+            message: entryWarning.detail,
+            primaryText: mustReview ? entryWarning.action : 'Build from Current Entries',
+            secondaryText: 'Cancel',
+        });
+        if (mustReview) {
+            if (proceed) goToWorkflowStep(entryWarning);
+            return;
+        }
+        if (!proceed) return;
+    }
     if (isPreliminaryDrawLocked(trial)) {
         showPreliminaryDrawLockedMessage('draw');
         render();

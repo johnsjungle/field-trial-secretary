@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.5.7",
-  "releaseDate": "2026-10-25",
+  "version": "0.5.8",
+  "releaseDate": "2026-10-26",
   "channel": "stable",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.7",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.8",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Fixes ASFA results and record sheets after a hound is moved to a different stake following preliminary scoring."
+  "notes": "Adds a pink Trial Guide warning and a preliminary-draw review popup for changed stakes, late entries, and outdated running orders. Includes the corrected stake results and record sheets on all platforms."
 }
