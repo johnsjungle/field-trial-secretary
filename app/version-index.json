@@ -5,13 +5,36 @@
       "version": "0.5.8",
       "date": "2026-10-26",
       "channel": "stable",
-      "status": "pending",
+      "status": "available",
       "summary": "Adds a pink Trial Guide warning and preliminary-draw review for changed stakes and late entries. Includes corrected stake results and record sheets for Windows, macOS, and Ubuntu.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.8",
-      "downloads": {},
+      "downloads": {
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/Field-Trial-Secretary-0.5.8-portable-20261027-011621.zip",
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/Field-Trial-Secretary-0.5.8-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/Field-Trial-Secretary-0.5.8-macOS-x86_64.dmg",
+        "linuxAppImage": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/HALO-0.5.8-x86_64.AppImage",
+        "linuxDeb": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/HALO-0.5.8-Ubuntu-amd64.deb"
+      },
       "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.8/README.md",
       "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.8/RELEASE_NOTES.md",
-      "updates": {}
+      "updates": {
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/Field-Trial-Secretary-0.5.8-portable-20261027-011621.zip",
+          "sha256": "ded90cfed482242624007b74e8960c50d1a1a672d00c974fc000011e70a002e8"
+        },
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/Field-Trial-Secretary-0.5.8-macOS-arm64.dmg",
+          "sha256": "faabd113c34d505e22d09b13ba4a5126a269c359ec7e414c4bd0a31e1b2fe56e"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/Field-Trial-Secretary-0.5.8-macOS-x86_64.dmg",
+          "sha256": "bf82f0f0bfdc9214bac16a73d8ff88813134ea5d37e9ec21b998c936277e4bf2"
+        },
+        "linuxAppImage": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.8/HALO-0.5.8-x86_64.AppImage",
+          "sha256": "3cd148b2b0bdb8440e830245a4981c43c6d345163c0ca6a4bf6b0773b786309b"
+        }
+      }
     },
     {
       "version": "0.5.7",
@@ -698,5 +721,5 @@
     }
   ],
   "releasesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases",
-  "generatedAt": "2026-10-07"
+  "generatedAt": "2026-10-26"
 }
