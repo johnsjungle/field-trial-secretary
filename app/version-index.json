@@ -5,13 +5,36 @@
       "version": "0.5.9",
       "date": "2026-10-28",
       "channel": "stable",
-      "status": "pending",
+      "status": "available",
       "summary": "Fixes AKC Specials counts on worker sheets and Open, Specials, Veteran ordering in record packets, with expanded automatic report tests.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.9",
-      "downloads": {},
+      "downloads": {
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/Field-Trial-Secretary-0.5.9-portable-20261029-004453.zip",
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/Field-Trial-Secretary-0.5.9-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/Field-Trial-Secretary-0.5.9-macOS-x86_64.dmg",
+        "linuxAppImage": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/HALO-0.5.9-x86_64.AppImage",
+        "linuxDeb": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/HALO-0.5.9-Ubuntu-amd64.deb"
+      },
       "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.9/README.md",
       "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.9/RELEASE_NOTES.md",
-      "updates": {}
+      "updates": {
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/Field-Trial-Secretary-0.5.9-portable-20261029-004453.zip",
+          "sha256": "06db95e47188e410199597bda2fe64a8e4994bfd3784d786c16129b4a5404f6e"
+        },
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/Field-Trial-Secretary-0.5.9-macOS-arm64.dmg",
+          "sha256": "eea68f099900ac5a9afc94d731623e5ea2699c02a350f115325a973e9e3f8617"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/Field-Trial-Secretary-0.5.9-macOS-x86_64.dmg",
+          "sha256": "69c6de18ffd65a45874a0350dc3709d82ea3c8f152e16083c83abb6193664749"
+        },
+        "linuxAppImage": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.9/HALO-0.5.9-x86_64.AppImage",
+          "sha256": "1f672733fd351f6c9097b1c80f43749834082d34ee724b6be89b58a86d5a292d"
+        }
+      }
     },
     {
       "version": "0.5.8",
@@ -733,5 +756,5 @@
     }
   ],
   "releasesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases",
-  "generatedAt": "2026-10-26"
+  "generatedAt": "2026-10-28"
 }
