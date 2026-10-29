@@ -22,7 +22,7 @@ class SystemTestRunnerTests(unittest.TestCase):
         self.assertGreaterEqual(report["summary"]["total"], 30)
         self.assertEqual(self.state_hash(), before)
         ids = {row["id"] for row in report["results"]}
-        self.assertTrue({"pdf-akc-record", "pdf-asfa-record", "pdf-bie-judges", "database-unchanged"} <= ids)
+        self.assertTrue({"pdf-akc-record", "pdf-asfa-record", "pdf-bie-judges", "database-unchanged", "akc-specials-print-order"} <= ids)
 
     def test_client_results_are_merged_and_counted(self):
         report = run_server_system_tests(server.__dict__, [{

@@ -18890,7 +18890,7 @@ function renderWorkerSheet(trial) {
     if (showField) headers.push('Field');
     headers.push('Order', 'Entries');
     if (showMixed) headers.push('Mixed');
-    headers.push('Open', 'Fch/Exc', 'Vet', 'Judges', 'Lure Operator', 'Huntmaster');
+    headers.push('Open', rulesForTrial(trial).association === 'AKC' ? 'Specials' : 'Fch/Exc', 'Vet', 'Judges', 'Lure Operator', 'Huntmaster');
     if (showPaddock) headers.push('Paddock');
     if (showFieldClerk) headers.push('Field Clerk');
 
@@ -18987,7 +18987,7 @@ function workerSheetStakeRuns(trial, breed) {
             counts.open += 1;
             return;
         }
-        if (normalized === 'FIELDCHAMPION' || normalized === 'FCH' || normalized === 'EXCELLENT') {
+        if (['FIELDCHAMPION', 'FCH', 'FC', 'EXCELLENT', 'SPECIAL', 'SPECIALS'].includes(normalized)) {
             counts.fchExc += 1;
             return;
         }
@@ -19202,7 +19202,7 @@ function stakeSortOrder(stake) {
     if (normalized === 'OPEN' || normalized === 'SINGLES') {
         return 1;
     }
-    if (normalized === 'FIELDCHAMPION' || normalized === 'FCH' || normalized === 'EXCELLENT' || normalized === 'SPECIAL' || normalized === 'SPECIALS') {
+    if (normalized === 'FIELDCHAMPION' || normalized === 'FCH' || normalized === 'FC' || normalized === 'EXCELLENT' || normalized === 'SPECIAL' || normalized === 'SPECIALS') {
         return 2;
     }
     if (normalized === 'VETERAN') {

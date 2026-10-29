@@ -144,6 +144,33 @@
             assert(judgeMap.length === 1 && judgeMap[0].breed === 'RR', 'Empty breeds leaked onto the judges map.');
             return '26 setup groups; only entered RR prints; existing judge retained';
         }));
+        results.push(check('worker-akc-specials', 'Judges & Assignments', 'Worker sheet counts AKC Specials and ASFA champion stakes', () => {
+            const trial = {
+                association: 'AKC',
+                entries: [
+                    ...Array.from({ length: 10 }, (_, index) => ({ id: `open-${index}`, breed: 'WH', className: 'Open' })),
+                    { id: 'special-1', breed: 'WH', className: 'Specials' },
+                    { id: 'special-2', breed: 'WH', className: 'Special' },
+                    { id: 'vet-1', breed: 'WH', className: 'Veteran' },
+                    { id: 'vet-2', breed: 'WH', className: 'Veteran' },
+                ],
+            };
+            const before = JSON.stringify(trial);
+            const counts = workerSheetStakeRuns(trial, 'WH');
+            same([counts.total, counts.open, counts.fchExc, counts.vet], [14, '4(10)', '1(2)', '1(2)'], 'Worker sheet omitted AKC Specials.');
+            assert(JSON.stringify(trial) === before, 'Worker sheet changed the trial.');
+            const asfa = workerSheetStakeRuns({ association: 'ASFA', entries: [{ id: 'fch', breed: 'RR', className: 'Field Champion' }] }, 'RR');
+            assert(asfa.fchExc === '1(1)', 'ASFA Field Champion count changed.');
+            const lci = workerSheetStakeRuns({ association: 'ASFA', entries: [{ id: 'lci', breed: 'LCI Small', className: 'Excellent' }] }, 'LCI Small');
+            assert(lci.fchExc === '1(1)', 'LCI Excellent count changed.');
+            return 'AKC 14 entries: Open 4(10), Specials 1(2), Vet 1(2); ASFA and LCI retained';
+        }));
+        results.push(check('akc-specials-draw-order', 'Draws', 'AKC printing orders Open, Specials, then Veteran', () => {
+            const groups = ['Veteran', 'Specials', 'Open'].map((stake) => ({ breed: 'RR', stake }));
+            const trial = { association: 'AKC', eventFields: [{ id: 'field', name: 'Field 1' }], runPlan: [{ breed: 'RR', runOrder: 1, fieldId: 'field' }] };
+            same(sortDrawGroupsForPrint(groups, trial).map((group) => group.stake), ['Open', 'Specials', 'Veteran'], 'AKC print order changed.');
+            return 'Open, Specials, Veteran';
+        }));
         results.push(check('roll-call-payment', 'Roll Call', 'Paid or unpaid status is an optional print column', () => {
             const control = document.getElementById('rollCallShowPayment');
             assert(control, 'Missing paid/unpaid roll-call option.');

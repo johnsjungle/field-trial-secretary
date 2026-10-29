@@ -1,9 +1,9 @@
 {
   "name": "HALO",
-  "version": "0.5.8",
-  "releaseDate": "2026-10-26",
+  "version": "0.5.9",
+  "releaseDate": "2026-10-28",
   "channel": "stable",
-  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.8",
+  "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.9",
   "latestVersionUrl": "https://raw.githubusercontent.com/johnsjungle/field-trial-secretary-updates/main/version-index.json",
-  "notes": "Adds a pink Trial Guide warning and a preliminary-draw review popup for changed stakes, late entries, and outdated running orders. Includes the corrected stake results and record sheets on all platforms."
+  "notes": "Fixes missing AKC Specials on worker sheets, labels the AKC column Specials, and orders record packets Open, Specials, Veteran. Adds automatic regression checks for these reports."
 }

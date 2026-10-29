@@ -4257,8 +4257,11 @@ def split_mixed_record_groups(groups: list[dict]) -> list[dict]:
 def record_packet_sort_key(group: dict) -> tuple:
     stake_order = {
         "OPEN": 1,
+        "SPECIAL": 2,
+        "SPECIALS": 2,
         "FIELDCHAMPION": 2,
         "FCH": 2,
+        "FC": 2,
         "EXCELLENT": 2,
         "VETERAN": 3,
         "SINGLES": 4,
@@ -6065,7 +6068,7 @@ def draw_akc_stake_check(pdf: canvas.Canvas, stake: object) -> bool:
     normalized = clean_text(stake)
     if normalized == "OPEN":
         x = 204
-    elif normalized in {"FCH", "FIELDCHAMPION", "SPECIAL", "SPECIALS"}:
+    elif normalized in {"FCH", "FC", "FIELDCHAMPION", "SPECIAL", "SPECIALS"}:
         x = 276
     elif normalized in {"BOB", "BIF", "BOBBIF"}:
         x = 348

@@ -512,6 +512,7 @@ def run_server_system_tests(context: dict, client_results: list[dict] | None = N
     _check_result(results, "server-live-db", "Database", "Current database passes SQLite integrity", lambda: _live_database_check(context))
     _check_result(results, "server-memory-db", "Database", "Database schema initializes in isolation", lambda: _memory_database_check(context))
     _check_result(results, "server-update-index", "Updates", "Bundled update catalog is valid", lambda: _update_index_check(app_dir))
+    _check_result(results, "akc-specials-print-order", "Official Forms", "AKC Specials print between Open and Veteran", lambda: _akc_specials_order_check(context))
 
     asfa = _trial_fixture("ASFA")
     akc = _trial_fixture("AKC")
@@ -684,6 +685,19 @@ def _update_index_check(app_dir: Path) -> str:
     if missing:
         raise AssertionError("Missing update checksums: " + ", ".join(missing))
     return f"v{version.get('version')} is available for {len(published)} updater platform{'s' if len(published) != 1 else ''}"
+
+
+def _akc_specials_order_check(context: dict) -> str:
+    for champion_stake in ("Specials", "Special", "FCh", "FC", "Field Champion"):
+        groups = [{"id": stake, "breed": "RR", "stake": stake, "courses": []}
+                  for stake in ("Veteran", champion_stake, "Open")]
+        trial = {"association": "AKC", "entries": [], "preliminaryDraw": {"groups": groups}}
+        expected = ["Open", champion_stake, "Veteran"]
+        draw_order = [group["stake"] for group in context["draw_groups_for_print"](trial)]
+        packet_order = [group["stake"] for group in context["record_groups_for_print"](trial, sort_mode="alpha")]
+        if draw_order != expected or packet_order != expected:
+            raise AssertionError(f"Wrong order for {champion_stake}: draw={draw_order}, packet={packet_order}")
+    return "Open, Specials, Veteran retained for draw sheets and alphabetical record packets, including legacy champion aliases"
 
 
 def _akc_record_check(context: dict, trial: dict) -> str:
