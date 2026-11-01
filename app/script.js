@@ -8076,6 +8076,45 @@ function updateDrawGroupManualFields(groupId, changes) {
         return;
     }
 
+    if (group && 'mixedStake' in changes && Boolean(changes.mixedStake) !== Boolean(group.mixedStake)) {
+        const breedGroups = draw.groups.filter((item) => clean(item.breed) === clean(group.breed));
+        if (breedGroups.some((item) => isPreliminaryDrawGroupLocked(trial, item) || item.finalDraw || (item.runoffs || []).length || (item.runoffHistory || []).length)) {
+            showMessage(rollCallMessage, 'Mixed courses must be set before preliminary scoring starts. Existing scores and finals draws were kept.', 'warning');
+            render();
+            return;
+        }
+        const entryIds = new Set(breedGroups.flatMap((item) => (item.courses || []).flatMap((course) => (course.hounds || []).map((hound) => hound.entryId))));
+        const entries = (trial.entries || []).filter((entry) => entryIds.has(entry.id)).map(enrichEntryForRollCall);
+        if (entries.length !== entryIds.size) {
+            showMessage(rollCallMessage, 'A drawn hound is missing from Entries. Resolve the entry mismatch before combining stakes.', 'warning');
+            return;
+        }
+        const eligibility = mixedStakeEligibilityForEntries(entries, group.breed);
+        if (changes.mixedStake && !eligibility.eligible) {
+            showMessage(rollCallMessage, `Cannot combine these stakes: ${eligibility.reason}`, 'warning');
+            render();
+            return;
+        }
+        const mixedBreeds = (trial.mixedStakeBreeds || []).filter((breed) => clean(breed) !== clean(group.breed));
+        if (changes.mixedStake) mixedBreeds.push(group.breed);
+        const replacements = groupEntriesByBreedAndStake(entries, mixedBreeds, trial).map((item, index) => ({
+            ...buildDrawGroup(item),
+            id: index === 0 ? group.id : crypto.randomUUID(),
+            manualNote: changes.manualNote ?? group.manualNote ?? '',
+            manuallyAltered: true,
+        }));
+        trial.mixedStakeBreeds = mixedBreeds;
+        trial.preliminaryDraw = auditDrawChange({
+            ...draw,
+            groups: draw.groups.flatMap((item) => item.id === group.id ? replacements : clean(item.breed) === clean(group.breed) ? [] : [item]),
+        }, changes.mixedStake ? `Combined ${group.breed} stakes into one mixed course.` : `Separated ${group.breed} stakes.`);
+        upsertTrial(trial);
+        saveTrials();
+        render();
+        showMessage(rollCallMessage, changes.mixedStake ? 'Mixed stakes combined and drawn together. Individual stakes are kept for placements.' : 'Stakes separated and redrawn.', 'success');
+        return;
+    }
+
     trial.preliminaryDraw = auditDrawChange({
         ...draw,
         groups: draw.groups.map((group) => group.id === groupId ? { ...group, ...changes, manuallyAltered: true } : group),
@@ -9170,7 +9209,7 @@ function resultsGroupsWithCorrectedStakes(trial, sourceGroups) {
     const moves = [];
 
     groups.forEach((source) => {
-        if (source.finalsOnly) return;
+        if (source.finalsOnly || (source.mixedStake && clean(source.stake) === 'MIXED')) return;
         (source.courses || []).forEach((course) => {
             const kept = [];
             (course.hounds || []).forEach((hound) => {
@@ -13450,9 +13489,14 @@ async function buildFinalsDrawForGroup(groupId) {
         return;
     }
 
+    if (group.mixedStake && clean(group.stake) !== 'MIXED') {
+        await buildFinalsDrawForBreed(group.breed);
+        return;
+    }
+
     const hasStakeCorrections = draw.groups
         .filter((item) => clean(item.breed) === clean(group.breed))
-        .some((item) => groupScoreRows(item).some((row) => clean(finalsStakeForHound(item, row.hound)) !== clean(item.stake)));
+        .some((item) => !item.mixedStake && groupScoreRows(item).some((row) => clean(finalsStakeForHound(item, row.hound)) !== clean(item.stake)));
     if (hasStakeCorrections) {
         showMessage(document.getElementById('scoringMessage'), 'This breed has a corrected finals stake. Use Draw Finals Breed so HALO can place every hound in the correct stake.', 'warning');
         return;
@@ -13547,16 +13591,28 @@ async function buildFinalsDrawForBreed(breed) {
 
     const entriesById = new Map((trial.entries || []).map((entry) => [entry.id, entry]));
     const buckets = new Map();
+    const mixedGroup = groups.find((group) => group.mixedStake && clean(group.stake) === 'MIXED');
+    const mixedEntries = groups.flatMap((group) => groupScoreRows(group).map((row) => ({
+        ...(entriesById.get(row.hound.entryId) || {}),
+        className: finalsStakeForHound(group, row.hound, entriesById.get(row.hound.entryId) || {}),
+    })));
+    const combineMarkedStakes = !mixedGroup && groups.some((group) => group.mixedStake)
+        && mixedStakeEligibilityForEntries(mixedEntries, breed).eligible;
     groups.forEach((group) => {
         groupScoreRows(group)
             .filter((row) => hasScoreValue(row.score) && !row.outcome && !row.hound.postPrelimOutcome)
             .forEach((row) => {
                 const stake = finalsStakeForHound(group, row.hound, entriesById.get(row.hound.entryId) || {});
-                const targetGroup = clean(stake) === clean(group.stake)
+                const targetGroup = mixedGroup || (clean(stake) === clean(group.stake)
                     ? group
-                    : groups.find((candidate) => clean(candidate.stake) === clean(stake));
-                const key = targetGroup ? targetGroup.id : `new:${clean(stake)}`;
-                if (!buckets.has(key)) buckets.set(key, { stake, hounds: [], sourceGroup: group, targetGroupId: targetGroup?.id || '' });
+                    : groups.find((candidate) => clean(candidate.stake) === clean(stake)));
+                const key = combineMarkedStakes ? 'new:mixed' : targetGroup ? targetGroup.id : `new:${clean(stake)}`;
+                if (!buckets.has(key)) buckets.set(key, {
+                    stake: combineMarkedStakes ? 'Mixed' : stake,
+                    hounds: [],
+                    sourceGroup: combineMarkedStakes ? { ...group, mixedStake: true } : group,
+                    targetGroupId: combineMarkedStakes ? '' : targetGroup?.id || '',
+                });
                 buckets.get(key).hounds.push({ ...row.hound, stake, prelimStake: row.hound.stake || group.stake });
             });
     });
@@ -13770,8 +13826,38 @@ function printRibbonReport() {
     markTrialGuidePrinted('ribbonReport');
 }
 
-async function printAsfaRecordSheet({ groupId = '', breed = '', combineMixedPosting = false } = {}) {
-    const message = document.getElementById('scoringMessage');
+function runoffRecordSheetSnapshots(trial) {
+    const groups = ((trial.preliminaryDraw || {}).groups || []);
+    const snapshots = new Map();
+    groups.forEach((group) => {
+        const ids = new Set([...(group.courses || []), ...((group.finalDraw || {}).courses || [])].flatMap((course) => (course.hounds || []).map((hound) => hound.entryId)));
+        const bobRunoffs = (trial.bobRunoffs || []).filter((runoff) => (runoff.courses || []).some((course) => (course.hounds || []).some((hound) => ids.has(hound.entryId))));
+        if (!(group.runoffs || []).length && !(group.runoffHistory || []).length && !bobRunoffs.length) return;
+        snapshots.set(group.id, JSON.stringify({
+            group, bobRunoffs,
+            entries: (trial.entries || []).filter((entry) => ids.has(entry.id)),
+            awards: [...ids].map((id) => [id, (trial.resultState?.bobResultsByEntry || {})[id] || '']),
+        }));
+    });
+    return snapshots;
+}
+
+function updatedRunoffRecordGroupIds(trial) {
+    const printed = trial.printStatusFingerprints?.runoffRecordSheets || {};
+    return [...runoffRecordSheetSnapshots(trial)].filter(([id, signature]) => printed[id] !== signature).map(([id]) => id);
+}
+
+async function printUpdatedRunoffRecordSheets() {
+    const groupIds = updatedRunoffRecordGroupIds(readForm());
+    if (!groupIds.length) {
+        showMessage(runoffMessage, 'No updated tie or BOB record sheets to print since the last record-sheet PDF was created.', 'warning');
+        return;
+    }
+    await printAsfaRecordSheet({ groupIds, messageElement: runoffMessage });
+}
+
+async function printAsfaRecordSheet({ groupId = '', groupIds = null, breed = '', combineMixedPosting = false, messageElement = null } = {}) {
+    const message = messageElement || document.getElementById('scoringMessage');
     const trial = readForm();
     const profile = rulesForTrial(trial);
     const draw = trial.preliminaryDraw;
@@ -13791,7 +13877,7 @@ async function printAsfaRecordSheet({ groupId = '', breed = '', combineMixedPost
         const response = await fetch('/api/asfa-record-sheet', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trial, groupId, breed, combineMixedPosting, layout: getAsfaRecordLayout(), entryLayout: getAsfaEntryLayout(), lciEntryLayout: getAsfaLciEntryLayout() }),
+            body: JSON.stringify({ trial, groupId, groupIds, breed, combineMixedPosting, layout: getAsfaRecordLayout(), entryLayout: getAsfaEntryLayout(), lciEntryLayout: getAsfaLciEntryLayout() }),
         });
 
         if (!response.ok) {
@@ -13816,7 +13902,15 @@ async function printAsfaRecordSheet({ groupId = '', breed = '', combineMixedPost
             link.rel = 'noopener';
             link.click();
         }
-        showMessage(message, 'ASFA record sheet PDF created.', 'success');
+        const snapshots = runoffRecordSheetSnapshots(trial);
+        const printedGroups = (trial.preliminaryDraw.groups || []).filter((group) => groupIds ? groupIds.includes(group.id) : groupId ? group.id === groupId : !breed || clean(group.breed) === clean(breed));
+        const current = readForm();
+        const printed = { ...(current.printStatusFingerprints?.runoffRecordSheets || {}) };
+        printedGroups.forEach((group) => { if (snapshots.has(group.id)) printed[group.id] = snapshots.get(group.id); });
+        current.printStatusFingerprints = { ...(current.printStatusFingerprints || {}), runoffRecordSheets: printed };
+        upsertTrial(current);
+        saveTrials();
+        showMessage(message, `${profile.association} ${groupIds ? `${groupIds.length} updated stake record sheet(s)` : 'record sheets'} created with the current saved placements and runoff results.`, 'success');
         markTrialGuidePrinted('stakeBreedSheets');
     } catch (error) {
         if (pdfWindow) {
@@ -15414,6 +15508,25 @@ function finalDetailsForEntryAcrossDraw(trial, preliminaryGroup, entryId) {
     return finalDetailsForEntry(finalGroup || preliminaryGroup, entryId);
 }
 
+function placementReminderGroups(trial, entryId, before, after, phase) {
+    if (!before || !after) return [];
+    const fields = [`${phase}Score`, `${phase}Judge1Score`, `${phase}Judge2Score`, `${phase}Outcome`];
+    if (!fields.some((field) => String(before[field] || '') !== String(after[field] || ''))) return [];
+    return (((trial.preliminaryDraw || {}).groups) || []).filter((group) => {
+        const rows = finalsRowsForGroup(group);
+        return rows.some((row) => row.hound.entryId === entryId)
+            && (rows.some((row) => row.hound.placement || row.hound.tieBreakLabel || row.hound.tieBreakResolvedPlacement)
+                || (group.runoffs || []).length || (group.runoffHistory || []).length);
+    });
+}
+
+function showPlacementCorrectionReminder(groups) {
+    if (!groups.length) return;
+    showMessage(document.getElementById('scoringMessage'),
+        `${groups.map(groupTitle).join(', ')}: Scores changed. Reset Placements if this affects placements or ties. Resetting clears this stake's tie runoff scores, forfeits, and blanket assignments; preliminary and finals scores are kept.`,
+        'warning');
+}
+
 async function updateFinalResult(groupId, entryId, changes) {
     const trial = readForm();
     if (trial.scorebook && trial.scorebook.finalsLocked) {
@@ -15427,6 +15540,7 @@ async function updateFinalResult(groupId, entryId, changes) {
     }
     let updated = false;
     const targetGroup = trial.preliminaryDraw.groups.find((group) => group.id === groupId);
+    const beforeScore = targetGroup && finalsRowsForGroup(targetGroup).find((row) => row.hound.entryId === entryId)?.hound;
     const judgeCount = targetGroup ? judgeCountForGroup(trial, targetGroup) : 2;
     const targetBreed = targetGroup ? targetGroup.breed : '';
     const wasBreedComplete = targetBreed ? breedFinalsComplete(trial, targetBreed) : false;
@@ -15490,6 +15604,8 @@ async function updateFinalResult(groupId, entryId, changes) {
         showMessage(document.getElementById('scoringMessage'), 'Could not find that hound in the finals draw.', 'warning');
         return;
     }
+    const afterScore = finalsRowsForGroup(trial.preliminaryDraw.groups.find((group) => group.id === groupId)).find((row) => row.hound.entryId === entryId)?.hound;
+    const reminderGroups = placementReminderGroups(trial, entryId, beforeScore, afterScore, 'final');
     let updatedGroup = null;
     trial.preliminaryDraw = {
         ...trial.preliminaryDraw,
@@ -15511,9 +15627,11 @@ async function updateFinalResult(groupId, entryId, changes) {
     }
     if (targetBreed && !wasBreedComplete && breedFinalsComplete(trial, targetBreed)) {
         promptAfterFinalBreedComplete(targetBreed);
+        showPlacementCorrectionReminder(reminderGroups);
         return;
     }
     render();
+    showPlacementCorrectionReminder(reminderGroups);
 }
 
 function clearTieBreakPlacementState(hound) {
@@ -16414,6 +16532,7 @@ function updatePrelimScore(entryId, changes) {
     ));
     const targetGroupId = targetGroupBefore ? targetGroupBefore.id : '';
     const wasComplete = targetGroupBefore ? prelimGroupCompleteForFinals(targetGroupBefore, trial) : false;
+    const beforeScore = targetGroupBefore && (targetGroupBefore.courses || []).flatMap((course) => course.hounds || []).find((hound) => hound.entryId === entryId);
 
     trial.preliminaryDraw = {
         ...trial.preliminaryDraw,
@@ -16470,11 +16589,15 @@ function updatePrelimScore(entryId, changes) {
     upsertTrial(trial);
     saveTrials();
     const targetGroupAfter = (trial.preliminaryDraw.groups || []).find((group) => group.id === targetGroupId);
+    const afterScore = targetGroupAfter && (targetGroupAfter.courses || []).flatMap((course) => course.hounds || []).find((hound) => hound.entryId === entryId);
+    const reminderGroups = placementReminderGroups(trial, entryId, beforeScore, afterScore, 'prelim');
     if (targetGroupAfter && !wasComplete && prelimGroupCompleteForFinals(targetGroupAfter, trial) && !targetGroupAfter.finalDraw) {
         promptAfterPrelimStakeComplete(targetGroupAfter);
+        showPlacementCorrectionReminder(reminderGroups);
         return;
     }
     render();
+    showPlacementCorrectionReminder(reminderGroups);
 }
 
 function promptAfterPrelimStakeComplete(group) {
@@ -26058,6 +26181,7 @@ secretaryAnswerFields.forEach((id) => {
 document.getElementById('redrawAllRunoffsButton').addEventListener('click', redrawAllRunoffs);
 document.getElementById('printRunoffDrawSheetButton').addEventListener('click', printRunoffDrawSheet);
 document.getElementById('printAllRunoffJudgeSheetsButton').addEventListener('click', printAllRunoffJudgeSheets);
+document.getElementById('printUpdatedRecordSheetsButton').addEventListener('click', printUpdatedRunoffRecordSheets);
 document.getElementById('printBifDrawSheetButton')?.addEventListener('click', printBifDrawSheet);
 document.getElementById('printBifJudgeSheetsButton')?.addEventListener('click', printBifJudgeSheets);
 document.getElementById('printBieRunningSheetButton')?.addEventListener('click', printBieRunningIntentSheet);

@@ -2456,6 +2456,7 @@ def generate_asfa_record_sheet_pdf(
     include_first_time_documents: bool = False,
     combine_mixed_posting: bool = False,
     include_signed_judge_sheets: bool = False,
+    group_ids: list[str] | None = None,
 ) -> bytes:
     association = str(trial.get("association") or "ASFA").upper()
 
@@ -2473,13 +2474,14 @@ def generate_asfa_record_sheet_pdf(
             include_judges_book=include_secretary_report,
             entry_layout=entry_layout,
             lci_entry_layout=lci_entry_layout,
+            group_ids=group_ids,
         )
 
     template_path = RECORD_TEMPLATES.get(association, RECORD_TEMPLATES["ASFA"])
     if not template_path.exists():
         template_path = RECORD_TEMPLATES["ASFA"]
 
-    groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting)
+    groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting, group_ids)
     if not groups:
         raise ValueError("No score rows were found for that ASFA record sheet.")
 
@@ -3019,14 +3021,15 @@ def generate_akc_record_sheet_pdf(
     include_judges_book: bool = False,
     entry_layout: dict | None = None,
     lci_entry_layout: dict | None = None,
+    group_ids: list[str] | None = None,
 ) -> bytes:
     """Fill the AKC JERSC3 Lure Coursing Scoresheet using its built-in PDF form fields."""
     template_path = RECORD_TEMPLATES["AKC"]
     if not template_path.exists():
         raise FileNotFoundError(f"AKC record sheet template not found: {template_path}")
 
-    groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting)
-    include_akc_tests = not group_id and not breed and bool(trial.get("akcTests"))
+    groups = record_groups_for_print(trial, group_id, breed, sort_mode, combine_mixed_posting, group_ids)
+    include_akc_tests = group_ids is None and not group_id and not breed and bool(trial.get("akcTests"))
     if not groups and not include_akc_tests:
         raise ValueError("No AKC trial or JC/QC test rows were found for the record packet.")
 
@@ -3109,7 +3112,9 @@ def generate_akc_record_sheet_pdf(
                 fields[_akc_scoresheet_field(r, 13)] = safe_text(str(row.get("finalScore") or ""), 6)
                 fields[_akc_scoresheet_field(r, 14)] = safe_text(str(row.get("combinedScore") or ""), 6)
                 fields[_akc_scoresheet_field(r, 15)] = akc_scoresheet_runoff_value(row)
-                fields[_akc_scoresheet_field(r, 16)] = safe_text(str(row.get("bobRunoffCode") or ""), 6)
+                bob_draw = str(row.get("bobRunoffLabel") or "").strip()
+                bob_result = str(row.get("bobRunoffCode") or "").strip()
+                fields[_akc_scoresheet_field(r, 16)] = "/".join(value for value in (bob_draw, bob_result) if value)
 
             # ── Judges ───────────────────────────────────────────────────────
             judge1, judge2 = judges_for_group(trial, group)
@@ -4101,7 +4106,7 @@ def record_groups_with_corrected_stakes(trial: dict, groups: list[dict]) -> list
     }
     moves: list[tuple[dict, dict, str]] = []
     for source in corrected:
-        if source.get("finalsOnly"):
+        if source.get("finalsOnly") or (source.get("mixedStake") and clean_text(source.get("stake")) == "MIXED"):
             continue
         for course in source.get("courses") or []:
             kept = []
@@ -4136,10 +4141,22 @@ def record_groups_with_corrected_stakes(trial: dict, groups: list[dict]) -> list
             target.setdefault("courses", []).append(course)
         course.setdefault("hounds", []).extend(moved_course.get("hounds") or [])
 
+    # Older trials can retain separate prelim stakes with one mixed finals draw.
+    # Join those finals to their record rows by entry, keeping both draws intact.
+    mixed_finals = [group for group in corrected if group.get("finalsOnly") and group.get("mixedStake")]
+    for group in corrected:
+        entry_ids = {hound.get("entryId") for course in group.get("courses") or [] for hound in course.get("hounds") or []}
+        extra_courses = [{**course, "hounds": [hound for hound in course.get("hounds") or [] if hound.get("entryId") in entry_ids]}
+                         for source in mixed_finals for course in (source.get("finalDraw") or {}).get("courses") or []]
+        extra_courses = [course for course in extra_courses if course["hounds"]]
+        if extra_courses:
+            group["finalDraw"] = {**(group.get("finalDraw") or {}), "courses": extra_courses}
+            group["runoffs"] = [runoff for source in mixed_finals for runoff in source.get("runoffs") or []
+                                if any(hound.get("entryId") in entry_ids for hound in runoff_hounds(runoff))]
     return corrected
 
 
-def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "", combine_mixed_posting: bool = False) -> list[dict]:
+def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", sort_mode: str = "", combine_mixed_posting: bool = False, group_ids: list[str] | None = None) -> list[dict]:
     groups = record_groups_with_corrected_stakes(trial, draw_groups_for_print(trial))
     if group_id:
         groups = [group for group in groups if str(group.get("id") or "") == str(group_id)]
@@ -4153,8 +4170,15 @@ def record_groups_for_print(trial: dict, group_id: str = "", breed: str = "", so
     if sort_mode == "alpha":
         groups = sorted(groups, key=record_packet_sort_key)
     event_label = clean_text(((trial.get("scorebook") or {}).get("bif") or {}).get("eventType") or "BIF")
-    if not group_id and (not breed or clean_text(breed) == event_label):
+    if group_ids is None and not group_id and (not breed or clean_text(breed) == event_label):
         groups.extend(bif_record_groups(trial))
+    if group_ids is not None:
+        selected = {str(value) for value in group_ids}
+        selected_final_ids = {hound.get("entryId") for source in (trial.get("preliminaryDraw") or {}).get("groups") or []
+                              if str(source.get("id")) in selected and source.get("finalsOnly") and source.get("mixedStake")
+                              for course in (source.get("finalDraw") or {}).get("courses") or [] for hound in course.get("hounds") or []}
+        groups = [group for group in groups if str(group.get("id") or "").split("::", 1)[0] in selected
+                  or any(hound.get("entryId") in selected_final_ids for course in group.get("courses") or [] for hound in course.get("hounds") or [])]
     return groups
 
 
@@ -4694,7 +4718,7 @@ def bob_runoff_boxes_by_entry(trial: dict) -> dict[str, dict[str, str]]:
                 is_tie_hound = combined_tie_hound(hound)
                 include_hound = role in {"BOB", ""} or is_bob_runoff
                 if is_combined:
-                    include_hound = not is_tie_hound or entry_id in tie_winner_ids
+                    include_hound = clean_text(trial.get("association")) == "AKC" or not is_tie_hound or entry_id in tie_winner_ids
                 if not entry_id or not include_hound:
                     continue
                 blanket_code = (
@@ -4715,6 +4739,8 @@ def bob_runoff_boxes_by_entry(trial: dict) -> dict[str, dict[str, str]]:
                     "",
                     True,
                 )
+                if is_combined and is_tie_hound and entry_id not in tie_winner_ids:
+                    result = ""
                 boxes[entry_id] = {"label": str(blanket_code), "code": str(result)}
     return boxes
 
@@ -6036,8 +6062,20 @@ def build_akc_judge_overlay(trial: dict, course: dict) -> bytes:
     draw_field_label(pdf, course.get("fieldName"), 420, 748, right=True, font_size=7)
     draw_akc_judge_breed_mark(pdf, course.get("breed"))
     draw_akc_phase_check(pdf, course.get("phase"))
-    if not draw_akc_stake_check(pdf, course.get("stake")):
+    if course.get("mixedStake") and clean_text(course.get("phase")) not in {"BOB", "BIF", "BIE", "RUNOFF"}:
+        stakes = course.get("mixedStakes") or [hound.get("stake") for hound in course.get("hounds") or []]
+        stakes = list(dict.fromkeys(str(stake).strip() for stake in stakes if stake))
+        for stake in stakes:
+            draw_akc_stake_check(pdf, stake)
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawCentredString(306, 684, "MIXED STAKES: " + " / ".join(stakes).upper())
+    elif clean_text(course.get("stake")) in {"VETERAN", "VET", "VETS", "OPENVETERAN"}:
+        draw_akc_stake_check(pdf, "Open")
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawCentredString(306, 684, "STAKE: VETERAN")
+    elif not draw_akc_stake_check(pdf, course.get("stake")):
         pdf.drawString(390, 642, safe_text(course.get("stake"), 14))
+    pdf.setFont("Helvetica", 8)
     draw_akc_course_check(pdf, course.get("course"))
     draw_akc_split_stake_mark(pdf, course.get("flight"))
     runoff_text = str(course.get("runoffText") or "").strip()
@@ -7722,6 +7760,10 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             include_first_time_documents = bool(payload.get("includeFirstTimeDocuments"))
             combine_mixed_posting = bool(payload.get("combineMixedPosting"))
             include_signed_judge_sheets = bool(payload.get("includeSignedJudgeSheets"))
+            group_ids = payload.get("groupIds")
+            if group_ids is not None and not isinstance(group_ids, list):
+                self.send_json({"ok": False, "error": "groupIds must be a list."}, HTTPStatus.BAD_REQUEST)
+                return
             if not isinstance(trial, dict):
                 self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
                 return
@@ -7738,6 +7780,7 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     include_first_time_documents=include_first_time_documents,
                     combine_mixed_posting=combine_mixed_posting,
                     include_signed_judge_sheets=include_signed_judge_sheets,
+                    group_ids=group_ids,
                 )
                 association = str(trial.get("association") or "ASFA").upper()
                 self.send_pdf(pdf, f"{association.lower()}-record-sheet.pdf")
@@ -8456,6 +8499,10 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
             include_first_time_documents = bool(payload.get("includeFirstTimeDocuments"))
             combine_mixed_posting = bool(payload.get("combineMixedPosting"))
             include_signed_judge_sheets = bool(payload.get("includeSignedJudgeSheets"))
+            group_ids = payload.get("groupIds")
+            if group_ids is not None and not isinstance(group_ids, list):
+                self.send_json({"ok": False, "error": "groupIds must be a list."}, HTTPStatus.BAD_REQUEST)
+                return
             if not isinstance(trial, dict):
                 self.send_json({"ok": False, "error": "Payload missing trial object."}, HTTPStatus.BAD_REQUEST)
                 return
@@ -8472,6 +8519,7 @@ class FieldTrialSecretaryHandler(SimpleHTTPRequestHandler):
                     include_first_time_documents=include_first_time_documents,
                     combine_mixed_posting=combine_mixed_posting,
                     include_signed_judge_sheets=include_signed_judge_sheets,
+                    group_ids=group_ids,
                 )
                 association = str(trial.get("association") or "ASFA").upper()
                 self.send_pdf(pdf, f"{association.lower()}-record-sheet.pdf")
