@@ -5,12 +5,36 @@
       "version": "0.5.10",
       "date": "2026-10-31",
       "channel": "stable",
-      "status": "pending",
+      "status": "available",
       "summary": "Fixes mixed-stake prelim/finals draws, Veteran and mixed AKC judge-sheet labels, and missing BOB colors. Adds changed-runoff record-sheet printing and a manual placement-reset reminder after score corrections.",
       "releaseUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/tag/v0.5.10",
-      "downloads": {},
+      "downloads": {
+        "windows": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/Field-Trial-Secretary-0.5.10-portable-20261101-000817.zip",
+        "appleSilicon": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/Field-Trial-Secretary-0.5.10-macOS-arm64.dmg",
+        "intel": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/Field-Trial-Secretary-0.5.10-macOS-x86_64.dmg",
+        "linuxAppImage": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/HALO-0.5.10-x86_64.AppImage",
+        "linuxDeb": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/HALO-0.5.10-Ubuntu-amd64.deb"
+      },
       "readmeUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.10/README.md",
-      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.10/RELEASE_NOTES.md"
+      "notesUrl": "https://github.com/johnsjungle/field-trial-secretary-updates/blob/main/versions/0.5.10/RELEASE_NOTES.md",
+      "updates": {
+        "windows": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/Field-Trial-Secretary-0.5.10-portable-20261101-000817.zip",
+          "sha256": "cadeff4914f55f7b504f573cf6e2f73435860cf66d1a19cf5b65291cfee9a2a8"
+        },
+        "appleSilicon": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/Field-Trial-Secretary-0.5.10-macOS-arm64.dmg",
+          "sha256": "23fc9979a43300abe2e70aae897f57e73b2c2e21ecb7679fccb062e428b34325"
+        },
+        "intel": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/Field-Trial-Secretary-0.5.10-macOS-x86_64.dmg",
+          "sha256": "ab8b9da98a3350169e0c176d2198b21c131632a9171cf29d297dc1c71ae4955a"
+        },
+        "linuxAppImage": {
+          "url": "https://github.com/johnsjungle/field-trial-secretary-updates/releases/download/v0.5.10/HALO-0.5.10-x86_64.AppImage",
+          "sha256": "767a937155bf4237bebeba6fac87d5314e3db69d6e7a52abc2ef44ac005b2b0b"
+        }
+      }
     },
     {
       "version": "0.5.9",
